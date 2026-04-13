@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+ai_model/data/train.jsonl
+ai_model/final_model-20260331T125007Z-1-001.zip
+ai_model/final_model/adapter_model.safetensors
+
+fairytale_ai_ㅡmodel/train.jsonl
+ai_model/final_model-20260331T125007Z-1-001.zip
+ai_model/final_model/adapter_model.safetensors
