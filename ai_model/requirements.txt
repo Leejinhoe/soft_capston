@@ -1,0 +1,22 @@
+# ── AI 학습 (Fine-tuning) ──
+torch>=2.1.0
+transformers>=4.40.0
+peft>=0.10.0
+trl>=0.8.6
+datasets>=2.18.0
+bitsandbytes>=0.43.0      # QLoRA 4비트 양자화
+accelerate>=0.28.0
+
+# ── API 서버 ──
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-dotenv>=1.0.0
+pydantic>=2.6.0
+
+# ── Claude API (MVP 모드) ──
+anthropic>=0.25.0
+
+# ── 데이터 처리 ──
+numpy>=1.26.0
+pandas>=2.2.0
+tqdm>=4.66.0

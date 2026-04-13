@@ -1,0 +1,251 @@
+{
+  "title": "화산 거인을 물리쳐라!",
+  "author": "김미애",
+  "illustrator": "안은진",
+  "isbn": "9791128211515",
+  "readAge": "초등_고학년",
+  "publishedYear": 2018,
+  "publisher": "아람북스",
+  "classification": "자연탐구",
+  "paragraphInfoCount": 34,
+  "paragraphInfo": [
+    {
+      "srcTextID": "6826",
+      "srcText": "“들어 보아라, 우르릉거리는 소리다.” 돈키호테가 벌떡 일어나 창문을 열었어요. 멀리 뾰족산 꼭대기에서 회색빛 연기가 폭폭 피어올랐어요. ",
+      "srcPage": 6,
+      "srcSentenceEA": 3,
+      "srcWordEA": 18
+    },
+    {
+      "srcTextID": "6829",
+      "srcText": "“나는 용감한 기사다. 거인을 무찌르러 가자!” 돈키호테가 말을 타고 따그닥 따그닥 달려갔어요. ",
+      "srcPage": 10,
+      "srcSentenceEA": 3,
+      "srcWordEA": 14
+    },
+    {
+      "srcTextID": "6830",
+      "srcText": "산초도 얼른 조랑말을 타고 뒤쫓았지요. “주인님, 멈추세요! 화산이 곧 터질 거예요.” 산초가 힘껏 소리쳤어요.",
+      "srcPage": 11,
+      "srcSentenceEA": 4,
+      "srcWordEA": 16
+    },
+    {
+      "srcTextID": "6842",
+      "srcText": "그러거나 말거나 돈키호테는 뾰족산으로 곧장 향했어요. 돈키호테는 뾰족산 가까이까지 갔어요. 뾰족산 꼭대기에서 연기가 계속 뿜어져 나왔어요.",
+      "srcPage": 12,
+      "srcSentenceEA": 3,
+      "srcWordEA": 18
+    },
+    {
+      "srcTextID": "6841",
+      "srcText": "“용감한 기사는 도망가지 않는다. 거인아, 나하고 겨루자.” “거인이 아니라니까요. 저 연기는 땅속 깊은 곳에 있는 마그마가 분출하려는 징조예요.” 산초가 아무리 말해도 돈키호테는 아랑곳하지 않았어요.",
+      "srcPage": 14,
+      "srcSentenceEA": 5,
+      "srcWordEA": 27
+    },
+    {
+      "srcTextID": "6853",
+      "srcText": "“산초야, 내가 구해 주마.” 돈키호테가 두리번거리며 날뛰었어요. 뿌연 화산재가 눈처럼 내려왔어요. 크고 작은 돌멩이도 날아왔지요.",
+      "srcPage": 20,
+      "srcSentenceEA": 4,
+      "srcWordEA": 18
+    },
+    {
+      "srcTextID": "6855",
+      "srcText": "딱! 돌멩이 하나가 돈키호테가 쓴 투구에 부딪혔어요. “아야, 이 못된 고구마 괴물아! 네가 나를 때렸겠다! 용서하지 않겠다. 나의 창을 받아라!”",
+      "srcPage": 21,
+      "srcSentenceEA": 5,
+      "srcWordEA": 24
+    },
+    {
+      "srcTextID": "6856",
+      "srcText": "“앗, 저기 시뻘건 게 뭐지?” 돈키호테가 물러서며 말했어요. 이글거리는 새빨간 용암이 산등성이를 타고 거세게 흘러내렸어요.",
+      "srcPage": 22,
+      "srcSentenceEA": 3,
+      "srcWordEA": 17
+    },
+    {
+      "srcTextID": "6857",
+      "srcText": "용암은 산 아래 사과나무 과수원을 덮쳤어요. 화르륵, 눈 깜짝할 사이에 사과나무가 불에 타 버렸지요. 용암은 오두막도, 길가에 세워진 수레도 불태워 버렸어요.",
+      "srcPage": 23,
+      "srcSentenceEA": 3,
+      "srcWordEA": 23
+    },
+    {
+      "srcTextID": "6858",
+      "srcText": "“거인이 불을 뿜는다. 공격!” 돈키호테는 소리 지르며 창을 뻗었지만, 부글부글 끓는 용암이 무서워 앞으로 나아가지 못했어요. 돈키호테의 팔이 부들부들 떨리자, 창도 덜덜 떨렸어요.",
+      "srcPage": 24,
+      "srcSentenceEA": 4,
+      "srcWordEA": 26
+    },
+    {
+      "srcTextID": "6862",
+      "srcText": "어느덧 화산은 잠잠해졌어요. 산초는 근처 작은 오두막으로 피해 돈키호테를 보살폈어요. “거인이 나타났다. 무찔러라!” 누워 있던 돈키호테가 잠꼬대하면서 벌떡 일어났어요.",
+      "srcPage": 26,
+      "srcSentenceEA": 5,
+      "srcWordEA": 22
+    },
+    {
+      "srcTextID": "6861",
+      "srcText": "산초가 쉬지 않고 떠들어 댔어요. “겁쟁이 산초야, 용감한 기사는 도망가지 않는 법! 보아라, 내가 무찔러서 거인이 조용해지지 않았느냐?” 돈키호테가 두 주먹을 불끈 쥐었어요.",
+      "srcPage": 28,
+      "srcSentenceEA": 4,
+      "srcWordEA": 25
+    },
+    {
+      "srcTextID": "6866",
+      "srcText": "당장 가자! 돈키호테는 부리나케 밖으로 뛰어나갔어요. 오두막 바깥으로 나온 돈키호테는 깜짝 놀랐어요. 화산재가 뿌옇게 내려앉아 있었고, 용암이 굳어 기이한 모양을 하고 있었지요.",
+      "srcPage": 31,
+      "srcSentenceEA": 4,
+      "srcWordEA": 25
+    },
+    {
+      "srcTextID": "6821",
+      "srcText": "돈키호테가 집 안에서 쉬고 있었어요. 그때 모기 한 마리가 돈키호테에게 달려들었어요. “누구냐? 어서 너의 속셈을 말해라.\"",
+      "srcPage": 1,
+      "srcSentenceEA": 3,
+      "srcWordEA": 18
+    },
+    {
+      "srcTextID": "6827",
+      "srcText": "거인이 사람들을 괴롭히고 있어. 산초야, 당장 가자! 돈키호테는 아끼는 말인 로시난테에 껑충 올라탔어요. “주인님, 가시면 안 돼요! ",
+      "srcPage": 8,
+      "srcSentenceEA": 4,
+      "srcWordEA": 19
+    },
+    {
+      "srcTextID": "6822",
+      "srcText": "돈키호테가 창을 뽑아 들었어요. “주인님, 참으세요. 그저 작은 모기일 뿐입니다.” 산초가 돈키호테를 말렸지만 소용없었어요.",
+      "srcPage": 2,
+      "srcSentenceEA": 4,
+      "srcWordEA": 16
+    },
+    {
+      "srcTextID": "6825",
+      "srcText": "“허튼소리, 용감한 기사인 나를 감시하라고 악당이 보낸 것이 틀림없다.” 돈키호테는 마구 창을 휘둘렀어요. 산초는 돈키호테가 또 사고를 칠까 걱정이 되었어요.",
+      "srcPage": 3,
+      "srcSentenceEA": 3,
+      "srcWordEA": 22
+    },
+    {
+      "srcTextID": "6823",
+      "srcText": " 그래서 후닥닥 모기를 내쫓고 식사를 준비했어요. 돈키호테는 마지못해 식탁에 앉았어요. 그런데 갑자기 돈키호테의 눈빛이 날카롭게 변했어요.",
+      "srcPage": 4,
+      "srcSentenceEA": 3,
+      "srcWordEA": 19
+    },
+    {
+      "srcTextID": "6824",
+      "srcText": "“산초야, 느꼈느냐? 지금 집이 흔들렸다.” “제가 쿵쿵 걸어서 그래요.” 산초가 쿵쿵 뛰며 대답했어요. ",
+      "srcPage": 5,
+      "srcSentenceEA": 4,
+      "srcWordEA": 15
+    },
+    {
+      "srcTextID": "6831",
+      "srcText": "저건 거인이 아니라 무시무시한 화산이라고요! 산초가 돈키호테의 다리를 붙잡으며 말했어요. “뭐? 거인의 이름이 화산이라고?” ",
+      "srcPage": 9,
+      "srcSentenceEA": 3,
+      "srcWordEA": 16
+    },
+    {
+      "srcTextID": "6846",
+      "srcText": "돈키호테는 무섭게 산만 노려보았지요. 순간, 뾰족산의 산등성이가 울룩불룩 솟았어요. “드디어 거인이 일어나는군, 덤벼라!”",
+      "srcPage": 15,
+      "srcSentenceEA": 3,
+      "srcWordEA": 14
+    },
+    {
+      "srcTextID": "6847",
+      "srcText": "히히힝, 말도 앞발을 들며 울었지요. “가엾은 것, 떨고 있군. 내가 단박에 무찔러 주마.” 돈키호테가 창을 세우고 달려들었어요.",
+      "srcPage": 17,
+      "srcSentenceEA": 4,
+      "srcWordEA": 19
+    },
+    {
+      "srcTextID": "6852",
+      "srcText": "우르릉거리는 소리가 더 거세지고 땅이 마구 흔들렸어요. “거인이 공격한다! 앞으로! 용감한 기사, 돈키호테가 나가신다!” 돈키호테가 말고삐를 세게 잡아당겼어요.",
+      "srcPage": 18,
+      "srcSentenceEA": 5,
+      "srcWordEA": 21
+    },
+    {
+      "srcTextID": "6859",
+      "srcText": "그러다가 돈키호테는 말 엉덩이에 창을 떨어뜨리고 말았지요. 히히힝, 말이 놀라 펄쩍 뛰었어요. 그 바람에 돈키호테는 말에서 떨어져 정신을 잃었어요. 산초는 쓰러진 돈키호테를 말 등에 태우고 화산으로부터 멀리 달아났어요.",
+      "srcPage": 25,
+      "srcSentenceEA": 4,
+      "srcWordEA": 31
+    },
+    {
+      "srcTextID": "6863",
+      "srcText": "‘어휴, 정말 못 말려. 그냥 두면 또 사고를 칠 텐데 어떡하지?’ 산초는 곰곰 생각하다, 마을 아래쪽에 있는 온천을 떠올렸어요.",
+      "srcPage": 29,
+      "srcSentenceEA": 3,
+      "srcWordEA": 21
+    },
+    {
+      "srcTextID": "6864",
+      "srcText": "“주인님, 저 마을에 부글부글 끓는 뜨거운 물이 있대요. 물속에 누가 있는 것 같아요.” 뭣이? 거인이 숨어 있을지도 몰라.",
+      "srcPage": 30,
+      "srcSentenceEA": 4,
+      "srcWordEA": 21
+    },
+    {
+      "srcTextID": "6828",
+      "srcText": "우르릉거리는 소리도 점점 커졌지요. 그뿐만 아니라 여기저기에서 사람들이 소리치며 집 밖으로 뛰쳐나왔어요. 저 산에 거인이 나타났다. ",
+      "srcPage": 7,
+      "srcSentenceEA": 3,
+      "srcWordEA": 18
+    },
+    {
+      "srcTextID": "6840",
+      "srcText": "“겁쟁이 거인아, 산속에 숨어 있지 말고 냉큼 나와라!” 돈키호테가 쩌렁쩌렁한 목소리로 외쳤어요. “헉헉, 주인님. 피하세요! 보세요, 모두 도망갔잖아요.”",
+      "srcPage": 13,
+      "srcSentenceEA": 5,
+      "srcWordEA": 21
+    },
+    {
+      "srcTextID": "6845",
+      "srcText": "돈키호테가 눈도 깜박이지 않고 소리쳤어요. “앗, 위험해요! 저건 화산이 분출하려는 신호라고요!” 산초가 벌벌 떨며 말했어요.",
+      "srcPage": 16,
+      "srcSentenceEA": 4,
+      "srcWordEA": 17
+    },
+    {
+      "srcTextID": "6851",
+      "srcText": "메케하고 고약한 냄새가 코를 찔렀어요. “콜록콜록, 아이고 나 죽네. 주인님, 어디 계세요?” 산초가 돈키호테를 찾았어요.",
+      "srcPage": 19,
+      "srcSentenceEA": 4,
+      "srcWordEA": 17
+    },
+    {
+      "srcTextID": "6860",
+      "srcText": "“주인님, 뾰족산 가까이 가면 위험해요. 목숨을 잃을 뻔했잖아요. 화산이 분출할 땐 절대 달려들면 안 돼요, 알겠죠?”",
+      "srcPage": 27,
+      "srcSentenceEA": 3,
+      "srcWordEA": 18
+    },
+    {
+      "srcTextID": "6865",
+      "srcText": "곳곳에 구멍이 숭숭 뚫린 까만 돌들도 보였어요. 못된 거인 같으니! 마을을 온통 회색빛으로 만들어 놓았구나! 돈키호테는 마을을 휙 둘러보고 곧장 길을 떠났어요.",
+      "srcPage": 32,
+      "srcSentenceEA": 4,
+      "srcWordEA": 25
+    },
+    {
+      "srcTextID": "6868",
+      "srcText": "잠시 뒤, 돈키호테는 온천물에 첨벙 뛰어들었어요. “앗, 뜨거워! 물속에 뜨거운 불을 뿜는 거인이 사는 게 틀림없군. 거인아, 나와라! 용감한 기사가 왔다.”",
+      "srcPage": 33,
+      "srcSentenceEA": 5,
+      "srcWordEA": 24
+    },
+    {
+      "srcTextID": "6867",
+      "srcText": "돈키호테가 물속에 창을 푹푹 찔렀어요. 그 모습을 보며 산초가 중얼거렸어요. \"아! 오늘은 정말 힘든 하루였어. 따뜻한 온천물에서 몸을 담그고 푹 쉬어야지.” 그리고 산초는 눈을 꼭 감았어요.",
+      "srcPage": 34,
+      "srcSentenceEA": 5,
+      "srcWordEA": 30
+    }
+  ]
+}

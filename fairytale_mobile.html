@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>동화 AI - 모바일 앱 디자인</title>
+<style>
+:root {
+  --bg: #06041A;
+  --bg2: #0E0B28;
+  --card: #160F38;
+  --card2: #1E1645;
+  --p700: #5B21B6;
+  --p600: #7C3AED;
+  --p500: #8B5CF6;
+  --p400: #A78BFA;
+  --p300: #C4B5FD;
+  --pink: #EC4899;
+  --pink2: #F472B6;
+  --teal: #14B8A6;
+  --white: #FFFFFF;
+  --gray: #9CA3AF;
+  --gray2: #6B7280;
+  --border: rgba(139,92,246,0.2);
+  --glow: rgba(139,92,246,0.15);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  min-height:100vh;
+  background: radial-gradient(ellipse at top, #1a0a3a 0%, #050214 50%, #010108 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 30px 20px 60px;
+  position: relative; overflow-x: hidden;
+}
+body::before {
+  content:''; position:fixed; top:0; left:0; right:0; bottom:0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%237C3AED' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  pointer-events:none; z-index:0;
+}
+/* Page title */
+.page-title {
+  color: var(--p300); font-size:13px; letter-spacing:3px; text-transform:uppercase;
+  margin-bottom:12px; font-weight:600; text-align:center; z-index:1;
+}
+/* Demo nav */
+.demo-nav {
+  display:flex; gap:6px; flex-wrap:wrap; justify-content:center;
+  margin-bottom:24px; max-width:480px; z-index:1; position:relative;
+}
+.demo-nav button {
+  padding:6px 13px; border-radius:20px; border:1px solid var(--border);
+  background:rgba(139,92,246,0.08); color:var(--p400); font-size:11px;
+  cursor:pointer; transition:all 0.2s; font-family:inherit; font-weight:500;
+}
+.demo-nav button.active { background:var(--p600); color:#fff; border-color:var(--p600); }
+.demo-nav button:hover:not(.active) { background:rgba(139,92,246,0.18); }
+
+/* Phone mockup */
+.phone-wrap { position:relative; z-index:1; }
+.phone-outer {
+  width:390px; height:844px;
+  background: linear-gradient(145deg, #2a2a2a, #111);
+  border-radius:54px; padding:11px;
+  box-shadow: 0 0 0 1px #333, 0 40px 80px rgba(0,0,0,0.9), 0 0 120px rgba(139,92,246,0.18), inset 0 1px 0 rgba(255,255,255,0.08);
+  position:relative;
+}
+/* Side buttons */
+.phone-outer::before {
+  content:'';
+  position:absolute; right:-3px; top:160px;
+  width:3px; height:60px; background:#222; border-radius:0 3px 3px 0;
+  box-shadow:0 80px 0 #222;
+}
+.phone-outer::after {
+  content:'';
+  position:absolute; left:-3px; top:130px;
+  width:3px; height:38px; background:#222; border-radius:3px 0 0 3px;
+  box-shadow:0 52px 0 #222, 0 100px 0 #222;
+}
+.phone-inner {
+  width:100%; height:100%; background:var(--bg); border-radius:44px;
+  overflow:hidden; position:relative; display:flex; flex-direction:column;
+}
+/* Notch */
+.notch {
+  position:absolute; top:0; left:50%; transform:translateX(-50%);
+  width:120px; height:34px; background:#111; border-radius:0 0 22px 22px;
+  z-index:200; display:flex; align-items:flex-end; justify-content:center; padding-bottom:4px;
+}
+.notch-dot { width:10px; height:10px; background:#222; border-radius:50%; }
+/* Status bar */
+.status-bar {
+  height:44px; display:flex; align-items:flex-end; justify-content:space-between;
+  padding:0 28px 8px; flex-shrink:0; z-index:100; position:relative;
+}
+.status-time { color:#fff; font-size:15px; font-weight:700; }
+.status-icons { display:flex; align-items:center; gap:5px; }
+.status-icons svg { fill:white; }
+
+/* Screens */
+.screen { display:none; flex:1; overflow-y:auto; overflow-x:hidden; flex-direction:column; scrollbar-width:none; }
+.screen::-webkit-scrollbar { display:none; }
+.screen.active { display:flex; }
+
+/* Bottom Nav */
+.bot-nav {
+  height:80px; background:rgba(8,6,26,0.97); backdrop-filter:blur(20px);
+  border-top:1px solid var(--border); display:flex; align-items:center;
+  justify-content:space-around; padding:0 10px 16px; flex-shrink:0; z-index:50;
+}
+.nav-item {
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  flex:1; cursor:pointer; transition:all 0.2s; padding:4px 0;
+}
+.nav-item.active .nav-icon svg { stroke:var(--p400); }
+.nav-item.active .nav-label { color:var(--p400); }
+.nav-icon svg { stroke:var(--gray2); fill:none; width:22px; height:22px; stroke-width:1.8; transition:all 0.2s; }
+.nav-label { font-size:10px; color:var(--gray2); font-weight:500; transition:all 0.2s; }
+.nav-item.create-btn .nav-icon {
+  width:44px; height:44px; background:linear-gradient(135deg,var(--p600),var(--pink));
+  border-radius:14px; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 4px 15px rgba(139,92,246,0.5);
+}
+.nav-item.create-btn .nav-icon svg { stroke:white; width:20px; height:20px; }
+
+/* ===================== SCREEN: LOGIN ===================== */
+#s-login {
+  background: linear-gradient(175deg, #1a0940 0%, #0a0520 50%, var(--bg) 100%);
+  justify-content:center; align-items:center; padding:40px 30px;
+}
+.login-stars {
+  position:absolute; top:0; left:0; right:0; bottom:0; overflow:hidden; pointer-events:none;
+}
+.star { position:absolute; border-radius:50%; background:white; animation:twinkle 3s infinite; }
+@keyframes twinkle { 0%,100%{opacity:0.2;transform:scale(1)} 50%{opacity:0.8;transform:scale(1.3)} }
+.login-logo {
+  margin-bottom:10px; text-align:center;
+  font-size:50px; animation:float 3s ease-in-out infinite;
+}
+@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+.login-title { font-size:28px; font-weight:800; color:#fff; text-align:center; margin-bottom:6px;
+  background:linear-gradient(135deg,#fff,var(--p300)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.login-sub { font-size:13px; color:var(--gray); text-align:center; margin-bottom:36px; }
+.login-form { width:100%; display:flex; flex-direction:column; gap:12px; }
+.input-wrap { position:relative; }
+.input-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--gray2); font-size:16px; }
+.inp {
+  width:100%; padding:14px 14px 14px 42px; background:rgba(255,255,255,0.07);
+  border:1px solid var(--border); border-radius:14px; color:#fff; font-size:14px; font-family:inherit;
+  outline:none; transition:all 0.2s;
+}
+.inp:focus { border-color:var(--p500); background:rgba(139,92,246,0.1); box-shadow:0 0 0 3px rgba(139,92,246,0.15); }
+.inp::placeholder { color:var(--gray2); }
+.login-btn {
+  width:100%; padding:15px; background:linear-gradient(135deg,var(--p600),var(--p700));
+  border:none; border-radius:14px; color:#fff; font-size:15px; font-weight:700;
+  cursor:pointer; margin-top:4px; font-family:inherit; transition:all 0.2s;
+  box-shadow:0 6px 20px rgba(124,58,237,0.5);
+}
+.login-btn:active { transform:scale(0.98); }
+.login-divider { display:flex; align-items:center; gap:12px; margin:6px 0; }
+.login-divider::before,.login-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+.login-divider span { color:var(--gray2); font-size:12px; }
+.social-btns { display:flex; gap:10px; }
+.social-btn {
+  flex:1; padding:12px; background:rgba(255,255,255,0.06); border:1px solid var(--border);
+  border-radius:12px; color:#fff; font-size:13px; cursor:pointer; text-align:center;
+  font-family:inherit; display:flex; align-items:center; justify-content:center; gap:6px;
+}
+.login-signup { text-align:center; color:var(--gray); font-size:12px; margin-top:12px; }
+.login-signup span { color:var(--p400); cursor:pointer; font-weight:600; }
+
+/* ===================== SCREEN: HOME ===================== */
+#s-home { background:var(--bg); }
+.home-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 20px; flex-shrink:0;
+}
+.home-title { font-size:22px; font-weight:800; color:#fff; }
+.home-title span { background:linear-gradient(135deg,var(--p400),var(--pink2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.notif-btn {
+  width:40px; height:40px; background:var(--card); border-radius:12px;
+  display:flex; align-items:center; justify-content:center; position:relative; cursor:pointer;
+}
+.notif-dot {
+  position:absolute; top:8px; right:8px; width:8px; height:8px;
+  background:var(--pink); border-radius:50%; border:2px solid var(--bg);
+}
+/* Search */
+.search-bar {
+  margin:0 20px 20px; display:flex; align-items:center; gap:10px;
+  background:var(--card); border-radius:16px; padding:12px 16px;
+  border:1px solid var(--border);
+}
+.search-bar svg { stroke:var(--gray2); fill:none; width:18px; height:18px; flex-shrink:0; }
+.search-bar input {
+  flex:1; background:none; border:none; color:#fff; font-size:14px; font-family:inherit; outline:none;
+}
+.search-bar input::placeholder { color:var(--gray2); }
+/* Featured carousel */
+.section-label { padding:0 20px; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--p400); font-weight:600; margin-bottom:10px; }
+.carousel {
+  display:flex; gap:16px; padding:0 20px; overflow-x:auto; scrollbar-width:none;
+  scroll-snap-type:x mandatory; padding-bottom:6px;
+}
+.carousel::-webkit-scrollbar { display:none; }
+.feat-card {
+  min-width:320px; height:200px; border-radius:22px; overflow:hidden; position:relative;
+  scroll-snap-align:start; flex-shrink:0; cursor:pointer;
+}
+.feat-bg { width:100%; height:100%; position:absolute; top:0; left:0; display:flex; align-items:center; justify-content:center; }
+.feat-emoji { font-size:90px; filter:drop-shadow(0 4px 20px rgba(0,0,0,0.5)); margin-top:-20px; }
+.feat-overlay {
+  position:absolute; bottom:0; left:0; right:0; height:65%;
+  background:linear-gradient(transparent, rgba(0,0,0,0.92));
+  padding:14px 16px;
+}
+.feat-time { font-size:11px; color:rgba(255,255,255,0.7); margin-bottom:4px; }
+.feat-name { font-size:20px; font-weight:800; color:#fff; }
+.feat-bookmark {
+  position:absolute; top:14px; right:14px; width:32px; height:32px;
+  background:rgba(0,0,0,0.4); backdrop-filter:blur(8px); border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+}
+.feat-bookmark svg { stroke:white; fill:none; width:16px; height:16px; }
+/* Dots */
+.dots { display:flex; justify-content:center; gap:6px; margin:12px 0 20px; }
+.dot { width:6px; height:6px; border-radius:3px; background:var(--gray2); transition:all 0.3s; cursor:pointer; }
+.dot.active { width:18px; background:var(--p500); }
+/* Recommended */
+.recommend-header { display:flex; align-items:center; justify-content:space-between; padding:0 20px; margin-bottom:12px; }
+.rec-title { font-size:18px; font-weight:700; color:#fff; }
+.rec-more { font-size:12px; color:var(--p400); cursor:pointer; }
+.rec-row { display:flex; gap:14px; padding:0 20px; overflow-x:auto; scrollbar-width:none; padding-bottom:20px; }
+.rec-row::-webkit-scrollbar { display:none; }
+.rec-card {
+  min-width:150px; border-radius:18px; overflow:hidden; cursor:pointer;
+  background:var(--card); border:1px solid var(--border); flex-shrink:0;
+}
+.rec-img { height:130px; display:flex; align-items:center; justify-content:center; font-size:55px; position:relative; }
+.rec-info { padding:10px; }
+.rec-name { font-size:13px; font-weight:700; color:#fff; margin-bottom:2px; }
+.rec-time { font-size:11px; color:var(--gray); }
+/* Tags section */
+.tags-row { display:flex; gap:8px; padding:0 20px; overflow-x:auto; scrollbar-width:none; margin-bottom:20px; }
+.tags-row::-webkit-scrollbar { display:none; }
+.tag { padding:7px 14px; border-radius:20px; background:var(--card); border:1px solid var(--border); color:var(--gray); font-size:12px; white-space:nowrap; cursor:pointer; transition:all 0.2s; flex-shrink:0; }
+.tag.active { background:rgba(139,92,246,0.2); border-color:var(--p500); color:var(--p400); }
+
+/* ===================== SCREEN: CREATE ===================== */
+#s-create { background:var(--bg); }
+.page-header {
+  display:flex; align-items:center; gap:14px; padding:16px 20px;
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.back-btn {
+  width:36px; height:36px; background:var(--card); border-radius:10px;
+  display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;
+}
+.back-btn svg { stroke:white; fill:none; width:18px; height:18px; }
+.page-header-title { font-size:18px; font-weight:700; color:#fff; }
+.create-body { padding:20px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; flex:1; }
+.genre-label { font-size:13px; color:var(--gray); margin-bottom:10px; font-weight:600; }
+.genre-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.genre-chip {
+  padding:10px; background:var(--card); border:2px solid var(--border); border-radius:14px;
+  text-align:center; cursor:pointer; transition:all 0.2s;
+}
+.genre-chip.sel { background:rgba(139,92,246,0.2); border-color:var(--p500); }
+.genre-chip .g-emoji { font-size:24px; display:block; margin-bottom:4px; }
+.genre-chip .g-name { font-size:11px; color:var(--gray); font-weight:600; }
+.genre-chip.sel .g-name { color:var(--p400); }
+.create-input-area {
+  background:var(--card); border:1px solid var(--border); border-radius:18px; padding:16px;
+}
+.create-input-title { font-size:13px; color:var(--p400); font-weight:600; margin-bottom:10px; }
+.create-textarea {
+  width:100%; height:120px; background:none; border:none; color:#fff; font-size:14px;
+  font-family:inherit; resize:none; outline:none; line-height:1.6;
+}
+.create-textarea::placeholder { color:var(--gray2); }
+.create-hint { display:flex; flex-direction:column; gap:8px; }
+.hint-label { font-size:13px; color:var(--gray); font-weight:600; }
+.hint-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.hint-chip {
+  padding:7px 12px; background:rgba(236,72,153,0.1); border:1px solid rgba(236,72,153,0.3);
+  border-radius:20px; color:var(--pink2); font-size:12px; cursor:pointer; transition:all 0.2s;
+}
+.hint-chip:hover { background:rgba(236,72,153,0.2); }
+.char-count { text-align:right; font-size:11px; color:var(--gray2); margin-top:8px; }
+.age-select { display:flex; gap:8px; }
+.age-btn {
+  flex:1; padding:10px; background:var(--card); border:1px solid var(--border); border-radius:12px;
+  color:var(--gray); font-size:12px; font-weight:600; text-align:center; cursor:pointer; font-family:inherit; transition:all 0.2s;
+}
+.age-btn.sel { background:rgba(139,92,246,0.2); border-color:var(--p500); color:var(--p400); }
+.start-btn {
+  padding:15px; background:linear-gradient(135deg,var(--p600),var(--pink));
+  border:none; border-radius:16px; color:#fff; font-size:15px; font-weight:700;
+  cursor:pointer; font-family:inherit; display:flex; align-items:center; justify-content:center; gap:8px;
+  box-shadow:0 6px 25px rgba(124,58,237,0.45); margin:0 20px 30px;
+  transition:all 0.2s;
+}
+.start-btn:active { transform:scale(0.98); }
+
+/* ===================== SCREEN: STORY ===================== */
+#s-story { background:var(--bg); }
+.story-hero { position:relative; height:240px; flex-shrink:0; overflow:hidden; }
+.story-hero-bg { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:110px; }
+.story-hero-overlay {
+  position:absolute; bottom:0; left:0; right:0; height:80%;
+  background:linear-gradient(transparent,var(--bg));
+}
+.story-hero-top {
+  position:absolute; top:0; left:0; right:0; height:60%;
+  background:linear-gradient(var(--bg2),transparent);
+  display:flex; align-items:flex-start; justify-content:space-between; padding:10px 16px;
+}
+.story-back { width:34px; height:34px; background:rgba(0,0,0,0.4); backdrop-filter:blur(8px); border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.story-back svg { stroke:white; fill:none; width:18px; height:18px; }
+.story-bookmark { width:34px; height:34px; background:rgba(0,0,0,0.4); backdrop-filter:blur(8px); border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.story-bookmark svg { stroke:white; fill:none; width:16px; height:16px; }
+.story-meta { position:absolute; bottom:14px; left:16px; right:60px; }
+.story-read-time { font-size:11px; color:rgba(255,255,255,0.7); margin-bottom:3px; }
+.story-name { font-size:22px; font-weight:800; color:#fff; }
+/* TTS bar */
+.tts-bar {
+  margin:16px 20px 0; background:var(--card); border-radius:16px;
+  padding:12px 16px; border:1px solid var(--border);
+  display:flex; align-items:center; gap:12px; flex-shrink:0;
+}
+.tts-play {
+  width:38px; height:38px; background:linear-gradient(135deg,var(--p600),var(--p700));
+  border-radius:12px; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;
+}
+.tts-play svg { fill:white; width:16px; height:16px; }
+.tts-waveform { flex:1; display:flex; align-items:center; gap:2px; height:24px; }
+.tts-bar-item { width:3px; border-radius:2px; background:var(--p500); opacity:0.4; transition:all 0.3s; }
+.tts-bar-item.active { opacity:1; }
+.tts-speed { font-size:11px; color:var(--p400); font-weight:600; background:rgba(139,92,246,0.15); padding:4px 8px; border-radius:8px; cursor:pointer; }
+/* Story text */
+.story-text-area { padding:20px; flex:1; }
+.story-progress-bar { height:3px; background:var(--card); border-radius:2px; margin-bottom:16px; overflow:hidden; }
+.story-progress-fill { height:100%; background:linear-gradient(90deg,var(--p600),var(--pink)); border-radius:2px; width:35%; }
+.story-text { font-size:15px; color:rgba(255,255,255,0.87); line-height:1.85; }
+.vocab-word {
+  color:var(--p300); text-decoration:underline; text-decoration-style:dotted;
+  cursor:pointer; transition:all 0.2s; position:relative;
+}
+.vocab-word:hover { color:var(--pink2); }
+.vocab-tag { font-size:12px; color:var(--pink2); }
+/* Choices */
+.choices-section { padding:16px 20px 24px; flex-shrink:0; }
+.choices-label {
+  font-size:12px; color:var(--gray); font-weight:600; letter-spacing:1px;
+  text-transform:uppercase; margin-bottom:12px; text-align:center;
+}
+.choice-btn {
+  width:100%; padding:14px 16px; background:var(--card2); border:1px solid var(--border);
+  border-radius:14px; color:#fff; font-size:14px; font-family:inherit; text-align:left;
+  cursor:pointer; margin-bottom:10px; transition:all 0.25s; display:flex; align-items:center; gap:10px;
+}
+.choice-btn:hover { background:rgba(139,92,246,0.18); border-color:var(--p500); transform:translateX(3px); }
+.choice-icon { width:28px; height:28px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:14px; }
+
+/* ===================== SCREEN: VOCAB ===================== */
+#s-vocab { background:var(--bg); }
+.vocab-header { padding:16px 20px 12px; }
+.vocab-title { font-size:22px; font-weight:800; color:#fff; margin-bottom:4px; }
+.vocab-count { font-size:13px; color:var(--gray); }
+.vocab-search { margin:0 20px 16px; display:flex; align-items:center; gap:10px; background:var(--card); border-radius:14px; padding:11px 14px; border:1px solid var(--border); }
+.vocab-search svg { stroke:var(--gray2); fill:none; width:16px; height:16px; flex-shrink:0; }
+.vocab-search input { flex:1; background:none; border:none; color:#fff; font-size:14px; font-family:inherit; outline:none; }
+.vocab-search input::placeholder { color:var(--gray2); }
+.vocab-list { padding:0 20px; display:flex; flex-direction:column; gap:10px; }
+.vocab-item {
+  background:var(--card); border-radius:16px; padding:14px 16px;
+  border:1px solid var(--border); display:flex; align-items:flex-start; gap:12px;
+}
+.vocab-num { min-width:28px; height:28px; background:rgba(139,92,246,0.2); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--p400); font-weight:700; }
+.vocab-content { flex:1; }
+.vocab-easy { font-size:15px; font-weight:700; color:#fff; }
+.vocab-arrow { color:var(--gray2); margin:0 4px; }
+.vocab-hard { font-size:15px; color:var(--p400); font-weight:700; }
+.vocab-def { font-size:12px; color:var(--gray); margin-top:4px; line-height:1.5; }
+.vocab-story { font-size:11px; color:var(--gray2); margin-top:4px; }
+.vocab-story span { color:var(--pink2); }
+.vocab-del { color:var(--gray2); cursor:pointer; font-size:18px; padding:2px 4px; }
+.vocab-empty { text-align:center; padding:40px 20px; color:var(--gray); }
+.vocab-stats {
+  margin:16px 20px; background:linear-gradient(135deg,rgba(139,92,246,0.15),rgba(236,72,153,0.1));
+  border-radius:16px; padding:16px; border:1px solid var(--border);
+  display:flex; justify-content:space-around;
+}
+.vstat { text-align:center; }
+.vstat-num { font-size:24px; font-weight:800; color:var(--p400); }
+.vstat-label { font-size:11px; color:var(--gray); margin-top:2px; }
+
+/* ===================== SCREEN: COMMUNITY ===================== */
+#s-community { background:var(--bg); }
+.comm-header { padding:16px 20px; display:flex; align-items:center; justify-content:space-between; }
+.comm-title { font-size:22px; font-weight:800; color:#fff; }
+.comm-post-btn { padding:8px 14px; background:linear-gradient(135deg,var(--p600),var(--pink)); border:none; border-radius:10px; color:#fff; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+.comm-tabs { display:flex; gap:0; margin:0 20px 16px; background:var(--card); border-radius:12px; padding:4px; border:1px solid var(--border); }
+.comm-tab { flex:1; padding:8px; text-align:center; font-size:12px; color:var(--gray); cursor:pointer; border-radius:9px; transition:all 0.2s; font-weight:600; }
+.comm-tab.active { background:var(--p600); color:#fff; }
+.comm-feed { padding:0 20px; display:flex; flex-direction:column; gap:14px; }
+.comm-card {
+  background:var(--card); border-radius:18px; border:1px solid var(--border); overflow:hidden;
+  cursor:pointer; transition:all 0.2s;
+}
+.comm-card:hover { border-color:var(--p500); }
+.comm-card-top { display:flex; align-items:center; gap:10px; padding:14px 14px 10px; }
+.comm-avatar {
+  width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:16px; flex-shrink:0;
+}
+.comm-user { flex:1; }
+.comm-username { font-size:13px; font-weight:700; color:#fff; }
+.comm-time { font-size:11px; color:var(--gray2); }
+.comm-badge { padding:3px 8px; border-radius:6px; font-size:10px; font-weight:700; }
+.comm-story-img { width:100%; height:140px; display:flex; align-items:center; justify-content:center; font-size:70px; }
+.comm-story-info { padding:12px 14px; }
+.comm-story-title { font-size:15px; font-weight:700; color:#fff; margin-bottom:4px; }
+.comm-story-preview { font-size:12px; color:var(--gray); line-height:1.5; }
+.comm-actions { display:flex; align-items:center; gap:16px; padding:10px 14px 14px; border-top:1px solid var(--border); }
+.comm-action { display:flex; align-items:center; gap:5px; color:var(--gray); font-size:12px; cursor:pointer; transition:all 0.2s; }
+.comm-action:hover { color:var(--p400); }
+.comm-action svg { stroke:currentColor; fill:none; width:16px; height:16px; }
+.comm-action.liked { color:var(--pink); }
+.comm-action.liked svg { fill:var(--pink); stroke:var(--pink); }
+
+/* ===================== SCREEN: PSYCHOLOGY ===================== */
+#s-psych { background:var(--bg); }
+.psych-header { padding:16px 20px; display:flex; align-items:center; justify-content:space-between; }
+.psych-title { font-size:22px; font-weight:800; color:#fff; }
+.psych-sub { font-size:13px; color:var(--gray); margin-top:2px; }
+.psych-card {
+  margin:0 20px 16px; background:linear-gradient(135deg,rgba(139,92,246,0.12),rgba(236,72,153,0.08));
+  border-radius:18px; padding:18px; border:1px solid rgba(139,92,246,0.25);
+}
+.psych-card-title { font-size:13px; color:var(--p400); font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-bottom:14px; }
+.psych-bar-item { margin-bottom:14px; }
+.psych-bar-label { display:flex; justify-content:space-between; margin-bottom:6px; }
+.psych-trait { font-size:13px; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; }
+.psych-pct { font-size:12px; color:var(--p400); font-weight:700; }
+.psych-track { height:8px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden; }
+.psych-fill { height:100%; border-radius:4px; }
+/* Radar chart */
+.radar-wrap {
+  margin:0 20px 16px; background:var(--card); border-radius:18px;
+  padding:20px; border:1px solid var(--border); display:flex; align-items:center; gap:20px;
+}
+.radar-svg { flex-shrink:0; }
+.radar-legend { display:flex; flex-direction:column; gap:8px; }
+.radar-item { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--gray); }
+.radar-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+/* Choice history */
+.choice-history { margin:0 20px 16px; }
+.ch-title { font-size:15px; font-weight:700; color:#fff; margin-bottom:12px; }
+.ch-item { display:flex; gap:12px; margin-bottom:12px; }
+.ch-icon { font-size:20px; flex-shrink:0; }
+.ch-content { flex:1; }
+.ch-story { font-size:12px; color:var(--gray2); }
+.ch-choice { font-size:13px; color:#fff; font-weight:600; margin-top:2px; }
+.ch-tag { display:inline-block; padding:2px 8px; border-radius:6px; font-size:10px; font-weight:700; margin-top:4px; }
+/* Summary banner */
+.psych-summary {
+  margin:0 20px 30px; background:linear-gradient(135deg,var(--p700),rgba(236,72,153,0.4));
+  border-radius:18px; padding:18px; display:flex; gap:14px; align-items:center;
+}
+.ps-emoji { font-size:40px; }
+.ps-text .ps-type { font-size:16px; font-weight:800; color:#fff; }
+.ps-text .ps-desc { font-size:12px; color:rgba(255,255,255,0.75); line-height:1.5; margin-top:4px; }
+
+/* ===================== SCREEN: PROFILE ===================== */
+#s-profile { background:var(--bg); }
+.profile-hero {
+  background:linear-gradient(160deg,#1a0940,#0d0826); padding:30px 20px 24px;
+  display:flex; flex-direction:column; align-items:center; flex-shrink:0;
+}
+.profile-avatar {
+  width:80px; height:80px; border-radius:24px; display:flex; align-items:center; justify-content:center;
+  font-size:40px; background:linear-gradient(135deg,var(--p600),var(--pink));
+  box-shadow:0 6px 25px rgba(139,92,246,0.5); margin-bottom:12px;
+}
+.profile-name { font-size:20px; font-weight:800; color:#fff; margin-bottom:4px; }
+.profile-email { font-size:12px; color:var(--gray); margin-bottom:16px; }
+.profile-stats { display:flex; gap:30px; }
+.pstat { text-align:center; }
+.pstat-num { font-size:22px; font-weight:800; color:var(--p400); }
+.pstat-label { font-size:11px; color:var(--gray); margin-top:2px; }
+.profile-body { padding:20px; flex:1; overflow-y:auto; }
+.profile-section-title { font-size:15px; font-weight:700; color:#fff; margin-bottom:12px; }
+.profile-stories { display:flex; gap:12px; overflow-x:auto; scrollbar-width:none; margin-bottom:24px; }
+.profile-stories::-webkit-scrollbar { display:none; }
+.my-story-card {
+  min-width:130px; background:var(--card); border-radius:16px; overflow:hidden;
+  border:1px solid var(--border); flex-shrink:0; cursor:pointer;
+}
+.my-story-img { height:90px; display:flex; align-items:center; justify-content:center; font-size:42px; }
+.my-story-name { padding:8px 10px; font-size:12px; font-weight:700; color:#fff; }
+.my-story-date { padding:0 10px 10px; font-size:10px; color:var(--gray2); }
+.profile-menu { display:flex; flex-direction:column; gap:2px; margin-bottom:30px; }
+.menu-item {
+  display:flex; align-items:center; gap:12px; padding:14px 16px;
+  background:var(--card); border-radius:14px; border:1px solid var(--border);
+  margin-bottom:8px; cursor:pointer; transition:all 0.2s;
+}
+.menu-item:hover { border-color:var(--p500); }
+.menu-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:18px; }
+.menu-text { flex:1; font-size:14px; color:#fff; font-weight:600; }
+.menu-arrow { color:var(--gray2); }
+.menu-arrow svg { stroke:currentColor; fill:none; width:16px; height:16px; }
+.logout-btn {
+  width:100%; padding:14px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25);
+  border-radius:14px; color:#EF4444; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+
+/* Vocab modal */
+.modal-overlay {
+  position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7);
+  backdrop-filter:blur(6px); z-index:1000; display:none; align-items:flex-end; justify-content:center;
+}
+.modal-overlay.open { display:flex; }
+.vocab-modal {
+  background:var(--card2); border-radius:28px 28px 0 0; padding:28px 24px 40px;
+  width:100%; max-width:390px; border-top:1px solid var(--border); animation:slideUp 0.3s ease;
+}
+@keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+.modal-handle { width:36px; height:4px; background:var(--gray2); border-radius:2px; margin:0 auto 20px; }
+.modal-easy { font-size:26px; font-weight:800; color:#fff; margin-bottom:6px; }
+.modal-arrow { color:var(--p400); margin:0 8px; font-size:18px; }
+.modal-hard { font-size:26px; font-weight:800; color:var(--p400); }
+.modal-def { font-size:14px; color:var(--gray); line-height:1.6; margin:12px 0 20px; }
+.modal-example { background:rgba(139,92,246,0.1); border-radius:12px; padding:12px; border-left:3px solid var(--p500); font-size:13px; color:rgba(255,255,255,0.8); line-height:1.6; margin-bottom:20px; }
+.modal-save-btn { width:100%; padding:14px; background:linear-gradient(135deg,var(--p600),var(--pink)); border:none; border-radius:14px; color:#fff; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; display:flex; align-items:center; justify-content:center; gap:8px; }
+.modal-saved { background:linear-gradient(135deg,#059669,#0d9488)!important; }
+
+/* Toast */
+.toast {
+  position:fixed; bottom:120px; left:50%; transform:translateX(-50%) translateY(30px);
+  background:var(--p600); color:#fff; padding:10px 20px; border-radius:20px; font-size:13px; font-weight:600;
+  z-index:2000; opacity:0; transition:all 0.3s; pointer-events:none; white-space:nowrap;
+}
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<p class="page-title">✨ 동화 AI — 모바일 앱 디자인 ✨</p>
+<div class="demo-nav">
+  <button onclick="showScreen('login')">🔐 로그인</button>
+  <button class="active" onclick="showScreen('home')">🏠 홈</button>
+  <button onclick="showScreen('create')">✏️ 만들기</button>
+  <button onclick="showScreen('story')">📖 스토리</button>
+  <button onclick="showScreen('vocab')">📚 단어장</button>
+  <button onclick="showScreen('community')">💬 커뮤니티</button>
+  <button onclick="showScreen('psych')">🧠 심리분석</button>
+  <button onclick="showScreen('profile')">👤 프로필</button>
+</div>
+
+<div class="phone-wrap">
+<div class="phone-outer">
+<div class="phone-inner">
+  <div class="notch"><div class="notch-dot"></div></div>
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <span class="status-time">9:41</span>
+    <div class="status-icons">
+      <svg width="17" height="12" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0" width="3" height="12" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 2.5C10.5 2.5 12.7 3.5 14.2 5.2L15.5 3.9C13.6 1.8 11 .5 8 .5S2.4 1.8.5 3.9L1.8 5.2C3.3 3.5 5.5 2.5 8 2.5z"/><path d="M8 5.5C9.7 5.5 11.2 6.2 12.3 7.3L13.6 6C12.1 4.5 10.2 3.5 8 3.5S3.9 4.5 2.4 6L3.7 7.3C4.8 6.2 6.3 5.5 8 5.5z"/><circle cx="8" cy="10" r="1.5"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0" y="1" width="22" height="10" rx="3" stroke="white" stroke-width="1.2" fill="none"/><rect x="1.5" y="2.5" width="17" height="7" rx="2" fill="white"/><path d="M23 4.5v3a1.5 1.5 0 000-3z" fill="white"/></svg>
+    </div>
+  </div>
+
+  <!-- ===== LOGIN SCREEN ===== -->
+  <div class="screen" id="s-login">
+    <div style="flex:1;background:linear-gradient(175deg,#1a0940 0%,#0a0520 50%,#06041A 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;position:relative;overflow:hidden;">
+      <div class="login-stars" id="loginStars"></div>
+      <div class="login-logo">🌟</div>
+      <div class="login-title">동화 AI</div>
+      <div class="login-sub">아이들을 위한 마법 같은 동화 세계</div>
+      <div class="login-form">
+        <div class="input-wrap"><span class="input-icon">✉️</span><input class="inp" placeholder="이메일을 입력하세요" type="email"></div>
+        <div class="input-wrap"><span class="input-icon">🔒</span><input class="inp" placeholder="비밀번호를 입력하세요" type="password"></div>
+        <button class="login-btn" onclick="showScreen('home')">✨ 로그인</button>
+        <div class="login-divider"><span>또는</span></div>
+        <div class="social-btns">
+          <button class="social-btn"> Apple</button>
+          <button class="social-btn"> Google</button>
+        </div>
+        <div class="login-signup">계정이 없으신가요? <span>회원가입</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== HOME SCREEN ===== -->
+  <div class="screen active" id="s-home">
+    <div class="home-header">
+      <div><div style="font-size:12px;color:var(--gray);margin-bottom:2px;">안녕하세요, 민준이 👋</div><div class="home-title">동화 <span>AI</span></div></div>
+      <div class="notif-btn"><svg width="20" height="20" viewBox="0 0 24 24" stroke="white" fill="none" stroke-width="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg><div class="notif-dot"></div></div>
+    </div>
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input placeholder="동화 제목이나 주제를 검색하세요">
+    </div>
+    <div class="tags-row">
+      <div class="tag active">전체</div><div class="tag">판타지</div><div class="tag">모험</div>
+      <div class="tag">우정</div><div class="tag">마법</div><div class="tag">동물</div>
+    </div>
+    <div class="section-label">✨ 오늘의 추천</div>
+    <div class="carousel" id="carousel">
+      <div class="feat-card" onclick="showScreen('story')">
+        <div class="feat-bg" style="background:linear-gradient(135deg,#1a3a1a,#0d2d0d)"><div class="feat-emoji">🐰</div></div>
+        <div class="feat-overlay">
+          <div class="feat-time">⏱ 읽기 5분</div>
+          <div class="feat-name">토끼의 모험</div>
+        </div>
+        <div class="feat-bookmark"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></div>
+      </div>
+      <div class="feat-card" onclick="showScreen('story')">
+        <div class="feat-bg" style="background:linear-gradient(135deg,#2d1060,#1a0840)"><div class="feat-emoji">🧚</div></div>
+        <div class="feat-overlay">
+          <div class="feat-time">⏱ 읽기 4분</div>
+          <div class="feat-name">작은 요정</div>
+        </div>
+        <div class="feat-bookmark"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></div>
+      </div>
+      <div class="feat-card" onclick="showScreen('story')">
+        <div class="feat-bg" style="background:linear-gradient(135deg,#0d2040,#060d28)"><div class="feat-emoji">🐱</div></div>
+        <div class="feat-overlay">
+          <div class="feat-time">⏱ 읽기 6분</div>
+          <div class="feat-name">파란 고양이</div>
+        </div>
+        <div class="feat-bookmark"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></div>
+      </div>
+    </div>
+    <div class="dots"><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+    <div class="recommend-header">
+      <div class="rec-title">추천 동화</div>
+      <div class="rec-more">전체보기 →</div>
+    </div>
+    <div class="rec-row">
+      <div class="rec-card" onclick="showScreen('story')">
+        <div class="rec-img" style="background:linear-gradient(135deg,#1a2540,#0d1830)">🐉</div>
+        <div class="rec-info"><div class="rec-name">용의 왕국</div><div class="rec-time">⏱ 8분</div></div>
+      </div>
+      <div class="rec-card" onclick="showScreen('story')">
+        <div class="rec-img" style="background:linear-gradient(135deg,#0d2030,#061520)">🧜</div>
+        <div class="rec-info"><div class="rec-name">인어공주</div><div class="rec-time">⏱ 5분</div></div>
+      </div>
+      <div class="rec-card" onclick="showScreen('story')">
+        <div class="rec-img" style="background:linear-gradient(135deg,#2a1040,#180830)">🦄</div>
+        <div class="rec-info"><div class="rec-name">유니콘 숲</div><div class="rec-time">⏱ 7분</div></div>
+      </div>
+      <div class="rec-card" onclick="showScreen('story')">
+        <div class="rec-img" style="background:linear-gradient(135deg,#1a2810,#0d1808)">🦊</div>
+        <div class="rec-info"><div class="rec-name">여우 마법사</div><div class="rec-time">⏱ 6분</div></div>
+      </div>
+    </div>
+    <div style="height:10px"></div>
+    <!-- Bottom Nav -->
+    <div class="bot-nav">
+      <div class="nav-item active" onclick="showScreen('home')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><div class="nav-label">홈</div></div>
+      <div class="nav-item" onclick="showScreen('community')"><div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div class="nav-label">탐색</div></div>
+      <div class="nav-item create-btn" onclick="showScreen('create')"><div class="nav-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div><div class="nav-label">만들기</div></div>
+      <div class="nav-item" onclick="showScreen('vocab')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></div><div class="nav-label">단어장</div></div>
+      <div class="nav-item" onclick="showScreen('profile')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="nav-label">프로필</div></div>
+    </div>
+  </div>
+
+  <!-- ===== CREATE SCREEN ===== -->
+  <div class="screen" id="s-create">
+    <div class="page-header">
+      <div class="back-btn" onclick="showScreen('home')"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></div>
+      <div class="page-header-title">새 동화 만들기 ✨</div>
+    </div>
+    <div class="create-body">
+      <div>
+        <div class="genre-label">📂 장르 선택</div>
+        <div class="genre-grid">
+          <div class="genre-chip sel" onclick="toggleGenre(this)"><span class="g-emoji">🧚</span><span class="g-name">판타지</span></div>
+          <div class="genre-chip" onclick="toggleGenre(this)"><span class="g-emoji">⚔️</span><span class="g-name">모험</span></div>
+          <div class="genre-chip" onclick="toggleGenre(this)"><span class="g-emoji">🤝</span><span class="g-name">우정</span></div>
+          <div class="genre-chip" onclick="toggleGenre(this)"><span class="g-emoji">🌿</span><span class="g-name">자연</span></div>
+          <div class="genre-chip" onclick="toggleGenre(this)"><span class="g-emoji">🐾</span><span class="g-name">동물</span></div>
+          <div class="genre-chip" onclick="toggleGenre(this)"><span class="g-emoji">🌙</span><span class="g-name">미스터리</span></div>
+        </div>
+      </div>
+      <div class="create-input-area">
+        <div class="create-input-title">💬 어떤 동화를 만들고 싶나요?</div>
+        <textarea class="create-textarea" id="storyInput" placeholder="예) 숲속에 사는 작은 요정이 마법의 씨앗을 찾아 떠나는 모험..." oninput="updateCount(this)"></textarea>
+        <div class="char-count"><span id="charCount">0</span>/200자</div>
+      </div>
+      <div class="create-hint">
+        <div class="hint-label">💡 힌트 (클릭하여 추가)</div>
+        <div class="hint-chips">
+          <div class="hint-chip" onclick="addHint('용감한 공주')">용감한 공주</div>
+          <div class="hint-chip" onclick="addHint('마법 숲')">마법 숲</div>
+          <div class="hint-chip" onclick="addHint('착한 용')">착한 용</div>
+          <div class="hint-chip" onclick="addHint('요술 지팡이')">요술 지팡이</div>
+          <div class="hint-chip" onclick="addHint('별빛 왕국')">별빛 왕국</div>
+          <div class="hint-chip" onclick="addHint('수수께끼')">수수께끼</div>
+        </div>
+      </div>
+      <div>
+        <div class="genre-label">👶 나이대 선택</div>
+        <div class="age-select">
+          <div class="age-btn" onclick="selAge(this)">4-6세</div>
+          <div class="age-btn sel" onclick="selAge(this)">7-9세</div>
+          <div class="age-btn" onclick="selAge(this)">10-12세</div>
+        </div>
+      </div>
+    </div>
+    <button class="start-btn" onclick="showScreen('story')">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      동화 시작하기
+    </button>
+  </div>
+
+  <!-- ===== STORY SCREEN ===== -->
+  <div class="screen" id="s-story">
+    <div class="story-hero">
+      <div class="story-hero-bg" style="background:linear-gradient(135deg,#1a0d40,#0d0520)">🧚‍♀️</div>
+      <div class="story-hero-overlay"></div>
+      <div class="story-hero-top">
+        <div class="story-back" onclick="showScreen('home')"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="story-bookmark"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></div>
+      </div>
+      <div class="story-meta">
+        <div class="story-read-time">⏱ 읽기 4분 · 판타지</div>
+        <div class="story-name">작은 요정 이야기</div>
+      </div>
+    </div>
+    <div class="tts-bar">
+      <div class="tts-play" onclick="toggleTTS(this)">
+        <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </div>
+      <div class="tts-waveform" id="ttsWave"></div>
+      <div class="tts-speed" onclick="cycleSpeed(this)">1.0x</div>
+    </div>
+    <div class="story-text-area">
+      <div class="story-progress-bar"><div class="story-progress-fill" id="progFill"></div></div>
+      <div class="story-text" id="storyTextEl">
+        옛날 옛적에, 마법의 숲속에 <span class="vocab-word" onclick="showVocab('작은','소小의')">작은</span> 요정 릴리가 살고 있었어요.
+        릴리는 반짝이는 날개를 가지고 있었고, 숲속의 모든 동물 친구들과 함께 <span class="vocab-word" onclick="showVocab('노닐다','유희하다')">노닐며</span> 살았답니다.
+        <br><br>
+        어느 날, 릴리는 연못 근처에서 커다란 소리를 들었어요. 날아가 보니 개구리 친구들이
+        <span class="vocab-word" onclick="showVocab('가시덤불','형극叢')">가시덤불</span>에
+        <span class="vocab-word" onclick="showVocab('갇혀 있는','포위된')">갇혀 있는</span> 거예요.
+        릴리는 친구들을 도와야 한다고 생각했어요.
+        <br><br>
+        "걱정 마, 내가 <span class="vocab-word" onclick="showVocab('도와줄게','구원해줄게')">도와줄게</span>!" 릴리가 <span class="vocab-word" onclick="showVocab('용감하게','씩씩하게')">용감하게</span> 외쳤어요.
+        하지만 가시덤불은 너무 <span class="vocab-word" onclick="showVocab('빽빽해서','조밀하여')">빽빽해서</span> 혼자서는 뚫기가 어려웠어요.
+      </div>
+    </div>
+    <div class="choices-section">
+      <div class="choices-label">🎭 다음 이야기를 선택하세요</div>
+      <button class="choice-btn" onclick="makeChoice(this, 1)">
+        <div class="choice-icon" style="background:rgba(139,92,246,0.2)">🌸</div>
+        마법 지팡이로 가시덤불을 없앤다
+      </button>
+      <button class="choice-btn" onclick="makeChoice(this, 2)">
+        <div class="choice-icon" style="background:rgba(236,72,153,0.2)">🦋</div>
+        나비 친구들에게 도움을 요청한다
+      </button>
+      <button class="choice-btn" onclick="makeChoice(this, 3)">
+        <div class="choice-icon" style="background:rgba(20,184,166,0.2)">💧</div>
+        물을 뿌려 가시덤불을 부드럽게 만든다
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== VOCAB SCREEN ===== -->
+  <div class="screen" id="s-vocab">
+    <div class="vocab-header">
+      <div class="vocab-title">📚 내 단어장</div>
+      <div class="vocab-count">총 12개 단어 저장됨</div>
+    </div>
+    <div class="vocab-stats">
+      <div class="vstat"><div class="vstat-num">12</div><div class="vstat-label">저장된 단어</div></div>
+      <div class="vstat"><div class="vstat-num">8</div><div class="vstat-label">오늘 복습</div></div>
+      <div class="vstat"><div class="vstat-num">95%</div><div class="vstat-label">암기율</div></div>
+    </div>
+    <div class="vocab-search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input placeholder="단어 검색...">
+    </div>
+    <div class="vocab-list">
+      <div class="vocab-item">
+        <div class="vocab-num">1</div>
+        <div class="vocab-content">
+          <div><span class="vocab-easy">노닐다</span><span class="vocab-arrow">→</span><span class="vocab-hard">유희(遊戲)하다</span></div>
+          <div class="vocab-def">즐겁게 놀면서 돌아다니다. 마음껏 즐기며 놀다.</div>
+          <div class="vocab-story">📖 <span>작은 요정 이야기</span>에서 저장됨</div>
+        </div>
+        <div class="vocab-del">×</div>
+      </div>
+      <div class="vocab-item">
+        <div class="vocab-num">2</div>
+        <div class="vocab-content">
+          <div><span class="vocab-easy">가시덤불</span><span class="vocab-arrow">→</span><span class="vocab-hard">형극총(荊棘叢)</span></div>
+          <div class="vocab-def">가시가 많은 나무나 풀이 엉켜 자란 수풀. 어렵고 힘든 상황을 비유하기도 해요.</div>
+          <div class="vocab-story">📖 <span>작은 요정 이야기</span>에서 저장됨</div>
+        </div>
+        <div class="vocab-del">×</div>
+      </div>
+      <div class="vocab-item">
+        <div class="vocab-num">3</div>
+        <div class="vocab-content">
+          <div><span class="vocab-easy">용감하게</span><span class="vocab-arrow">→</span><span class="vocab-hard">씩씩하게</span></div>
+          <div class="vocab-def">겁내지 않고 씩씩하고 대담하게. 두려움 없이 행동하는 것.</div>
+          <div class="vocab-story">📖 <span>용의 왕국</span>에서 저장됨</div>
+        </div>
+        <div class="vocab-del">×</div>
+      </div>
+      <div class="vocab-item">
+        <div class="vocab-num">4</div>
+        <div class="vocab-content">
+          <div><span class="vocab-easy">빽빽하다</span><span class="vocab-arrow">→</span><span class="vocab-hard">조밀(稠密)하다</span></div>
+          <div class="vocab-def">사이가 촘촘하게 많이 들어차 있다. 빈 곳이 없이 가득 찬 상태.</div>
+          <div class="vocab-story">📖 <span>작은 요정 이야기</span>에서 저장됨</div>
+        </div>
+        <div class="vocab-del">×</div>
+      </div>
+      <div class="vocab-item">
+        <div class="vocab-num">5</div>
+        <div class="vocab-content">
+          <div><span class="vocab-easy">물에 빠지다</span><span class="vocab-arrow">→</span><span class="vocab-hard">입수(入水)하다</span></div>
+          <div class="vocab-def">물속으로 들어가거나 빠지다. 의도치 않게 물에 빠지는 것을 뜻하기도 해요.</div>
+          <div class="vocab-story">📖 <span>인어공주</span>에서 저장됨</div>
+        </div>
+        <div class="vocab-del">×</div>
+      </div>
+    </div>
+    <div style="height:20px"></div>
+    <div class="bot-nav">
+      <div class="nav-item" onclick="showScreen('home')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><div class="nav-label">홈</div></div>
+      <div class="nav-item" onclick="showScreen('community')"><div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div class="nav-label">탐색</div></div>
+      <div class="nav-item create-btn" onclick="showScreen('create')"><div class="nav-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div><div class="nav-label">만들기</div></div>
+      <div class="nav-item active"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></div><div class="nav-label">단어장</div></div>
+      <div class="nav-item" onclick="showScreen('profile')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="nav-label">프로필</div></div>
+    </div>
+  </div>
+
+  <!-- ===== COMMUNITY SCREEN ===== -->
+  <div class="screen" id="s-community">
+    <div class="comm-header">
+      <div><div class="comm-title">커뮤니티</div><div style="font-size:12px;color:var(--gray);margin-top:2px;">친구들의 동화를 읽어보세요</div></div>
+      <button class="comm-post-btn">✏️ 공유하기</button>
+    </div>
+    <div class="comm-tabs">
+      <div class="comm-tab active" onclick="switchTab(this)">최신</div>
+      <div class="comm-tab" onclick="switchTab(this)">인기</div>
+      <div class="comm-tab" onclick="switchTab(this)">팔로잉</div>
+    </div>
+    <div class="comm-feed">
+      <div class="comm-card" onclick="showScreen('story')">
+        <div class="comm-card-top">
+          <div class="comm-avatar" style="background:linear-gradient(135deg,#7C3AED,#EC4899)">🌸</div>
+          <div class="comm-user"><div class="comm-username">별빛소녀_지아</div><div class="comm-time">2시간 전</div></div>
+          <div class="comm-badge" style="background:rgba(139,92,246,0.2);color:var(--p400)">판타지</div>
+        </div>
+        <div class="comm-story-img" style="background:linear-gradient(135deg,#1a0940,#0d0520)">🧚‍♀️</div>
+        <div class="comm-story-info">
+          <div class="comm-story-title">요정의 마법 정원 🌺</div>
+          <div class="comm-story-preview">작은 요정 소라가 황금 씨앗을 심어 마법의 정원을 만드는 이야기...</div>
+        </div>
+        <div class="comm-actions">
+          <div class="comm-action liked" onclick="toggleLike(event,this)"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span id="likes1">142</span></div>
+          <div class="comm-action"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>28</span></div>
+          <div class="comm-action"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>공유</span></div>
+          <div style="margin-left:auto;font-size:11px;color:var(--gray)">조회 1.2k</div>
+        </div>
+      </div>
+      <div class="comm-card">
+        <div class="comm-card-top">
+          <div class="comm-avatar" style="background:linear-gradient(135deg,#0d9488,#0891b2)">🦊</div>
+          <div class="comm-user"><div class="comm-username">용감한_도준</div><div class="comm-time">5시간 전</div></div>
+          <div class="comm-badge" style="background:rgba(14,165,233,0.2);color:#38bdf8">모험</div>
+        </div>
+        <div class="comm-story-img" style="background:linear-gradient(135deg,#1a2810,#0d1808)">🦊</div>
+        <div class="comm-story-info">
+          <div class="comm-story-title">여우 마법사의 비밀 🔮</div>
+          <div class="comm-story-preview">숲속에 사는 여우 마법사가 잃어버린 마법 책을 찾아 떠나는 모험...</div>
+        </div>
+        <div class="comm-actions">
+          <div class="comm-action" onclick="toggleLike(event,this)"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>87</span></div>
+          <div class="comm-action"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>15</span></div>
+          <div class="comm-action"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>공유</span></div>
+          <div style="margin-left:auto;font-size:11px;color:var(--gray)">조회 856</div>
+        </div>
+      </div>
+    </div>
+    <div style="height:20px"></div>
+    <div class="bot-nav">
+      <div class="nav-item" onclick="showScreen('home')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><div class="nav-label">홈</div></div>
+      <div class="nav-item active"><div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div class="nav-label">탐색</div></div>
+      <div class="nav-item create-btn" onclick="showScreen('create')"><div class="nav-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div><div class="nav-label">만들기</div></div>
+      <div class="nav-item" onclick="showScreen('vocab')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></div><div class="nav-label">단어장</div></div>
+      <div class="nav-item" onclick="showScreen('profile')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="nav-label">프로필</div></div>
+    </div>
+  </div>
+
+  <!-- ===== PSYCHOLOGY SCREEN ===== -->
+  <div class="screen" id="s-psych">
+    <div class="psych-header">
+      <div>
+        <div class="psych-title">🧠 심리 분석</div>
+        <div class="psych-sub">민준이의 선택 패턴 분석</div>
+      </div>
+      <div style="font-size:11px;color:var(--gray);text-align:right">최근 30일<br>선택 42회</div>
+    </div>
+    <div class="psych-summary">
+      <div class="ps-emoji">🦁</div>
+      <div class="ps-text">
+        <div class="ps-type">용감한 탐험가 유형</div>
+        <div class="ps-desc">새로운 것을 두려워하지 않고 도전을 즐기는 성격이에요. 친구들을 잘 도와주는 따뜻한 마음도 가지고 있어요!</div>
+      </div>
+    </div>
+    <div class="psych-card">
+      <div class="psych-card-title">📊 성격 특성</div>
+      <div class="psych-bar-item">
+        <div class="psych-bar-label"><span class="psych-trait">🌟 모험적</span><span class="psych-pct">88%</span></div>
+        <div class="psych-track"><div class="psych-fill" style="width:88%;background:linear-gradient(90deg,#7C3AED,#A78BFA)"></div></div>
+      </div>
+      <div class="psych-bar-item">
+        <div class="psych-bar-label"><span class="psych-trait">💝 친절함</span><span class="psych-pct">75%</span></div>
+        <div class="psych-track"><div class="psych-fill" style="width:75%;background:linear-gradient(90deg,#EC4899,#F472B6)"></div></div>
+      </div>
+      <div class="psych-bar-item">
+        <div class="psych-bar-label"><span class="psych-trait">🔥 용감함</span><span class="psych-pct">82%</span></div>
+        <div class="psych-track"><div class="psych-fill" style="width:82%;background:linear-gradient(90deg,#F59E0B,#FCD34D)"></div></div>
+      </div>
+      <div class="psych-bar-item">
+        <div class="psych-bar-label"><span class="psych-trait">🎨 창의적</span><span class="psych-pct">70%</span></div>
+        <div class="psych-track"><div class="psych-fill" style="width:70%;background:linear-gradient(90deg,#14B8A6,#34D399)"></div></div>
+      </div>
+      <div class="psych-bar-item">
+        <div class="psych-bar-label"><span class="psych-trait">🤝 협동심</span><span class="psych-pct">65%</span></div>
+        <div class="psych-track"><div class="psych-fill" style="width:65%;background:linear-gradient(90deg,#0EA5E9,#38BDF8)"></div></div>
+      </div>
+    </div>
+    <div class="radar-wrap">
+      <svg class="radar-svg" width="140" height="140" viewBox="0 0 140 140">
+        <polygon points="70,15 115,42 115,98 70,125 25,98 25,42" fill="none" stroke="rgba(139,92,246,0.2)" stroke-width="1"/>
+        <polygon points="70,35 99,52 99,88 70,105 41,88 41,52" fill="none" stroke="rgba(139,92,246,0.15)" stroke-width="1"/>
+        <polygon points="70,55 83,63 83,77 70,85 57,77 57,63" fill="none" stroke="rgba(139,92,246,0.1)" stroke-width="1"/>
+        <polygon points="70,18 112,57 100,106 47,106 28,57" fill="rgba(139,92,246,0.25)" stroke="#8B5CF6" stroke-width="1.5"/>
+        <circle cx="70" cy="18" r="3" fill="#A78BFA"/>
+        <circle cx="112" cy="57" r="3" fill="#A78BFA"/>
+        <circle cx="100" cy="106" r="3" fill="#A78BFA"/>
+        <circle cx="47" cy="106" r="3" fill="#A78BFA"/>
+        <circle cx="28" cy="57" r="3" fill="#A78BFA"/>
+        <text x="70" y="10" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="8">모험</text>
+        <text x="122" y="60" text-anchor="start" fill="rgba(255,255,255,0.6)" font-size="8">용기</text>
+        <text x="108" y="118" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="8">창의</text>
+        <text x="32" y="118" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="8">친절</text>
+        <text x="8" y="60" text-anchor="start" fill="rgba(255,255,255,0.6)" font-size="8">협동</text>
+      </svg>
+      <div class="radar-legend">
+        <div class="radar-item"><div class="radar-dot" style="background:#8B5CF6"></div>현재</div>
+        <div style="font-size:11px;color:var(--gray);margin-top:4px;line-height:1.6">모험과 용기 지수가<br>특히 높아요! 🌟<br><br>친구와의 협동 능력도<br>꾸준히 성장 중이에요.</div>
+      </div>
+    </div>
+    <div class="choice-history" style="padding:0 20px;">
+      <div class="ch-title">📝 최근 선택 기록</div>
+      <div class="ch-item">
+        <div class="ch-icon">🧚</div>
+        <div class="ch-content">
+          <div class="ch-story">작은 요정 이야기</div>
+          <div class="ch-choice">마법 지팡이로 친구를 구해준다</div>
+          <div class="ch-tag" style="background:rgba(139,92,246,0.2);color:var(--p400)">친절함 +5</div>
+        </div>
+      </div>
+      <div class="ch-item">
+        <div class="ch-icon">🐉</div>
+        <div class="ch-content">
+          <div class="ch-story">용의 왕국</div>
+          <div class="ch-choice">혼자서 용감하게 성에 들어간다</div>
+          <div class="ch-tag" style="background:rgba(251,191,36,0.2);color:#FCD34D">용감함 +8</div>
+        </div>
+      </div>
+      <div class="ch-item">
+        <div class="ch-icon">🦊</div>
+        <div class="ch-content">
+          <div class="ch-story">여우 마법사</div>
+          <div class="ch-choice">새로운 마법을 발명해서 해결한다</div>
+          <div class="ch-tag" style="background:rgba(20,184,166,0.2);color:#34D399">창의적 +6</div>
+        </div>
+      </div>
+    </div>
+    <div style="height:20px"></div>
+    <div class="bot-nav">
+      <div class="nav-item" onclick="showScreen('home')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><div class="nav-label">홈</div></div>
+      <div class="nav-item" onclick="showScreen('community')"><div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div class="nav-label">탐색</div></div>
+      <div class="nav-item create-btn" onclick="showScreen('create')"><div class="nav-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div><div class="nav-label">만들기</div></div>
+      <div class="nav-item" onclick="showScreen('vocab')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></div><div class="nav-label">단어장</div></div>
+      <div class="nav-item active" onclick="showScreen('psych')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="nav-label">프로필</div></div>
+    </div>
+  </div>
+
+  <!-- ===== PROFILE SCREEN ===== -->
+  <div class="screen" id="s-profile">
+    <div class="profile-hero">
+      <div class="profile-avatar">🧒</div>
+      <div class="profile-name">김민준</div>
+      <div class="profile-email">minjun@fairytale.ai</div>
+      <div class="profile-stats">
+        <div class="pstat"><div class="pstat-num">7</div><div class="pstat-label">만든 동화</div></div>
+        <div class="pstat"><div class="pstat-num">12</div><div class="pstat-label">저장 단어</div></div>
+        <div class="pstat"><div class="pstat-num">3</div><div class="pstat-label">공유됨</div></div>
+      </div>
+    </div>
+    <div class="profile-body">
+      <div class="profile-section-title">📖 내가 만든 동화</div>
+      <div class="profile-stories">
+        <div class="my-story-card">
+          <div class="my-story-img" style="background:linear-gradient(135deg,#1a0940,#0d0520)">🧚</div>
+          <div class="my-story-name">작은 요정 이야기</div>
+          <div class="my-story-date">2024.03.15</div>
+        </div>
+        <div class="my-story-card">
+          <div class="my-story-img" style="background:linear-gradient(135deg,#1a2540,#0d1830)">🐉</div>
+          <div class="my-story-name">용의 왕국</div>
+          <div class="my-story-date">2024.03.12</div>
+        </div>
+        <div class="my-story-card">
+          <div class="my-story-img" style="background:linear-gradient(135deg,#1a2810,#0d1808)">🦊</div>
+          <div class="my-story-name">여우 마법사</div>
+          <div class="my-story-date">2024.03.08</div>
+        </div>
+      </div>
+      <div class="profile-section-title">⚙️ 설정</div>
+      <div class="profile-menu">
+        <div class="menu-item"><div class="menu-icon" style="background:rgba(139,92,246,0.2)">👤</div><div class="menu-text">프로필 편집</div><div class="menu-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+        <div class="menu-item"><div class="menu-icon" style="background:rgba(236,72,153,0.2)">🔔</div><div class="menu-text">알림 설정</div><div class="menu-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+        <div class="menu-item"><div class="menu-icon" style="background:rgba(20,184,166,0.2)">🎨</div><div class="menu-text">테마 설정</div><div class="menu-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+        <div class="menu-item"><div class="menu-icon" style="background:rgba(251,191,36,0.2)">🧠</div><div class="menu-text">심리 분석 보기</div><div class="menu-arrow" onclick="showScreen('psych')"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+        <div class="menu-item"><div class="menu-icon" style="background:rgba(14,165,233,0.2)">❓</div><div class="menu-text">도움말</div><div class="menu-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+      </div>
+      <button class="logout-btn">🚪 로그아웃</button>
+    </div>
+    <div class="bot-nav">
+      <div class="nav-item" onclick="showScreen('home')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><div class="nav-label">홈</div></div>
+      <div class="nav-item" onclick="showScreen('community')"><div class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div class="nav-label">탐색</div></div>
+      <div class="nav-item create-btn" onclick="showScreen('create')"><div class="nav-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div><div class="nav-label">만들기</div></div>
+      <div class="nav-item" onclick="showScreen('vocab')"><div class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></div><div class="nav-label">단어장</div></div>
+      <div class="nav-item active"><div class="nav-icon"><svg viewBox="0 0 24 24" stroke="var(--p400)"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="nav-label" style="color:var(--p400)">프로필</div></div>
+    </div>
+  </div>
+
+</div><!-- phone-inner -->
+</div><!-- phone-outer -->
+</div><!-- phone-wrap -->
+
+<!-- Vocabulary Modal -->
+<div class="modal-overlay" id="vocabModal" onclick="closeModal(event)">
+  <div class="vocab-modal" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div><span class="modal-easy" id="mEasy">노닐다</span><span class="modal-arrow">→</span><span class="modal-hard" id="mHard">유희하다</span></div>
+    <div class="modal-def" id="mDef">즐겁게 놀면서 돌아다니다.</div>
+    <div class="modal-example" id="mEx">예문: "릴리는 숲속을 자유롭게 <strong>노닐며</strong>(유희하며) 하루를 보냈어요."</div>
+    <button class="modal-save-btn" id="modalSaveBtn" onclick="saveWord()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+      단어장에 저장하기
+    </button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// Screen navigation
+const screenMap = {
+  login:'s-login', home:'s-home', create:'s-create', story:'s-story',
+  vocab:'s-vocab', community:'s-community', psych:'s-psych', profile:'s-profile'
+};
+const navLabels = ['로그인','홈','만들기','스토리','단어장','커뮤니티','심리분석','프로필'];
+const navBtns = document.querySelectorAll('.demo-nav button');
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(screenMap[name]);
+  if(el) { el.classList.add('active'); el.scrollTop=0; }
+  navBtns.forEach((b,i)=>{ b.classList.toggle('active', b.textContent.trim().includes(navLabels[Object.keys(screenMap).indexOf(name)])||b.onclick?.toString().includes(name)); });
+  navBtns.forEach(b=>b.classList.remove('active'));
+  const idx = Object.keys(screenMap).indexOf(name);
+  if(navBtns[idx]) navBtns[idx].classList.add('active');
+}
+
+// Stars for login
+function createStars() {
+  const c = document.getElementById('loginStars'); if(!c) return;
+  for(let i=0;i<30;i++){
+    const s=document.createElement('div'); s.className='star';
+    const sz=Math.random()*3+1;
+    s.style.cssText=`width:${sz}px;height:${sz}px;left:${Math.random()*100}%;top:${Math.random()*100}%;animation-delay:${Math.random()*3}s;animation-duration:${2+Math.random()*3}s`;
+    c.appendChild(s);
+  }
+}
+createStars();
+
+// Genre select
+function toggleGenre(el) { el.classList.toggle('sel'); }
+function selAge(el) { document.querySelectorAll('.age-btn').forEach(b=>b.classList.remove('sel')); el.classList.add('sel'); }
+
+// Hint chips
+function addHint(text) {
+  const ta = document.getElementById('storyInput');
+  ta.value += (ta.value?', ':'')+text;
+  updateCount(ta);
+}
+function updateCount(el) { const c=document.getElementById('charCount'); if(c) c.textContent=el.value.length; }
+
+// TTS
+let ttsPlaying=false, ttsInterval=null;
+const speeds=['0.8x','1.0x','1.25x','1.5x','2.0x'];
+let speedIdx=1;
+function buildWave(){
+  const w=document.getElementById('ttsWave'); if(!w) return;
+  w.innerHTML='';
+  for(let i=0;i<28;i++){
+    const b=document.createElement('div'); b.className='tts-bar-item';
+    const h=Math.random()*16+4;
+    b.style.cssText=`height:${h}px;animation:wave${i%3} ${0.4+Math.random()*0.4}s infinite alternate`;
+    w.appendChild(b);
+  }
+}
+buildWave();
+function toggleTTS(btn){
+  ttsPlaying=!ttsPlaying;
+  btn.innerHTML=ttsPlaying?'<svg viewBox="0 0 24 24" fill="white" width="16" height="16"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>':'<svg viewBox="0 0 24 24" fill="white" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  const bars=document.querySelectorAll('.tts-bar-item');
+  if(ttsPlaying){
+    ttsInterval=setInterval(()=>{bars.forEach(b=>{b.style.height=(Math.random()*16+4)+'px';b.style.opacity=0.3+Math.random()*0.7;});},120);
+    animateProgress();
+  } else { clearInterval(ttsInterval); bars.forEach(b=>{b.style.opacity='0.4';}); }
+}
+function cycleSpeed(el){speedIdx=(speedIdx+1)%speeds.length;el.textContent=speeds[speedIdx];}
+function animateProgress(){
+  const fill=document.getElementById('progFill'); if(!fill) return;
+  let w=parseFloat(fill.style.width)||35;
+  const iv=setInterval(()=>{if(!ttsPlaying||w>=100){clearInterval(iv);return;}w+=0.15;fill.style.width=w+'%';},100);
+}
+
+// Choices
+const choiceTexts = [
+  ["마법 지팡이를 휘두르자 눈부신 빛이 쏟아지며 가시덤불이 사라졌어요!\n릴리는 개구리 친구들을 구할 수 있었어요. 🌸✨","마법 지팡이로 구출"],
+  ["릴리는 나비 친구들을 불렀어요. 수백 마리의 나비들이 함께 날개를 퍼덕이며 가시덤불을 서서히 밀어냈어요! 🦋💜","나비와 함께 구출"],
+  ["릴리가 마법의 물을 뿌리자 가시덤불이 부드러워졌어요. 개구리들이 무사히 빠져나올 수 있었어요! 💧🐸","물로 구출"]
+];
+function makeChoice(btn, idx){
+  const story=document.getElementById('storyTextEl');
+  const [text,label]=choiceTexts[idx-1];
+  story.innerHTML+=`<br><br><div style="background:rgba(139,92,246,0.1);border-radius:12px;padding:14px;border-left:3px solid var(--p500);margin-top:8px"><span style="color:var(--p400);font-weight:700">[${label}]</span><br><br>${text}</div>`;
+  document.querySelectorAll('.choice-btn').forEach(b=>{b.style.opacity='0.4';b.style.pointerEvents='none';});
+  btn.style.opacity='1'; btn.style.background='rgba(139,92,246,0.25)'; btn.style.borderColor='var(--p500)';
+  setTimeout(()=>{ showToast('🎭 다음 선택지가 생성되었어요!'); showNewChoices(); },800);
+}
+function showNewChoices(){
+  const section=document.querySelector('.choices-section');
+  const newChoices=[
+    ['🌙','마법의 열매를 찾아 개구리를 치료한다'],['🏰','요정 여왕에게 도움을 청하러 간다'],['🌊','연못가에서 새 친구를 사귄다']
+  ];
+  setTimeout(()=>{
+    document.querySelectorAll('.choice-btn').forEach(b=>b.remove());
+    newChoices.forEach(([icon,text],i)=>{
+      const btn=document.createElement('button');
+      const colors=['rgba(139,92,246,0.2)','rgba(236,72,153,0.2)','rgba(20,184,166,0.2)'];
+      btn.className='choice-btn'; btn.innerHTML=`<div class="choice-icon" style="background:${colors[i]}">${icon}</div>${text}`;
+      btn.onclick=function(){makeChoice(this,i+1);};
+      section.appendChild(btn);
+    });
+  },200);
+}
+
+// Vocabulary modal
+const vocabData = {
+  '작은': {easy:'작은',hard:'소(小)의',def:'크기가 크지 않은. 규모나 양이 많지 않은 상태.',ex:'릴리는 작은(소小의) 체구를 가진 요정이었어요.'},
+  '노닐다': {easy:'노닐다',hard:'유희(遊戲)하다',def:'즐겁게 놀면서 돌아다니다. 마음껏 즐기며 놀다.',ex:'"릴리는 숲속을 자유롭게 노닐며(유희하며) 하루를 보냈어요."'},
+  '가시덤불': {easy:'가시덤불',hard:'형극총(荊棘叢)',def:'가시가 많은 나무나 풀이 엉켜 자란 수풀.',ex:'"개구리들이 가시덤불(형극총) 속에 갇히고 말았어요."'},
+  '갇혀 있는': {easy:'갇혀 있는',hard:'포위(包圍)된',def:'빠져나오지 못하고 가두어진 상태.',ex:'"릴리는 포위된(갇혀 있는) 친구들을 구해야 했어요."'},
+  '도와줄게': {easy:'도와줄게',hard:'구원(救援)해줄게',def:'위험하거나 어려운 상황에서 도움을 주다.',ex:'"걱정 마, 내가 구원해줄게(도와줄게)!"'},
+  '용감하게': {easy:'용감하게',hard:'씩씩하게',def:'겁내지 않고 씩씩하고 대담하게.',ex:'"릴리가 용감하게(씩씩하게) 앞으로 나아갔어요."'},
+  '빽빽해서': {easy:'빽빽해서',hard:'조밀(稠密)하여',def:'사이가 촘촘하게 많이 들어차 있어서.',ex:'"가시덤불이 너무 빽빽해서(조밀하여) 들어갈 수 없었어요."'}
+};
+
+function showVocab(easy,hard){
+  const data=vocabData[easy]||{easy,hard,def:`${easy}의 더 어려운 표현이에요.`,ex:`"${easy}(${hard})를 사용한 예문이에요."`};
+  document.getElementById('mEasy').textContent=data.easy;
+  document.getElementById('mHard').textContent=data.hard;
+  document.getElementById('mDef').textContent=data.def;
+  document.getElementById('mEx').innerHTML=`예문: "${data.ex}"`;
+  const btn=document.getElementById('modalSaveBtn');
+  btn.classList.remove('modal-saved'); btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg> 단어장에 저장하기';
+  document.getElementById('vocabModal').classList.add('open');
+}
+function closeModal(e){
+  if(e.target===document.getElementById('vocabModal')) document.getElementById('vocabModal').classList.remove('open');
+}
+function saveWord(){
+  const btn=document.getElementById('modalSaveBtn');
+  btn.classList.add('modal-saved');
+  btn.innerHTML='✅ 저장되었어요!';
+  showToast('📚 단어장에 저장되었어요!');
+  setTimeout(()=>document.getElementById('vocabModal').classList.remove('open'),1200);
+}
+
+// Toast
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+
+// Community
+function toggleLike(e,el){ e.stopPropagation(); el.classList.toggle('liked'); const sp=el.querySelector('span'); if(sp){let n=parseInt(sp.textContent)||0;sp.textContent=el.classList.contains('liked')?n+1:n-1;} }
+function switchTab(el){ document.querySelectorAll('.comm-tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); }
+</script>
+</body>
+</html>

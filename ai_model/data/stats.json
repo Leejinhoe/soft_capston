@@ -1,0 +1,32 @@
+{
+  "total_samples": 199584,
+  "train_samples": 179625,
+  "val_samples": 19959,
+  "by_source": {
+    "sublabel": 6702,
+    "source": 3206,
+    "labeled": 189676
+  },
+  "by_type": {
+    "plot_summary": 90978,
+    "story_from_elements": 90976,
+    "story_continuation": 3837,
+    "choice_generation": 2234,
+    "story_prediction": 7290,
+    "story_generation": 2234,
+    "story_from_title": 1603,
+    "causal_story": 432
+  },
+  "by_age": {
+    "초등_고학년": 132889,
+    "초등_저학년": 43127,
+    "유아": 23568
+  },
+  "by_theme": {
+    "의사소통": 70203,
+    "자연탐구": 70357,
+    "사회관계": 26985,
+    "신체운동_건강": 16643,
+    "예술경험": 15396
+  }
+}
