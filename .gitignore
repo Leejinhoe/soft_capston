@@ -44,10 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# AI 모델 — 용량 초과 파일 (GitHub 100MB 제한)
 ai_model/data/train.jsonl
 ai_model/final_model-20260331T125007Z-1-001.zip
 ai_model/final_model/adapter_model.safetensors
+ai_model/final_model/tokenizer.json
 
+# 빌드 산출물
 fairytale_ai_ㅡmodel/train.jsonl
-ai_model/final_model-20260331T125007Z-1-001.zip
-ai_model/final_model/adapter_model.safetensors
