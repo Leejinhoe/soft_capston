@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../main.dart';
@@ -269,6 +270,11 @@ class _StoryScreenState extends State<StoryScreen> {
           const SizedBox(height: 12),
         ] else
           const SizedBox(height: 12),
+        // 이미지 (Dreamshaper 8 생성)
+        if (chapter.imageB64 != null) ...[
+          _buildStoryImage(chapter.imageB64!),
+          const SizedBox(height: 12),
+        ],
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(18),
@@ -289,6 +295,64 @@ class _StoryScreenState extends State<StoryScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildStoryImage(String imageB64) {
+    try {
+      final bytes = base64Decode(imageB64);
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          children: [
+            Image.memory(
+              bytes,
+              width: double.infinity,
+              height: 220,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+            ),
+            // 그라디언트 오버레이 (하단 페이드)
+            Positioned(
+              left: 0, right: 0, bottom: 0,
+              height: 60,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      AppColors.bg.withOpacity(0.85),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // AI 생성 배지
+            Positioned(
+              top: 8, right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  '🎨 AI 삽화',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
   }
 
   Widget _buildLoadingCard() {

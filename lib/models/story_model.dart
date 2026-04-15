@@ -16,8 +16,14 @@ class StoryChapter {
   final int chapter;
   final String text;
   final String? choiceMade;
+  final String? imageB64; // base64 PNG from Dreamshaper 8
 
-  StoryChapter({required this.chapter, required this.text, this.choiceMade});
+  StoryChapter({
+    required this.chapter,
+    required this.text,
+    this.choiceMade,
+    this.imageB64,
+  });
 }
 
 class StorySession {

@@ -49,7 +49,13 @@ class AppState extends ChangeNotifier {
         genre: genre,
         age: age,
         initialPrompt: prompt,
-        chapters: [StoryChapter(chapter: 1, text: data['story_text'] ?? '')],
+        chapters: [
+          StoryChapter(
+            chapter: 1,
+            text: data['story_text'] ?? '',
+            imageB64: data['image_b64'] as String?,
+          )
+        ],
         choices: List<String>.from(data['choices'] ?? []),
         vocab: vocab,
         allChoicesMade: [],
@@ -88,7 +94,12 @@ class AppState extends ChangeNotifier {
           .toList();
 
       currentStory!.chapters.add(
-        StoryChapter(chapter: newChapter, text: newText, choiceMade: choice),
+        StoryChapter(
+          chapter: newChapter,
+          text: newText,
+          choiceMade: choice,
+          imageB64: data['image_b64'] as String?,
+        ),
       );
       currentStory!.choices = List<String>.from(data['choices'] ?? []);
       currentStory!.vocab = [...currentStory!.vocab, ...vocab];

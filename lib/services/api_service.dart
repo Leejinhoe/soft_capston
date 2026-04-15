@@ -63,6 +63,30 @@ class ApiService {
     throw Exception('심리 분석 실패: ${response.statusCode}');
   }
 
+  static Future<String?> generateImage({
+    required String storyText,
+    required String genre,
+    required String age,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/story/image'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'story_text': storyText,
+          'genre': genre,
+          'age': age,
+        }),
+      ).timeout(const Duration(seconds: 120));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        return data['image_b64'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static Future<bool> checkHealth() async {
     try {
       final response = await http
