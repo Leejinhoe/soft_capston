@@ -73,7 +73,6 @@ class FairyTaleApp extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
           titleTextStyle: TextStyle(
-            color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
