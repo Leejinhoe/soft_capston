@@ -1,0 +1,643 @@
+import 'dart:convert';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+
+import '../models/admin_model.dart';
+import '../models/story_model.dart';
+
+class DbService {
+  static String get baseUrl {
+    final configured = dotenv.env['DB_API_BASE_URL']?.trim() ?? '';
+    if (configured.isNotEmpty) return configured;
+    return 'http://127.0.0.1:8000';
+  }
+
+  static Future<bool> checkHealth() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> findUserByAccount(
+    String accountId,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/users/by-account/$accountId'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<Map<String, dynamic>> registerUser({
+    required String accountId,
+    String? password,
+    required String nickname,
+    String? email,
+    String? phone,
+    String? address,
+    String provider = 'local',
+    String? providerId,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/users/register'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'account_id': accountId,
+            'password': password,
+            'nickname': nickname,
+            'email': email,
+            'phone': phone,
+            'address': address,
+            'provider': provider,
+            'provider_id': providerId,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(_extractDetailMessage(response.body) ??
+        '회원 저장 실패: ${response.statusCode}');
+  }
+
+  static Future<Map<String, dynamic>> loginUser({
+    required String accountId,
+    required String password,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/users/login'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'account_id': accountId,
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(_extractDetailMessage(response.body) ??
+        '로그인 실패: ${response.statusCode}');
+  }
+
+  static Future<AdminDashboard> fetchAdminDashboard({
+    required String accountId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/admin/dashboard').replace(
+        queryParameters: {'account_id': accountId},
+      ),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 20));
+
+    if (response.statusCode == 200) {
+      return AdminDashboard.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '관리자 데이터 조회 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<bool> deleteAdminUser({
+    required String adminAccountId,
+    required String userId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/admin/users/$userId').replace(
+        queryParameters: {'account_id': adminAccountId},
+      ),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 204) return true;
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '회원 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<bool> deleteAdminStory({
+    required String adminAccountId,
+    required String storyId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/admin/stories/$storyId').replace(
+        queryParameters: {'account_id': adminAccountId},
+      ),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 204) return true;
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '동화 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<bool> deleteAdminVocabulary({
+    required String adminAccountId,
+    required String vocabId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/admin/vocabularies/$vocabId').replace(
+        queryParameters: {'account_id': adminAccountId},
+      ),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 204) return true;
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '단어 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<bool> deleteAdminCommunityPost({
+    required String adminAccountId,
+    required String postId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/admin/community/posts/$postId').replace(
+        queryParameters: {'account_id': adminAccountId},
+      ),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 204) return true;
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '게시글 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<AdminCommunityPost> updateAdminPostVisibility({
+    required String adminAccountId,
+    required String postId,
+    required bool isHidden,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/api/admin/community/posts/$postId/visibility'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'account_id': adminAccountId,
+            'is_hidden': isHidden,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      return AdminCommunityPost.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '게시글 상태 변경 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Map<String, dynamic>> updateUserProfile({
+    required String accountId,
+    String? nickname,
+    String? email,
+    String? phone,
+    String? address,
+  }) async {
+    final response = await http
+        .put(
+          Uri.parse('$baseUrl/api/users/$accountId/profile'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'nickname': nickname?.trim(),
+            'email': email?.trim(),
+            'phone': phone?.trim(),
+            'address': address?.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '프로필 저장 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<bool> changePassword({
+    required String accountId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/api/users/$accountId/password'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'current_password': currentPassword,
+            'new_password': newPassword,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) return true;
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '비밀번호 변경 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<String?> createStorySession({
+    required String userId,
+    required String title,
+    required String genre,
+    required String age,
+    required String prompt,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/stories/create'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'user_id': userId,
+              'title': title,
+              'genre': genre,
+              'age': age,
+              'prompt': prompt,
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['story_id']?.toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<bool> pushScene({
+    required String storyId,
+    required int stepNumber,
+    required String storyText,
+    String? choiceMade,
+    String? imageUrl,
+    String? videoUrl,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/stories/$storyId/scenes'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'step_number': stepNumber,
+              'story_text': storyText,
+              'choice_made': choiceMade,
+              'image_url': imageUrl,
+              'video_url': videoUrl,
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<String?> addVocabulary({
+    required String userId,
+    required String storyId,
+    required VocabWord word,
+    String? sourceStoryTitle,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/vocabularies/add'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'user_id': userId,
+              'origin_story_id': storyId,
+              'hard': word.hard,
+              'easy': word.easy,
+              'definition': word.definition,
+              'source_story_title': sourceStoryTitle,
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['id']?.toString();
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  static Future<bool> deleteStory({
+    required String storyId,
+    String? userId,
+  }) async {
+    final response = await http
+        .delete(
+          Uri.parse('$baseUrl/api/stories/$storyId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'user_id': userId}),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      return true;
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '동화 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<StorySession> updateStoryTitle({
+    required String storyId,
+    required String title,
+    String? userId,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/api/stories/$storyId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'user_id': userId,
+            'title': title,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      return StorySession.fromDatabaseJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '동화 제목 수정 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<bool> deleteVocabulary({
+    required String vocabId,
+    String? userId,
+  }) async {
+    final response = await http
+        .delete(
+          Uri.parse('$baseUrl/api/vocabularies/$vocabId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'user_id': userId}),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      return true;
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '단어 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<List<StorySession>> fetchUserStories(String userId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/users/$userId/stories'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final stories = data['stories'] as List? ?? const [];
+      return stories
+          .map((e) => StorySession.fromDatabaseJson(e as Map<String, dynamic>))
+          .where((story) => story.chapters.isNotEmpty)
+          .toList();
+    }
+    throw Exception(_extractDetailMessage(response.body) ??
+        '동화 기록 불러오기 실패: ${response.statusCode}');
+  }
+
+  static Future<List<VocabWord>> fetchUserVocabularies(String userId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/users/$userId/vocabularies'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final vocabularies = data['vocabularies'] as List? ?? const [];
+      return vocabularies
+          .map((e) => VocabWord.fromJson(e as Map<String, dynamic>))
+          .where((word) => word.hard.trim().isNotEmpty)
+          .toList();
+    }
+    throw Exception(_extractDetailMessage(response.body) ??
+        '단어장 불러오기 실패: ${response.statusCode}');
+  }
+
+  static Future<List<CommunityPost>> fetchCommunityPosts({
+    String sort = 'latest',
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/community/posts?sort=$sort'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final posts = data['posts'] as List? ?? const [];
+      return posts
+          .map((e) => CommunityPost.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception('게시글 불러오기 실패: ${response.statusCode}');
+  }
+
+  static Future<CommunityPost> createCommunityPost({
+    required String authorName,
+    String? authorAccountId,
+    String? storyId,
+    required String genre,
+    required String title,
+    required String preview,
+    required String fullText,
+    required String storyEmoji,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/community/posts'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'author_name': authorName,
+            'author_account_id': authorAccountId,
+            'story_id': storyId,
+            'genre': genre,
+            'title': title,
+            'preview': preview,
+            'full_text': fullText,
+            'story_emoji': storyEmoji,
+            'created_at': DateTime.now().toUtc().toIso8601String(),
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return CommunityPost.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception('게시글 공유 실패: ${response.statusCode}');
+  }
+
+  static Future<CommunityPost> fetchCommunityPostDetail(String postId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/community/posts/$postId'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      return CommunityPost.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception('게시글 조회 실패: ${response.statusCode}');
+  }
+
+  static Future<CommunityPost> likeCommunityPost({
+    required String postId,
+    String? accountId,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/community/posts/$postId/like'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'account_id': accountId,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return CommunityPost.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception(_extractDetailMessage(response.body) ??
+        '좋아요 저장 실패: ${response.statusCode}');
+  }
+
+  static Future<bool> deleteCommunityPost({
+    required String postId,
+    String? accountId,
+  }) async {
+    final response = await http
+        .delete(
+          Uri.parse('$baseUrl/api/community/posts/$postId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'account_id': accountId}),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      return true;
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '게시글 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<CommunityPost> deleteCommunityComment({
+    required String postId,
+    required String commentId,
+    String? accountId,
+  }) async {
+    final response = await http
+        .delete(
+          Uri.parse('$baseUrl/api/community/posts/$postId/comments/$commentId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'account_id': accountId}),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return CommunityPost.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '댓글 삭제 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<CommunityPost> addCommunityComment({
+    required String postId,
+    required String authorName,
+    String? authorAccountId,
+    required String content,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/community/posts/$postId/comments'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'author_name': authorName,
+            'author_account_id': authorAccountId,
+            'content': content,
+            'created_at': DateTime.now().toUtc().toIso8601String(),
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return CommunityPost.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception('댓글 저장 실패: ${response.statusCode}');
+  }
+
+  static String? _extractDetailMessage(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final detail = decoded['detail'];
+        if (detail is String && detail.trim().isNotEmpty) return detail;
+        final message = decoded['message'];
+        if (message is String && message.trim().isNotEmpty) return message;
+      }
+    } catch (_) {}
+    return null;
+  }
+}
