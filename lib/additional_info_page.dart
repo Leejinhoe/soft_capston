@@ -1,54 +1,91 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'main_screen.dart'; // MainScreen이 있는 파일을 정확히 임포트해주세요
+import 'package:provider/provider.dart';
+
+import 'main_screen.dart';
+import 'models/app_state.dart';
+import 'services/db_service.dart';
 
 class AdditionalInfoPage extends StatefulWidget {
   final String accountId;
+  final bool returnToPrevious;
 
-  const AdditionalInfoPage({super.key, required this.accountId});
+  const AdditionalInfoPage({
+    super.key,
+    required this.accountId,
+    this.returnToPrevious = false,
+  });
 
   @override
   State<AdditionalInfoPage> createState() => _AdditionalInfoPageState();
 }
 
 class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
+  final TextEditingController _nicknameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   bool _isLoading = false;
+  bool _didPrefill = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didPrefill) return;
+    final state = context.read<AppState>();
+    _nicknameController.text = state.currentNickname ?? '';
+    _emailController.text = state.currentEmail ?? '';
+    _phoneController.text = state.currentPhone ?? '';
+    _addressController.text = state.currentAddress ?? '';
+    _didPrefill = true;
+  }
+
+  @override
+  void dispose() {
+    _nicknameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _addressController.dispose();
+    super.dispose();
+  }
 
   Future<void> _submitExtraInfo() async {
     setState(() => _isLoading = true);
 
-    final String serverUrl =
-        'http://127.0.0.1:8000/api/users/${widget.accountId}/profile';
-
     try {
-      final response = await http.put(
-        Uri.parse(serverUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'phone': _phoneController.text.isEmpty ? null : _phoneController.text,
-          'address': _addressController.text.isEmpty
-              ? null
-              : _addressController.text,
-        }),
+      final data = await DbService.updateUserProfile(
+        accountId: widget.accountId,
+        nickname: _nicknameController.text,
+        email: _emailController.text,
+        phone: _phoneController.text,
+        address: _addressController.text,
       );
 
-      if (response.statusCode == 200) {
-        print("✅ 추가 정보 저장 성공!");
-        if (mounted) {
-          // 완료 후 메인 화면으로 이동
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainScreen()),
+      if (!mounted) return;
+      context.read<AppState>().updateSignedInProfile(
+            nickname: data['nickname']?.toString(),
+            email: data['email']?.toString(),
+            phone: data['phone']?.toString(),
+            address: data['address']?.toString(),
           );
-        }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('계정 정보를 저장했어요.')),
+      );
+      if (widget.returnToPrevious) {
+        Navigator.pop(context);
       } else {
-        print("🚨 정보 업데이트 실패: 서버 상태 코드 ${response.statusCode}");
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainScreen()),
+        );
       }
     } catch (e) {
-      print("🚨 서버 연결 에러: $e");
+      debugPrint("서버 연결 에러: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('저장 실패: ${e.toString().replaceAll('Exception: ', '')}'),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -59,7 +96,7 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF06041A),
       appBar: AppBar(
-        title: const Text('추가 정보 입력'),
+        title: const Text('계정 정보 수정'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -71,7 +108,7 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
             children: [
               const SizedBox(height: 20),
               const Text(
-                '더 나은 동화 생성을 위해\n추가 정보를 입력해주세요!',
+                '동화 AI에서 사용할\n계정 정보를 관리해요',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
@@ -80,6 +117,37 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
+              TextField(
+                controller: _nicknameController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: '닉네임',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  filled: true,
+                  fillColor: const Color(0xFF160F38),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _emailController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: '이메일',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  filled: true,
+                  fillColor: const Color(0xFF160F38),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: _phoneController,
                 style: const TextStyle(color: Colors.white),
@@ -129,9 +197,9 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                           strokeWidth: 2,
                         ),
                       )
-                    : const Text(
-                        '완료하고 시작하기',
-                        style: TextStyle(
+                    : Text(
+                        widget.returnToPrevious ? '저장하기' : '저장하고 시작하기',
+                        style: const TextStyle(
                           fontSize: 16,
                           color: Colors.white,
                           fontWeight: FontWeight.bold,

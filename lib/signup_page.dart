@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:provider/provider.dart';
+
+import 'main_screen.dart';
+import 'models/app_state.dart';
+import 'services/db_service.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -81,37 +84,38 @@ class _SignupPageState extends State<SignupPage> {
       _isLoading = true;
     });
 
-    final url = Uri.parse('http://192.168.55.233:8000/api/users/register');
-
     try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "account_id": _idController.text,
-          "password": _passwordController.text,
-          "nickname": _nicknameController.text.isEmpty
-              ? "이름없음"
-              : _nicknameController.text,
-          "email": _emailController.text,
-          "phone": _phoneController.text,
-          "address": _addressController.text,
-          "provider": "local",
-        }),
+      final nickname =
+          _nicknameController.text.isEmpty ? "이름없음" : _nicknameController.text;
+      final data = await DbService.registerUser(
+        accountId: _idController.text,
+        password: _passwordController.text,
+        nickname: nickname,
+        email: _emailController.text,
+        phone: _phoneController.text,
+        address: _addressController.text,
+        provider: "local",
       );
 
-      if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${_nicknameController.text}님 회원가입 성공! DB를 확인해보세요!'),
-          ),
-        );
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('가입 실패: 상태 코드 ${response.statusCode}')),
-        );
-      }
+      if (!mounted) return;
+      context.read<AppState>().setSignedInUser(
+            userId: data['id']?.toString(),
+            accountId: _idController.text,
+            nickname: nickname,
+            provider: 'local',
+            email: _emailController.text,
+            phone: _phoneController.text,
+            address: _addressController.text,
+          );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$nickname님 회원가입 성공!'),
+        ),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainScreen()),
+      );
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -188,7 +192,6 @@ class _SignupPageState extends State<SignupPage> {
               icon: Icons.person_outline,
             ),
             const SizedBox(height: 24),
-
             const Text(
               '비밀번호',
               style: TextStyle(
@@ -238,7 +241,6 @@ class _SignupPageState extends State<SignupPage> {
                 ),
               ),
             const SizedBox(height: 24),
-
             const Text(
               '닉네임',
               style: TextStyle(
@@ -253,7 +255,6 @@ class _SignupPageState extends State<SignupPage> {
               icon: Icons.face_retouching_natural,
             ),
             const SizedBox(height: 24),
-
             const Text(
               '이메일',
               style: TextStyle(
@@ -307,7 +308,6 @@ class _SignupPageState extends State<SignupPage> {
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 24),
-
             const Text(
               '전화번호',
               style: TextStyle(
@@ -323,7 +323,6 @@ class _SignupPageState extends State<SignupPage> {
               keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 24),
-
             const Text(
               '주소',
               style: TextStyle(
@@ -364,14 +363,12 @@ class _SignupPageState extends State<SignupPage> {
               ],
             ),
             const SizedBox(height: 48),
-
             SizedBox(
               width: double.infinity,
               height: 56, // 버튼 크기 고정
               child: ElevatedButton(
-                onPressed: _isLoading
-                    ? null
-                    : _registerUser, // 🔥 로딩 중일 때는 버튼 클릭 방지
+                onPressed:
+                    _isLoading ? null : _registerUser, // 🔥 로딩 중일 때는 버튼 클릭 방지
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF7C3AED),
                   shape: RoundedRectangleBorder(

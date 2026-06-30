@@ -1,174 +1,500 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'additional_info_page.dart';
+import 'library_page.dart';
+import 'login_page.dart';
+import 'models/app_state.dart';
+import 'psych_page.dart';
+import 'services/api_service.dart';
+import 'services/db_service.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
-  Widget _buildMenuItem(String emoji, String title, Color color) {
+  Future<void> _showPasswordDialog(
+    BuildContext context,
+    AppState state,
+  ) async {
+    final currentController = TextEditingController();
+    final newController = TextEditingController();
+    final confirmController = TextEditingController();
+    bool isSubmitting = false;
+    bool didCloseDialog = false;
+
+    Future<void> submit(StateSetter setDialogState) async {
+      final accountId = state.currentAccountId;
+      final currentPassword = currentController.text;
+      final newPassword = newController.text;
+      final confirmPassword = confirmController.text;
+
+      if (accountId == null || accountId.isEmpty) return;
+      if (newPassword.length < 9) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('새 비밀번호는 9자 이상이어야 해요.')),
+        );
+        return;
+      }
+      if (newPassword != confirmPassword) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('새 비밀번호 확인이 일치하지 않아요.')),
+        );
+        return;
+      }
+
+      setDialogState(() => isSubmitting = true);
+      try {
+        await DbService.changePassword(
+          accountId: accountId,
+          currentPassword: currentPassword,
+          newPassword: newPassword,
+        );
+        if (!context.mounted) return;
+        didCloseDialog = true;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('비밀번호를 변경했어요.')),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '비밀번호 변경 실패: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
+          ),
+        );
+      } finally {
+        if (context.mounted && !didCloseDialog) {
+          setDialogState(() => isSubmitting = false);
+        }
+      }
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF140028),
+              title: const Text(
+                '비밀번호 변경',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: currentController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: '현재 비밀번호',
+                      labelStyle: TextStyle(color: Colors.white60),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: newController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: '새 비밀번호',
+                      helperText: '9자 이상',
+                      labelStyle: TextStyle(color: Colors.white60),
+                      helperStyle: TextStyle(color: Colors.white38),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: '새 비밀번호 확인',
+                      labelStyle: TextStyle(color: Colors.white60),
+                    ),
+                    onSubmitted: (_) => submit(setDialogState),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      isSubmitting ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('취소'),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting ? null : () => submit(setDialogState),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('변경'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    currentController.dispose();
+    newController.dispose();
+    confirmController.dispose();
+  }
+
+  Widget _infoCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    Color color = Colors.purpleAccent,
+  }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF160F38),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0x338B5CF6)),
+        color: const Color(0xFF140028),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
       ),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10),
+              color: color.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(18),
             ),
-            child: Text(emoji, style: const TextStyle(fontSize: 18)),
+            child: Icon(icon, color: color, size: 30),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 18),
           Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: Colors.white54, fontSize: 14),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: Colors.grey),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF06041A),
-      body: SafeArea(
-        child: ListView(
+  Widget _menuButton({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF140028),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        leading: Icon(icon, color: Colors.white),
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          color: Colors.white54,
+          size: 16,
+        ),
+      ),
+    );
+  }
+
+  Widget _statusLine({
+    required Future<bool> future,
+    required String okText,
+    required String badText,
+    required IconData icon,
+    required Color color,
+  }) {
+    return FutureBuilder<bool>(
+      future: future,
+      builder: (context, snapshot) {
+        final ok = snapshot.data == true;
+        return Row(
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 30),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF1a0940), Color(0xFF0d0826)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: const Text('🧒', style: TextStyle(fontSize: 40)),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '김민준',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Text(
-                    'minjun@fairytale.ai',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                  const SizedBox(height: 20),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Column(
-                        children: [
-                          Text(
-                            '7',
-                            style: TextStyle(
-                              color: Color(0xFFA78BFA),
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '만든 동화',
-                            style: TextStyle(color: Colors.grey, fontSize: 11),
-                          ),
-                        ],
-                      ),
-                      SizedBox(width: 30),
-                      Column(
-                        children: [
-                          Text(
-                            '12',
-                            style: TextStyle(
-                              color: Color(0xFFA78BFA),
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '저장 단어',
-                            style: TextStyle(color: Colors.grey, fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '⚙️ 설정',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildMenuItem('👤', '프로필 편집', const Color(0xFF7C3AED)),
-                  _buildMenuItem('🔔', '알림 설정', const Color(0xFFEC4899)),
-                  _buildMenuItem('🎨', '테마 설정', const Color(0xFF14B8A6)),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: () {},
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0x1AEF4444),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: const BorderSide(color: Color(0x40EF4444)),
-                        ),
-                      ),
-                      child: const Text(
-                        '🚪 로그아웃',
-                        style: TextStyle(
-                          color: Colors.redAccent,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+            Icon(icon, color: ok ? color : Colors.redAccent, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              ok ? okText : badText,
+              style: TextStyle(
+                color: ok ? color : Colors.redAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final displayName = state.currentDisplayName;
+    final totalStories = state.completedStories.length;
+    final totalChoices = state.completedStories.fold(
+      0,
+      (sum, story) => sum + story.allChoicesMade.length,
+    );
+    final totalWords = state.allVocabulary.length;
+    final email = state.currentEmail?.trim();
+    final phone = state.currentPhone?.trim();
+    final address = state.currentAddress?.trim();
+    final providerLabel = switch (state.currentProvider) {
+      'google' => 'Google 로그인',
+      'kakao' => 'Kakao 로그인',
+      'local' => '일반 로그인',
+      null || '' => '로그인 정보 없음',
+      final other => other,
+    };
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF070018),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                  ),
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                child: Column(
+                  children: [
+                    const CircleAvatar(
+                      radius: 46,
+                      backgroundColor: Colors.white24,
+                      child: Icon(Icons.person, size: 52, color: Colors.white),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      '$displayName의 마이페이지',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      providerLabel,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 15),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 30),
+              _infoCard(
+                icon: Icons.auto_stories,
+                title: '생성한 동화',
+                value: '$totalStories편',
+                color: Colors.purpleAccent,
+              ),
+              _infoCard(
+                icon: Icons.menu_book,
+                title: '학습한 단어',
+                value: '$totalWords개',
+                color: Colors.lightBlueAccent,
+              ),
+              _infoCard(
+                icon: Icons.touch_app,
+                title: '선택한 이야기',
+                value: '$totalChoices회',
+                color: Colors.greenAccent,
+              ),
+              if (email != null && email.isNotEmpty)
+                _infoCard(
+                  icon: Icons.email,
+                  title: '이메일',
+                  value: email,
+                  color: Colors.pinkAccent,
+                ),
+              if (phone != null && phone.isNotEmpty)
+                _infoCard(
+                  icon: Icons.phone_android,
+                  title: '전화번호',
+                  value: phone,
+                  color: Colors.orangeAccent,
+                ),
+              if (address != null && address.isNotEmpty)
+                _infoCard(
+                  icon: Icons.location_on,
+                  title: '주소',
+                  value: address,
+                  color: Colors.tealAccent,
+                ),
+              Container(
+                margin: const EdgeInsets.only(bottom: 28),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF140028),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '서버 연결',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _statusLine(
+                      future: ApiService.checkHealth(),
+                      okText: '동화 서버 연결 정상',
+                      badText: '동화 서버 연결 확인 필요',
+                      icon: Icons.cloud_done,
+                      color: Colors.lightBlueAccent,
+                    ),
+                    const SizedBox(height: 10),
+                    _statusLine(
+                      future: DbService.checkHealth(),
+                      okText: 'DB API 연결 정상',
+                      badText: 'DB API 연결 확인 필요',
+                      icon: Icons.storage,
+                      color: Colors.purpleAccent,
+                    ),
+                    if (state.isUserDataLoading) ...[
+                      const SizedBox(height: 14),
+                      const LinearProgressIndicator(
+                        color: Colors.purpleAccent,
+                        backgroundColor: Colors.white10,
+                      ),
+                    ],
+                    if (state.userDataErrorMessage != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'DB 기록 동기화 실패: ${state.userDataErrorMessage}',
+                        style: const TextStyle(
+                          color: Colors.orangeAccent,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Text(
+                '설정',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _menuButton(
+                icon: Icons.sync,
+                title:
+                    state.isUserDataLoading ? 'DB 기록 불러오는 중...' : 'DB 기록 새로고침',
+                onTap: () async {
+                  await context.read<AppState>().loadUserData();
+                  if (!context.mounted) return;
+                  final error = context.read<AppState>().userDataErrorMessage;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        error == null
+                            ? '서재와 단어장을 최신 DB 기록으로 불러왔어요.'
+                            : 'DB 기록 새로고침 실패: $error',
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (state.currentAccountId != null &&
+                  state.currentAccountId!.isNotEmpty)
+                _menuButton(
+                  icon: Icons.manage_accounts,
+                  title: '프로필 정보 수정',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AdditionalInfoPage(
+                        accountId: state.currentAccountId!,
+                        returnToPrevious: true,
+                      ),
+                    ),
+                  ),
+                ),
+              if (state.currentProvider == 'local' &&
+                  state.currentAccountId != null &&
+                  state.currentAccountId!.isNotEmpty)
+                _menuButton(
+                  icon: Icons.lock_reset,
+                  title: '비밀번호 변경',
+                  onTap: () => _showPasswordDialog(context, state),
+                ),
+              _menuButton(
+                icon: Icons.library_books,
+                title: '내 서재 보기',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LibraryPage()),
+                ),
+              ),
+              _menuButton(
+                icon: Icons.psychology,
+                title: '심리 분석',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PsychPage()),
+                ),
+              ),
+              _menuButton(
+                icon: Icons.logout,
+                title: '로그아웃',
+                onTap: () {
+                  context.read<AppState>().clearSignedInUser();
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginPage()),
+                    (_) => false,
+                  );
+                },
+              ),
+              const SizedBox(height: 100),
+            ],
+          ),
         ),
       ),
     );

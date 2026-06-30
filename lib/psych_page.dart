@@ -1,430 +1,467 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
+import 'package:provider/provider.dart';
+import 'package:percent_indicator/percent_indicator.dart';
+import 'main.dart';
+import 'models/app_state.dart';
+import 'models/story_model.dart';
 
-class PsychPage extends StatelessWidget {
+class PsychPage extends StatefulWidget {
   const PsychPage({super.key});
 
-  Widget _buildStatBar(
-    String icon,
-    String label,
-    String pct,
-    double width,
-    Color color,
-  ) {
+  @override
+  State<PsychPage> createState() => _PsychPageState();
+}
+
+class _PsychPageState extends State<PsychPage> {
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final story = state.activePsychStory;
+    final psych = state.psychResult;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF070018),
+      body: SafeArea(
+        child: _buildBody(context, state, story, psych),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, AppState state, StorySession? story,
+      PsychResult? psych) {
+    if (story == null || story.chapters.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    if (state.isPsychLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('🔮', style: TextStyle(fontSize: 56)),
+            SizedBox(height: 20),
+            CircularProgressIndicator(color: AppColors.p400, strokeWidth: 2),
+            SizedBox(height: 16),
+            Text(
+              'AI가 성격을 분석하고 있어요...',
+              style: TextStyle(color: AppColors.p300, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (psych == null) {
+      return _buildAnalyzePrompt(context, state, story);
+    }
+
+    return _buildResult(psych, story);
+  }
+
+  Widget _buildEmptyState() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '$icon $label',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                pct,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Container(
-            height: 8,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white10,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: width,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
+          const SizedBox(height: 10),
+          const Text(
+            'AI 심리 분석',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 34,
+              fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 10),
+          const Text(
+            '동화를 만들면 AI가 성향을 분석해요',
+            style: TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          const Spacer(),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: const Color(0xFF140028),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('📖', style: TextStyle(fontSize: 56)),
+                  SizedBox(height: 20),
+                  Text(
+                    '아직 분석할 동화가 없어요',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '동화를 하나 만들면\n이야기 분위기와 선택을 함께 분석해요!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          const SizedBox(height: 100),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryItem(
-    String icon,
-    String story,
-    String choice,
-    String tag,
-    Color tagBg,
-    Color tagColor,
-  ) {
+  Widget _buildPageTitle() {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: 10),
+        Text(
+          'AI 심리 분석',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 34,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        SizedBox(height: 10),
+        Text(
+          '내 선택으로 만든 성향 결과를 확인해보세요',
+          style: TextStyle(color: Colors.white70, fontSize: 16),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnalyzePrompt(
+      BuildContext context, AppState state, StorySession story) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
+      padding: const EdgeInsets.all(24),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(icon, style: const TextStyle(fontSize: 20)),
-          const SizedBox(width: 12),
-          Expanded(
+          _buildPageTitle(),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF140028),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white10),
+            ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  story,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                const Text('🔮', style: TextStyle(fontSize: 60)),
+                const SizedBox(height: 16),
+                const Text(
+                  '내 성격 알아보기',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 8),
                 Text(
-                  choice,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  '${story.chapters.length}개의 장면과 ${story.allChoicesMade.length}번의 선택을 바탕으로\n나의 성격 유형을 알려드릴게요',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
+                if (story.allChoicesMade.isEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    '선택 전에는 이야기 감정 데이터 중심으로 먼저 분석해요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.p300, fontSize: 12),
                   ),
-                  decoration: BoxDecoration(
-                    color: tagBg,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    tag,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: tagColor,
+                ],
+                const SizedBox(height: 8),
+                // 선택 목록
+                if (story.allChoicesMade.isEmpty)
+                  ...story.chapters.take(3).map((chapter) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.auto_stories_rounded,
+                                color: AppColors.teal, size: 14),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${chapter.chapter}장 · ${chapter.text.replaceAll('\n', ' ').trim()}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 11),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ))
+                else
+                  ...story.allChoicesMade.take(5).map((c) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded,
+                                color: Colors.greenAccent, size: 14),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(c,
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 11)),
+                            ),
+                          ],
+                        ),
+                      )),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => state.loadPsychAnalysis(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF8B5CF6),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text(
+                      '🧠 분석 시작',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
               ],
             ),
           ),
+          const Spacer(),
+          const SizedBox(height: 100),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF06041A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF06041A),
-        title: const Text(
-          '🧠 심리 분석',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '최근 30일',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-                Text(
-                  '선택 42회',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+  Widget _buildResult(PsychResult psych, StorySession story) {
+    const traitColors = {
+      '모험적': AppColors.p500,
+      '친절함': AppColors.pink,
+      '용감함': Color(0xFFF59E0B),
+      '창의적': AppColors.teal,
+      '협동심': Color(0xFF10B981),
+    };
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '민준이의 선택 패턴 분석',
-            style: TextStyle(fontSize: 13, color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
+          _buildPageTitle(),
+          const SizedBox(height: 30),
           Container(
-            padding: const EdgeInsets.all(18),
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF5B21B6), Color(0x66EC4899)],
+                colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
               ),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(24),
             ),
-            child: const Row(
+            child: Column(
               children: [
-                Text('🦁', style: TextStyle(fontSize: 40)),
-                SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '용감한 탐험가 유형',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '새로운 것을 두려워하지 않고 도전을 즐기는 성격이에요. 친구들을 잘 도와주는 따뜻한 마음도 가지고 있어요!',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                    ],
+                const Text('🌟', style: TextStyle(fontSize: 52)),
+                const SizedBox(height: 12),
+                Text(
+                  psych.type,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  psych.description,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    height: 1.6,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
+
+          // 특성 분석
           Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0x1A8B5CF6),
-              border: Border.all(color: const Color(0x408B5CF6)),
-              borderRadius: BorderRadius.circular(18),
+              color: const Color(0xFF140028),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white10),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '📊 성격 특성',
+                  '특성 분석',
                   style: TextStyle(
-                    color: Color(0xFFA78BFA),
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 16),
-                _buildStatBar(
-                  '🌟',
-                  '모험적',
-                  '88%',
-                  0.88,
-                  const Color(0xFFA78BFA),
-                ),
-                _buildStatBar(
-                  '💝',
-                  '친절함',
-                  '75%',
-                  0.75,
-                  const Color(0xFFEC4899),
-                ),
-                _buildStatBar(
-                  '🔥',
-                  '용감함',
-                  '82%',
-                  0.82,
-                  const Color(0xFFF59E0B),
-                ),
-                _buildStatBar(
-                  '🎨',
-                  '창의적',
-                  '70%',
-                  0.70,
-                  const Color(0xFF14B8A6),
-                ),
-                _buildStatBar(
-                  '🤝',
-                  '협동심',
-                  '65%',
-                  0.65,
-                  const Color(0xFF0EA5E9),
-                ),
+                ...psych.traits.entries.map((e) {
+                  final color = traitColors[e.key] ?? AppColors.p400;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(e.key,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
+                            Text(
+                              '${e.value}%',
+                              style: TextStyle(
+                                  color: color,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        LinearPercentIndicator(
+                          percent: (e.value / 100).clamp(0.0, 1.0),
+                          lineHeight: 8,
+                          barRadius: const Radius.circular(4),
+                          backgroundColor: color.withValues(alpha: 0.15),
+                          progressColor: color,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                  );
+                }),
               ],
             ),
           ),
           const SizedBox(height: 16),
+
+          // 선택 이력
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF160F38),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0x338B5CF6)),
+              color: const Color(0xFF140028),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white10),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 140,
-                  height: 140,
-                  child: CustomPaint(painter: RadarChartPainter()),
+                Text(
+                  story.allChoicesMade.isEmpty ? '분석한 이야기' : '나의 선택 이야기',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                const SizedBox(height: 12),
+                if (story.allChoicesMade.isEmpty)
+                  ...story.chapters.asMap().entries.map((e) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF8B5CF6),
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: AppColors.p600.withValues(alpha: 0.3),
                               shape: BoxShape.circle,
                             ),
+                            child: Center(
+                              child: Text(
+                                '${e.key + 1}',
+                                style: const TextStyle(
+                                    color: AppColors.p300,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ),
                           ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            '현재',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              e.value.text,
+                              style: const TextStyle(
+                                  color: AppColors.gray,
+                                  fontSize: 12,
+                                  height: 1.5),
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '모험과 용기 지수가\n특히 높아요! 🌟\n\n친구와의 협동 능력도\n꾸준히 성장 중이에요.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey,
-                          height: 1.6,
-                        ),
+                    );
+                  })
+                else
+                  ...story.allChoicesMade.asMap().entries.map((e) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: AppColors.p600.withValues(alpha: 0.3),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${e.key + 1}',
+                                style: const TextStyle(
+                                    color: AppColors.p300,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              e.value,
+                              style: const TextStyle(
+                                  color: AppColors.gray,
+                                  fontSize: 12,
+                                  height: 1.5),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    );
+                  }),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          const Text(
-            '📝 최근 선택 기록',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildHistoryItem(
-            '🧚',
-            '작은 요정 이야기',
-            '마법 지팡이로 친구를 구해준다',
-            '친절함 +5',
-            const Color(0x338B5CF6),
-            const Color(0xFFA78BFA),
-          ),
-          _buildHistoryItem(
-            '🐉',
-            '용의 왕국',
-            '혼자서 용감하게 성에 들어간다',
-            '용감함 +8',
-            const Color(0x33FBBF24),
-            const Color(0xFFFCD34D),
-          ),
-          _buildHistoryItem(
-            '🦊',
-            '여우 마법사',
-            '새로운 마법을 발명해서 해결한다',
-            '창의적 +6',
-            const Color(0x3314B8A6),
-            const Color(0xFF34D399),
-          ),
+          const SizedBox(height: 80),
         ],
       ),
     );
   }
-}
-
-class RadarChartPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2.5;
-
-    final bgPaint = Paint()
-      ..color = const Color(0x338B5CF6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    final fillPaint = Paint()
-      ..color = const Color(0x408B5CF6)
-      ..style = PaintingStyle.fill;
-    final linePaint = Paint()
-      ..color = const Color(0xFF8B5CF6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    final dotPaint = Paint()
-      ..color = const Color(0xFFA78BFA)
-      ..style = PaintingStyle.fill;
-
-    Path buildPolygon(double scale) {
-      final path = Path();
-      for (int i = 0; i < 5; i++) {
-        final angle = (i * 2 * pi / 5) - pi / 2;
-        final x = center.dx + radius * scale * cos(angle);
-        final y = center.dy + radius * scale * sin(angle);
-        if (i == 0)
-          path.moveTo(x, y);
-        else
-          path.lineTo(x, y);
-      }
-      path.close();
-      return path;
-    }
-
-    canvas.drawPath(buildPolygon(1.0), bgPaint);
-    canvas.drawPath(buildPolygon(0.7), bgPaint);
-    canvas.drawPath(buildPolygon(0.4), bgPaint);
-
-    final values = [0.9, 0.8, 0.6, 0.75, 0.85];
-    final valuePath = Path();
-    final points = <Offset>[];
-
-    for (int i = 0; i < 5; i++) {
-      final angle = (i * 2 * pi / 5) - pi / 2;
-      final x = center.dx + radius * values[i] * cos(angle);
-      final y = center.dy + radius * values[i] * sin(angle);
-      points.add(Offset(x, y));
-      if (i == 0)
-        valuePath.moveTo(x, y);
-      else
-        valuePath.lineTo(x, y);
-    }
-    valuePath.close();
-
-    canvas.drawPath(valuePath, fillPaint);
-    canvas.drawPath(valuePath, linePaint);
-    for (var point in points) {
-      canvas.drawCircle(point, 3, dotPaint);
-    }
-
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
-    final labels = ['모험', '용기', '창의', '친절', '협동'];
-    for (int i = 0; i < 5; i++) {
-      final angle = (i * 2 * pi / 5) - pi / 2;
-      final x = center.dx + (radius + 12) * cos(angle);
-      final y = center.dy + (radius + 12) * sin(angle);
-
-      textPainter.text = TextSpan(
-        text: labels[i],
-        style: const TextStyle(color: Colors.white70, fontSize: 9),
-      );
-      textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(x - textPainter.width / 2, y - textPainter.height / 2),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

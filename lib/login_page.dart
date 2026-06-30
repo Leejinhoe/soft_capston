@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:google_sign_in_web/web_only.dart' as web;
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:provider/provider.dart';
 import 'additional_info_page.dart';
+import 'admin_page.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'main_screen.dart';
+import 'models/app_state.dart';
+import 'services/db_service.dart';
+import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -35,8 +38,8 @@ class _LoginPageState extends State<LoginPage> {
       if (account != null) {
         String userId = account.id;
         String nickname = account.displayName ?? "구글유저";
-        print("✅ 구글 로그인 성공! 환영합니다, $nickname님!");
-        await _saveUserToDB("Google", userId, nickname);
+        debugPrint("구글 로그인 성공: $nickname");
+        await _saveUserToDB("Google", userId, nickname, account.email);
       }
     });
   }
@@ -46,34 +49,39 @@ class _LoginPageState extends State<LoginPage> {
     String loginType,
     String userId,
     String nickname,
+    String? email,
   ) async {
-    print("📡 서버(MongoDB)로 유저 정보 전송 시작...");
-    final String serverUrl = 'http://127.0.0.1:8000/api/users/register';
+    debugPrint("서버로 유저 정보 전송 시작");
 
     try {
-      final response = await http.post(
-        Uri.parse(serverUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'provider': loginType.toLowerCase(),
-          'account_id': userId,
-          'nickname': nickname,
-        }),
+      final data = await DbService.registerUser(
+        accountId: userId,
+        nickname: nickname,
+        email: email,
+        provider: loginType.toLowerCase(),
+        providerId: userId,
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        print("✅ MongoDB 저장 성공!");
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AdditionalInfoPage(accountId: userId),
-            ),
-          );
-        }
+      debugPrint("MongoDB 저장 성공");
+      if (mounted) {
+        context.read<AppState>().setSignedInUser(
+              userId: data['id']?.toString(),
+              accountId: userId,
+              nickname: nickname,
+              provider: loginType.toLowerCase(),
+              email: email,
+              phone: data['phone']?.toString(),
+              address: data['address']?.toString(),
+            );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AdditionalInfoPage(accountId: userId),
+          ),
+        );
       }
     } catch (e) {
-      print("🚨 서버 연결 에러: $e");
+      debugPrint("서버 연결 에러: $e");
     }
   }
 
@@ -98,11 +106,12 @@ class _LoginPageState extends State<LoginPage> {
       User user = await UserApi.instance.me();
       String userId = user.id.toString();
       String nickname = user.kakaoAccount?.profile?.nickname ?? "이름없음";
+      String? email = user.kakaoAccount?.email;
 
-      print("✅ 카카오 로그인 성공! 환영합니다, $nickname님!");
-      await _saveUserToDB("Kakao", userId, nickname);
+      debugPrint("카카오 로그인 성공: $nickname");
+      await _saveUserToDB("Kakao", userId, nickname, email);
     } catch (error) {
-      print("🚨 카카오 로그인 실패: $error");
+      debugPrint("카카오 로그인 실패: $error");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('로그인 실패! 플러터 캐시를 삭제해야 할 수 있습니다.')),
@@ -115,27 +124,70 @@ class _LoginPageState extends State<LoginPage> {
 
   // ⚪ 구글 로그인 (모바일 전용)
   Future<void> _loginWithGoogle() async {
-    if (kIsWeb) return;
     setState(() => _isLoading = true);
     try {
       await _googleSignIn.signIn();
     } catch (error) {
-      print("🚨 구글 로그인 실패: $error");
+      debugPrint("구글 로그인 실패: $error");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _loginWithEmail() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('이메일 로그인은 DB 연동 후 작동합니다!')));
-  }
+  Future<void> _loginWithEmail() async {
+    final accountId = _emailController.text.trim();
+    final password = _passwordController.text;
 
-  void _loginWithOther(String platform) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$platform 로그인은 곧 추가될 예정입니다!')));
+    if (accountId.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('아이디와 비밀번호를 모두 입력해주세요.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final user = await DbService.loginUser(
+        accountId: accountId,
+        password: password,
+      );
+      if (!mounted) return;
+
+      context.read<AppState>().setSignedInUser(
+            userId: user['id']?.toString(),
+            accountId: user['account_id']?.toString() ?? accountId,
+            nickname: user['nickname']?.toString() ?? accountId,
+            provider: user['provider']?.toString() ?? 'local',
+            email: user['email']?.toString(),
+            phone: user['phone']?.toString(),
+            address: user['address']?.toString(),
+          );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${user['nickname'] ?? accountId}님 로그인되었습니다.'),
+        ),
+      );
+      final isAdminLogin = accountId == '1111';
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => isAdminLogin
+              ? AdminPage(adminAccountId: accountId)
+              : const MainScreen(),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -168,7 +220,7 @@ class _LoginPageState extends State<LoginPage> {
                 controller: _emailController,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: '이메일을 입력하세요',
+                  hintText: '아이디를 입력하세요',
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
                   fillColor: const Color(0xFF160F38),
@@ -196,7 +248,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _loginWithEmail,
+                onPressed: _isLoading ? null : _loginWithEmail,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF7C3AED),
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -204,12 +256,37 @@ class _LoginPageState extends State<LoginPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        '로그인',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SignupPage()),
+                  );
+                },
                 child: const Text(
-                  '로그인',
+                  '회원가입 하러가기',
                   style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFC4B5FD),
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -248,22 +325,12 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 12),
 
-                        kIsWeb
-                            ? Container(
-                                width: double.infinity,
-                                height: 50,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: web.renderButton(), // 웹 전용 구글 버튼
-                              )
-                            : _buildSocialButton(
-                                '구글로 시작하기',
-                                Colors.white,
-                                Colors.black,
-                                _loginWithGoogle,
-                              ),
+                        _buildSocialButton(
+                          '구글로 시작하기',
+                          Colors.white,
+                          Colors.black,
+                          _loginWithGoogle,
+                        ),
 
                         // const SizedBox(height: 12),
                         // _buildSocialButton(
