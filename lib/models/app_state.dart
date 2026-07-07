@@ -214,7 +214,6 @@ class AppState extends ChangeNotifier {
 
       notifyListeners();
       unawaited(_syncStoryStart(currentStory!));
-      unawaited(_attachImageToChapter(currentStory!, firstChapter));
       return true;
     } catch (e) {
       errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -276,7 +275,6 @@ class AppState extends ChangeNotifier {
 
       notifyListeners();
       unawaited(_syncChapter(session, chapter));
-      unawaited(_attachImageToChapter(session, chapter));
       return true;
     } catch (e) {
       errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -342,10 +340,7 @@ class AppState extends ChangeNotifier {
     try {
       final dbStoryId = story.dbStoryId;
       if (dbStoryId != null && dbStoryId.isNotEmpty) {
-        await DbService.deleteStory(
-          storyId: dbStoryId,
-          userId: currentUserId,
-        );
+        await DbService.deleteStory(storyId: dbStoryId, userId: currentUserId);
         savedVocabulary.removeWhere((word) => word.originStoryId == dbStoryId);
       }
       notifyListeners();
@@ -471,8 +466,9 @@ class AppState extends ChangeNotifier {
     _setLoading(true);
     errorMessage = null;
     try {
-      final normalizedPrompt =
-          prompt.trim().isEmpty ? '반짝이는 숲속 모험' : prompt.trim();
+      final normalizedPrompt = prompt.trim().isEmpty
+          ? '반짝이는 숲속 모험'
+          : prompt.trim();
       final chapterVocab = _temporaryVocabForChapter(
         genre: genre,
         prompt: normalizedPrompt,
@@ -545,69 +541,116 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  Future<void> _attachImageToChapter(
-    StorySession session,
-    StoryChapter chapter,
-  ) async {
-    if (_isTemporaryStory(session)) return;
-    if (chapter.imageB64 != null || chapter.text.trim().isEmpty) return;
-    final imageB64 = await ApiService.generateImage(
-      storyText: chapter.text,
-      genre: session.genre,
-      age: session.age,
-    );
-    if (imageB64 == null) return;
-    chapter.imageB64 = imageB64;
-    notifyListeners();
-  }
-
   Future<void> _syncStoryStart(StorySession session) async {
     if (currentUserId == null || currentUserId!.isEmpty) return;
-    if (session.dbStoryId != null) return;
-
-    final dbStoryId = await DbService.createStorySession(
-      userId: currentUserId!,
-      title: session.initialPrompt,
-      genre: session.genre,
-      age: session.age,
-      prompt: session.initialPrompt,
-    );
-
-    if (dbStoryId == null) return;
-    session.dbStoryId = dbStoryId;
-
-    for (final chapter in session.chapters) {
-      await DbService.pushScene(
-        storyId: dbStoryId,
-        stepNumber: chapter.chapter,
-        storyText: chapter.text,
-        choiceMade: chapter.choiceMade,
-        imageUrl: chapter.imageUrl,
-        videoUrl: chapter.videoUrl,
+    if (session.dbStoryId == null) {
+      final dbStoryId = await DbService.createStorySession(
+        userId: currentUserId!,
+        title: session.initialPrompt,
+        genre: session.genre,
+        age: session.age,
+        prompt: session.initialPrompt,
       );
+
+      if (dbStoryId == null) return;
+      session.dbStoryId = dbStoryId;
     }
 
-    notifyListeners();
+    var changed = false;
+    for (final chapter in session.chapters) {
+      final synced = await _syncSceneIfNeeded(session, chapter);
+      changed = synced || changed;
+      await _generateMediaForChapter(session, chapter);
+    }
+
+    if (changed) {
+      notifyListeners();
+    }
   }
 
-  Future<void> _syncChapter(
-    StorySession session,
-    StoryChapter chapter,
-  ) async {
+  Future<void> _syncChapter(StorySession session, StoryChapter chapter) async {
     if (_isTemporaryStory(session) && session.dbStoryId == null) return;
     if (currentUserId == null || currentUserId!.isEmpty) return;
 
     if (session.dbStoryId == null) {
       await _syncStoryStart(session);
+      return;
     }
     if (session.dbStoryId == null) return;
 
-    await DbService.pushScene(
-      storyId: session.dbStoryId!,
+    final changed = await _syncSceneIfNeeded(session, chapter);
+    if (changed) {
+      notifyListeners();
+    }
+    await _generateMediaForChapter(session, chapter);
+  }
+
+  Future<bool> _syncSceneIfNeeded(
+    StorySession session,
+    StoryChapter chapter,
+  ) async {
+    final dbStoryId = session.dbStoryId;
+    if (dbStoryId == null || dbStoryId.isEmpty) return false;
+    if (session.syncedChapterNumbers.contains(chapter.chapter)) return false;
+
+    final pushed = await DbService.pushScene(
+      storyId: dbStoryId,
       stepNumber: chapter.chapter,
       storyText: chapter.text,
       choiceMade: chapter.choiceMade,
+      imageUrl: chapter.imageUrl,
+      videoUrl: chapter.videoUrl,
     );
+    if (!pushed) return false;
+
+    session.syncedChapterNumbers.add(chapter.chapter);
+    return true;
+  }
+
+  Future<void> _generateMediaForChapter(
+    StorySession session,
+    StoryChapter chapter,
+  ) async {
+    if (_isTemporaryStory(session)) return;
+    if (chapter.imageB64 != null || chapter.text.trim().isEmpty) return;
+    if (!session.syncedChapterNumbers.contains(chapter.chapter)) return;
+
+    final hasImageUrl = chapter.imageUrl?.trim().isNotEmpty ?? false;
+    final hasVideoUrl = chapter.videoUrl?.trim().isNotEmpty ?? false;
+    if (hasImageUrl || hasVideoUrl) {
+      session.mediaGenerationChapterNumbers.add(chapter.chapter);
+      return;
+    }
+
+    if (session.mediaGenerationChapterNumbers.contains(chapter.chapter)) {
+      return;
+    }
+
+    final dbStoryId = session.dbStoryId;
+    if (dbStoryId == null || dbStoryId.isEmpty) return;
+
+    session.mediaGenerationChapterNumbers.add(chapter.chapter);
+    final media = await DbService.generateSceneMedia(
+      storyId: dbStoryId,
+      stepNumber: chapter.chapter,
+      storyText: chapter.text,
+      genre: session.genre,
+      age: session.age,
+      includeVideo: false,
+    );
+
+    if (media == null || !media.hasMedia) {
+      session.mediaGenerationChapterNumbers.remove(chapter.chapter);
+      return;
+    }
+
+    if (media.imageUrl?.trim().isNotEmpty ?? false) {
+      chapter.imageUrl = media.imageUrl;
+    }
+    if (media.videoUrl?.trim().isNotEmpty ?? false) {
+      chapter.videoUrl = media.videoUrl;
+    }
+    notifyListeners();
   }
 
   bool _isTemporaryStory(StorySession session) {
@@ -698,9 +741,11 @@ class AppState extends ChangeNotifier {
     ];
     final start = seed % pool.length;
     final choices = <String>[];
-    for (var offset = 0;
-        choices.length < 3 && offset < pool.length * 2;
-        offset++) {
+    for (
+      var offset = 0;
+      choices.length < 3 && offset < pool.length * 2;
+      offset++
+    ) {
       final choice = pool[(start + offset) % pool.length];
       if (!choices.contains(choice)) choices.add(choice);
     }
@@ -728,10 +773,7 @@ class AppState extends ChangeNotifier {
 
   List<String> _promptChoices(String prompt) {
     final keyword = prompt.length > 10 ? prompt.substring(0, 10) : prompt;
-    return [
-      '"$keyword"에 숨은 뜻을 떠올려 본다',
-      '"$keyword"을 친구에게 보여 준다',
-    ];
+    return ['"$keyword"에 숨은 뜻을 떠올려 본다', '"$keyword"을 친구에게 보여 준다'];
   }
 
   String _genreSetting(String genre) {
@@ -826,33 +868,33 @@ class AppState extends ChangeNotifier {
   }) {
     final base = switch (genre) {
       '미스터리' => [
-          _emotionItem(15, '신기함/관심', 0.95),
-          _emotionItem(39, '놀람', 0.82),
-          _emotionItem(8, '기대감', 0.78),
-          _emotionItem(41, '불안/걱정', 0.42),
-          _emotionItem(2, '감동/감탄', 0.38),
-        ],
+        _emotionItem(15, '신기함/관심', 0.95),
+        _emotionItem(39, '놀람', 0.82),
+        _emotionItem(8, '기대감', 0.78),
+        _emotionItem(41, '불안/걱정', 0.42),
+        _emotionItem(2, '감동/감탄', 0.38),
+      ],
       '우정' => [
-          _emotionItem(16, '아껴주는', 0.94),
-          _emotionItem(4, '고마움', 0.88),
-          _emotionItem(40, '행복', 0.82),
-          _emotionItem(43, '안심/신뢰', 0.68),
-          _emotionItem(42, '기쁨', 0.63),
-        ],
+        _emotionItem(16, '아껴주는', 0.94),
+        _emotionItem(4, '고마움', 0.88),
+        _emotionItem(40, '행복', 0.82),
+        _emotionItem(43, '안심/신뢰', 0.68),
+        _emotionItem(42, '기쁨', 0.63),
+      ],
       '모험' => [
-          _emotionItem(8, '기대감', 0.96),
-          _emotionItem(28, '즐거움/신남', 0.86),
-          _emotionItem(15, '신기함/관심', 0.74),
-          _emotionItem(2, '감동/감탄', 0.55),
-          _emotionItem(39, '놀람', 0.42),
-        ],
+        _emotionItem(8, '기대감', 0.96),
+        _emotionItem(28, '즐거움/신남', 0.86),
+        _emotionItem(15, '신기함/관심', 0.74),
+        _emotionItem(2, '감동/감탄', 0.55),
+        _emotionItem(39, '놀람', 0.42),
+      ],
       _ => [
-          _emotionItem(2, '감동/감탄', 0.94),
-          _emotionItem(42, '기쁨', 0.88),
-          _emotionItem(40, '행복', 0.84),
-          _emotionItem(8, '기대감', 0.78),
-          _emotionItem(15, '신기함/관심', 0.62),
-        ],
+        _emotionItem(2, '감동/감탄', 0.94),
+        _emotionItem(42, '기쁨', 0.88),
+        _emotionItem(40, '행복', 0.84),
+        _emotionItem(8, '기대감', 0.78),
+        _emotionItem(15, '신기함/관심', 0.62),
+      ],
     };
 
     final adjusted = base
@@ -933,61 +975,61 @@ class AppState extends ChangeNotifier {
 
     final byGenre = switch (genre) {
       '판타지' => [
-          VocabWord(
-            hard: '주문',
-            easy: '마법 말',
-            definition: '마법을 부릴 때 외우는 특별한 말이에요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '별가루',
-            easy: '반짝 가루',
-            definition: '별빛처럼 반짝이는 상상 속의 가루예요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '주문',
+          easy: '마법 말',
+          definition: '마법을 부릴 때 외우는 특별한 말이에요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '별가루',
+          easy: '반짝 가루',
+          definition: '별빛처럼 반짝이는 상상 속의 가루예요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
       '미스터리' => [
-          VocabWord(
-            hard: '수상한',
-            easy: '이상한',
-            definition: '평소와 달라서 궁금하거나 의심이 드는 모습이에요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '비밀',
-            easy: '숨긴 이야기',
-            definition: '아직 다른 사람에게 알려지지 않은 일이에요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '수상한',
+          easy: '이상한',
+          definition: '평소와 달라서 궁금하거나 의심이 드는 모습이에요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '비밀',
+          easy: '숨긴 이야기',
+          definition: '아직 다른 사람에게 알려지지 않은 일이에요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
       '자연' => [
-          VocabWord(
-            hard: '시냇물',
-            easy: '작은 물길',
-            definition: '졸졸 흐르는 작은 물줄기를 말해요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '관찰하다',
-            easy: '자세히 보다',
-            definition: '무엇이 어떻게 움직이는지 찬찬히 살펴보는 거예요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '시냇물',
+          easy: '작은 물길',
+          definition: '졸졸 흐르는 작은 물줄기를 말해요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '관찰하다',
+          easy: '자세히 보다',
+          definition: '무엇이 어떻게 움직이는지 찬찬히 살펴보는 거예요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
       _ => [
-          VocabWord(
-            hard: '용기',
-            easy: '씩씩한 마음',
-            definition: '무섭거나 어려워도 해 보려는 마음이에요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '다정한',
-            easy: '친절한',
-            definition: '상대방을 따뜻하게 대해 주는 모습이에요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '용기',
+          easy: '씩씩한 마음',
+          definition: '무섭거나 어려워도 해 보려는 마음이에요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '다정한',
+          easy: '친절한',
+          definition: '상대방을 따뜻하게 대해 주는 모습이에요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
     };
 
     final byChapter = [
@@ -995,18 +1037,18 @@ class AppState extends ChangeNotifier {
         hard: chapter == 1
             ? '모험'
             : chapter == 2
-                ? '문양'
-                : '약속',
+            ? '문양'
+            : '약속',
         easy: chapter == 1
             ? '새로운 일을 겪는 것'
             : chapter == 2
-                ? '그림 무늬'
-                : '꼭 하기로 한 말',
+            ? '그림 무늬'
+            : '꼭 하기로 한 말',
         definition: chapter == 1
             ? '낯선 곳에서 새롭고 신나는 일을 겪는 거예요.'
             : chapter == 2
-                ? '물건이나 문에 새겨진 특별한 모양이에요.'
-                : '서로 믿고 꼭 지키기로 한 말이에요.',
+            ? '물건이나 문에 새겨진 특별한 모양이에요.'
+            : '서로 믿고 꼭 지키기로 한 말이에요.',
         sourceStoryTitle: prompt,
       ),
     ];
@@ -1047,10 +1089,18 @@ class AppState extends ChangeNotifier {
   }) {
     final setting = _genreSetting(genre);
     final seed = _temporarySeed('$genre|$age|$prompt');
-    final companion =
-        ['작은 별나비', '노란 목도리를 한 여우', '말하는 조약돌', '구름 모자를 쓴 요정'][seed % 4];
-    final mystery =
-        ['은빛 열쇠', '접히지 않는 지도', '노래하는 씨앗', '무지개빛 발자국'][(seed ~/ 3) % 4];
+    final companion = [
+      '작은 별나비',
+      '노란 목도리를 한 여우',
+      '말하는 조약돌',
+      '구름 모자를 쓴 요정',
+    ][seed % 4];
+    final mystery = [
+      '은빛 열쇠',
+      '접히지 않는 지도',
+      '노래하는 씨앗',
+      '무지개빛 발자국',
+    ][(seed ~/ 3) % 4];
     return '$setting에서 작은 모험이 시작되었어요. 오늘의 주인공은 "$prompt"라는 꿈을 품고 조심조심 길을 나섰답니다.\n\n'
         '그때 $companion가 나타나 "$mystery를 찾으면 마음속 소원이 한 뼘 자랄 거야" 하고 속삭였어요. 길가에는 반짝이는 돌멩이와 흔들리는 그림자가 있었고, 멀리서는 누군가 도움을 기다리는 듯한 따뜻한 빛이 깜빡였지요.\n\n'
         '주인공은 심장이 두근거렸지만, 오늘만큼은 겁보다 호기심이 조금 더 컸답니다.';
@@ -1101,8 +1151,10 @@ class AppState extends ChangeNotifier {
         choiceMade: choice,
         imageUrl: _temporaryImageMarker(session.genre, newChapterNumber),
         videoUrl: _temporaryVideoMarker(session.genre, newChapterNumber),
-        selectedChoiceEmotion:
-            _temporaryChoiceEmotion(choice, newChapterNumber),
+        selectedChoiceEmotion: _temporaryChoiceEmotion(
+          choice,
+          newChapterNumber,
+        ),
         storyEmotion: _temporaryStoryEmotion(
           genre: session.genre,
           chapter: newChapterNumber,
@@ -1160,8 +1212,9 @@ class AppState extends ChangeNotifier {
           ? emotion.topEmotions
           : emotion.activeEmotions;
       for (final item in items.take(5)) {
-        final label =
-            item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
+        final label = item.labelDisplay.isNotEmpty
+            ? item.labelDisplay
+            : item.label;
         emotionScores[label] = (emotionScores[label] ?? 0) + item.score;
       }
     }
@@ -1235,10 +1288,6 @@ class AppState extends ChangeNotifier {
       _ => '새로운 장면을 궁금해하고 탐색하는 마음이 잘 드러나요. 차근차근 이야기를 따라가며 스스로 길을 찾는 타입이에요.',
     };
 
-    return PsychResult(
-      type: type,
-      description: description,
-      traits: traits,
-    );
+    return PsychResult(type: type, description: description, traits: traits);
   }
 }

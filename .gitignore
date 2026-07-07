@@ -43,4 +43,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local secrets
 .env
+**/.env
+
+# Local backend/runtime state
+DB*/media_server_state.json
+DB*/__pycache__/
+DB*/**/*.pyc
+
+# Generated or local-only files
+*.tmp
+*.bak

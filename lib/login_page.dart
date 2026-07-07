@@ -22,10 +22,20 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  static const String _definedGoogleClientId =
+      String.fromEnvironment('GOOGLE_CLIENT_ID');
+
+  static String? get _webGoogleClientId {
+    final defined = _definedGoogleClientId.trim();
+    if (defined.isNotEmpty) return defined;
+
+    final configured = dotenv.env['GOOGLE_CLIENT_ID']?.trim() ?? '';
+    return configured.isEmpty ? null : configured;
+  }
 
   //  구글 클라이언트 ID
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: kIsWeb ? dotenv.env['GOOGLE_CLIENT_ID'] : null,
+    clientId: kIsWeb ? _webGoogleClientId : null,
   );
 
   @override
