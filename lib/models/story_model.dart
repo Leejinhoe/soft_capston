@@ -25,12 +25,14 @@ class VocabWord {
       id: json['id']?.toString(),
       userId: json['user_id']?.toString(),
       originStoryId: json['origin_story_id']?.toString(),
-      sourceStoryTitle: json['source_story_title']?.toString() ??
+      sourceStoryTitle:
+          json['source_story_title']?.toString() ??
           json['origin_story_title']?.toString(),
       hard: json['hard']?.toString() ?? json['word']?.toString() ?? '',
       easy: json['easy']?.toString() ?? meaning.toString(),
       definition: meaning.toString(),
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.tryParse(json['saved_at']?.toString() ?? ''),
     );
   }
@@ -125,9 +127,7 @@ class EmotionAnalysis {
       activeEmotions: (json['active_emotions'] as List? ?? [])
           .map((e) => EmotionScoreItem.fromJson(e as Map<String, dynamic>))
           .toList(),
-      scores: rawScores.map(
-        (k, v) => MapEntry(k, (v as num).toDouble()),
-      ),
+      scores: rawScores.map((k, v) => MapEntry(k, (v as num).toDouble())),
       scoresByIndex: rawScoresByIndex.map(
         (k, v) => MapEntry(int.tryParse(k) ?? -1, (v as num).toDouble()),
       ),
@@ -139,18 +139,88 @@ class ChoiceOption {
   final String text;
   final EmotionAnalysis? emotion;
 
-  ChoiceOption({
-    required this.text,
-    this.emotion,
+  ChoiceOption({required this.text, this.emotion});
+}
+
+class SceneMediaResult {
+  final String? imageUrl;
+  final String? videoUrl;
+  final String? provider;
+  final double? elapsedSeconds;
+  final bool saved;
+  final String? jobId;
+  final String? status;
+  final String? statusUrl;
+
+  const SceneMediaResult({
+    this.imageUrl,
+    this.videoUrl,
+    this.provider,
+    this.elapsedSeconds,
+    this.saved = false,
+    this.jobId,
+    this.status,
+    this.statusUrl,
   });
+
+  bool get hasMedia =>
+      (imageUrl?.trim().isNotEmpty ?? false) ||
+      (videoUrl?.trim().isNotEmpty ?? false);
+
+  factory SceneMediaResult.fromJson(Map<String, dynamic> json) {
+    final rawResult = json['result'];
+    final result = rawResult is Map
+        ? Map<String, dynamic>.from(rawResult)
+        : <String, dynamic>{};
+    String? readString(String key) {
+      final nestedValue = result[key];
+      if (nestedValue != null) return nestedValue.toString();
+
+      final topLevelValue = json[key];
+      if (topLevelValue != null) return topLevelValue.toString();
+
+      return null;
+    }
+
+    bool readBool(String key, {bool fallback = false}) {
+      final nestedValue = result[key];
+      if (nestedValue is bool) return nestedValue;
+
+      final topLevelValue = json[key];
+      if (topLevelValue is bool) return topLevelValue;
+
+      return fallback;
+    }
+
+    double? readDouble(String key) {
+      final nestedValue = result[key];
+      if (nestedValue is num) return nestedValue.toDouble();
+
+      final topLevelValue = json[key];
+      if (topLevelValue is num) return topLevelValue.toDouble();
+
+      return null;
+    }
+
+    return SceneMediaResult(
+      imageUrl: readString('image_url'),
+      videoUrl: readString('video_url'),
+      provider: readString('provider'),
+      elapsedSeconds: readDouble('elapsed_seconds'),
+      saved: readBool('saved'),
+      jobId: readString('job_id'),
+      status: readString('status'),
+      statusUrl: readString('status_url'),
+    );
+  }
 }
 
 class StoryChapter {
   final int chapter;
   final String text;
   final String? choiceMade;
-  final String? imageUrl;
-  final String? videoUrl;
+  String? imageUrl;
+  String? videoUrl;
   final DateTime? createdAt;
   String? imageB64;
   EmotionAnalysis? storyEmotion;
@@ -184,6 +254,8 @@ class StorySession {
   int currentChapter;
   final DateTime? createdAt;
   final Set<String> syncedVocabKeys;
+  final Set<int> syncedChapterNumbers;
+  final Set<int> mediaGenerationChapterNumbers;
 
   StorySession({
     required this.storyId,
@@ -200,7 +272,11 @@ class StorySession {
     this.currentChapter = 1,
     this.createdAt,
     Set<String>? syncedVocabKeys,
-  }) : syncedVocabKeys = syncedVocabKeys ?? <String>{};
+    Set<int>? syncedChapterNumbers,
+    Set<int>? mediaGenerationChapterNumbers,
+  }) : syncedVocabKeys = syncedVocabKeys ?? <String>{},
+       syncedChapterNumbers = syncedChapterNumbers ?? <int>{},
+       mediaGenerationChapterNumbers = mediaGenerationChapterNumbers ?? <int>{};
 
   String get fullStoryText => chapters.map((c) => c.text).join('\n\n');
 
@@ -219,16 +295,16 @@ class StorySession {
         .map(
           (scene) => StoryChapter(
             chapter: (scene['step_number'] as num?)?.toInt() ?? 1,
-            text: scene['story_text']?.toString() ??
+            text:
+                scene['story_text']?.toString() ??
                 scene['content']?.toString() ??
                 '',
-            choiceMade: scene['choice_made']?.toString() ??
+            choiceMade:
+                scene['choice_made']?.toString() ??
                 scene['user_choice']?.toString(),
             imageUrl: scene['image_url']?.toString(),
             videoUrl: scene['video_url']?.toString(),
-            createdAt: DateTime.tryParse(
-              scene['created_at']?.toString() ?? '',
-            ),
+            createdAt: DateTime.tryParse(scene['created_at']?.toString() ?? ''),
           ),
         )
         .where((chapter) => chapter.text.trim().isNotEmpty)
@@ -249,6 +325,17 @@ class StorySession {
 
     final syncedKeys = vocab
         .map((word) => '${word.hard}|${word.easy}|${word.definition}')
+        .toSet();
+    final syncedChapterNumbers = chapters
+        .map((chapter) => chapter.chapter)
+        .toSet();
+    final mediaGenerationChapterNumbers = chapters
+        .where(
+          (chapter) =>
+              (chapter.imageUrl?.trim().isNotEmpty ?? false) ||
+              (chapter.videoUrl?.trim().isNotEmpty ?? false),
+        )
+        .map((chapter) => chapter.chapter)
         .toSet();
 
     return StorySession(
@@ -273,6 +360,8 @@ class StorySession {
       ),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
       syncedVocabKeys: syncedKeys,
+      syncedChapterNumbers: syncedChapterNumbers,
+      mediaGenerationChapterNumbers: mediaGenerationChapterNumbers,
     );
   }
 }
@@ -319,7 +408,8 @@ class CommunityComment {
       authorName: json['author_name']?.toString() ?? '동화 친구',
       authorAccountId: json['author_account_id']?.toString(),
       content: json['content']?.toString() ?? '',
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
     );
   }
@@ -376,7 +466,8 @@ class CommunityPost {
       preview: json['preview']?.toString() ?? '',
       fullText: json['full_text']?.toString() ?? '',
       storyEmoji: json['story_emoji']?.toString() ?? '📖',
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
       viewCount: (json['view_count'] as num?)?.toInt() ?? 0,
       likeCount: (json['like_count'] as num?)?.toInt() ?? 0,

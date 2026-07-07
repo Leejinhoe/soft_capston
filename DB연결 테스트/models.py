@@ -13,8 +13,8 @@ class UserSchema(BaseModel):
     provider_id: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
-    personality_type: Optional[str] = "분석 전"
-    radar_stats: Optional[Dict] = {}
+    personality_type: Optional[str] = "Unknown"
+    radar_stats: Optional[Dict] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -39,6 +39,24 @@ class SceneSchema(BaseModel):
     video_url: Optional[str] = None
     image_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MediaGenerationSchema(BaseModel):
+    story_text: str
+    genre: Optional[str] = None
+    age: Optional[str] = None
+    include_video: bool = False
+    width: int = Field(default=512, ge=256, le=1536)
+    height: int = Field(default=512, ge=256, le=1536)
+    flux_steps: int = Field(default=1, ge=1, le=8)
+    video_width: int = Field(default=512, ge=256, le=1280)
+    video_height: int = Field(default=384, ge=256, le=768)
+    num_frames: int = Field(default=33, ge=9, le=129)
+
+
+class MediaGenerationWithStorySchema(MediaGenerationSchema):
+    story_id: Optional[str] = None
+    step_number: Optional[int] = None
 
 
 class VocabularySchema(BaseModel):
@@ -66,5 +84,5 @@ class CommunityPostSchema(BaseModel):
     title: str
     preview: str
     full_text: str
-    story_emoji: str = "📖"
+    story_emoji: str = "?"
     created_at: datetime = Field(default_factory=datetime.utcnow)

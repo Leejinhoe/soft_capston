@@ -8,6 +8,20 @@ import 'package:provider/provider.dart';
 import 'login_page.dart';
 import 'models/app_state.dart';
 
+const String _definedKakaoNativeKey =
+    String.fromEnvironment('KAKAO_NATIVE_KEY');
+const String _definedKakaoJsKey = String.fromEnvironment('KAKAO_JS_KEY');
+
+String _envOrDefined(String key, String defined, [String fallback = '']) {
+  final fromDefine = defined.trim();
+  if (fromDefine.isNotEmpty) return fromDefine;
+
+  final fromDotenv = dotenv.env[key]?.trim() ?? '';
+  if (fromDotenv.isNotEmpty) return fromDotenv;
+
+  return fallback;
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
@@ -20,7 +34,15 @@ Future<void> main() async {
     ),
   );
 
-  KakaoSdk.init(nativeAppKey: 'fa2f07355c5d24ed9b226ff59a91d57a');
+  final kakaoJsKey = _envOrDefined('KAKAO_JS_KEY', _definedKakaoJsKey);
+  KakaoSdk.init(
+    nativeAppKey: _envOrDefined(
+      'KAKAO_NATIVE_KEY',
+      _definedKakaoNativeKey,
+      'fa2f07355c5d24ed9b226ff59a91d57a',
+    ),
+    javaScriptAppKey: kakaoJsKey.isEmpty ? null : kakaoJsKey,
+  );
 
   runApp(
     ChangeNotifierProvider(

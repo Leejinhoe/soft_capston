@@ -65,12 +65,13 @@ class _StoryPageState extends State<StoryPage> {
       await _flutterTts.setVolume(1.0);
 
       final rawLanguages = await _flutterTts.getLanguages;
-      final languages =
-          (rawLanguages as List? ?? const []).map((e) => e.toString()).toList();
+      final languages = (rawLanguages as List? ?? const [])
+          .map((e) => e.toString())
+          .toList();
       final koLanguage = languages.cast<String?>().firstWhere(
-            (lang) => lang != null && lang.toLowerCase().startsWith('ko'),
-            orElse: () => 'ko-KR',
-          )!;
+        (lang) => lang != null && lang.toLowerCase().startsWith('ko'),
+        orElse: () => 'ko-KR',
+      )!;
       await _flutterTts.setLanguage(koLanguage);
 
       _flutterTts.setStartHandler(() {
@@ -135,18 +136,13 @@ class _StoryPageState extends State<StoryPage> {
         .trim();
   }
 
-  Future<void> _speakText(
-    String text,
-    _NarrationTarget target,
-  ) async {
+  Future<void> _speakText(String text, _NarrationTarget target) async {
     final cleaned = _cleanTtsText(text);
     if (!_ttsReady || cleaned.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            cleaned.isEmpty ? '읽을 내용이 아직 없어요.' : '낭독을 준비하지 못했어요.',
-          ),
+          content: Text(cleaned.isEmpty ? '읽을 내용이 아직 없어요.' : '낭독을 준비하지 못했어요.'),
           backgroundColor: Colors.red.shade700,
         ),
       );
@@ -158,8 +154,9 @@ class _StoryPageState extends State<StoryPage> {
     setState(() {
       _activeNarrationTarget = target;
       _ttsSpeaking = false;
-      _ttsStatus =
-          target == _NarrationTarget.fullStory ? '전체 이야기를 준비 중' : '현재 장을 준비 중';
+      _ttsStatus = target == _NarrationTarget.fullStory
+          ? '전체 이야기를 준비 중'
+          : '현재 장을 준비 중';
     });
     await _flutterTts.speak(cleaned);
   }
@@ -347,8 +344,10 @@ class _StoryPageState extends State<StoryPage> {
                 MaterialPageRoute(builder: (_) => const PsychPage()),
               ),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.pink.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(10),
@@ -371,9 +370,9 @@ class _StoryPageState extends State<StoryPage> {
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: story.fullStoryText));
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('전체 동화 내용을 복사했어요.')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('전체 동화 내용을 복사했어요.')));
             },
             icon: const Icon(Icons.copy_rounded),
             color: AppColors.gray2,
@@ -457,8 +456,10 @@ class _StoryPageState extends State<StoryPage> {
               ),
               if (_ttsSpeaking)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.teal.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(999),
@@ -491,9 +492,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                            currentChapterText,
-                            _NarrationTarget.currentChapter,
-                          ),
+                          currentChapterText,
+                          _NarrationTarget.currentChapter,
+                        ),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('현재 장 읽기'),
                   style: ElevatedButton.styleFrom(
@@ -507,9 +508,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                            story.fullStoryText,
-                            _NarrationTarget.fullStory,
-                          ),
+                          story.fullStoryText,
+                          _NarrationTarget.fullStory,
+                        ),
                   icon: const Icon(Icons.menu_book_rounded, size: 18),
                   label: const Text('전체 읽기'),
                   style: OutlinedButton.styleFrom(
@@ -669,8 +670,9 @@ class _StoryPageState extends State<StoryPage> {
           ...emotions.asMap().entries.map((entry) {
             final color = colors[entry.key % colors.length];
             final item = entry.value;
-            final label =
-                item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
+            final label = item.labelDisplay.isNotEmpty
+                ? item.labelDisplay
+                : item.label;
             final percent = item.score.clamp(0.0, 1.0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
@@ -725,8 +727,9 @@ class _StoryPageState extends State<StoryPage> {
     void collect(EmotionAnalysis? analysis) {
       if (analysis == null) return;
       for (final item in analysis.topEmotions.take(5)) {
-        final key =
-            item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
+        final key = item.labelDisplay.isNotEmpty
+            ? item.labelDisplay
+            : item.label;
         totals[key] = (totals[key] ?? 0) + item.score;
         counts[key] = (counts[key] ?? 0) + 1;
         indexes[key] = item.labelIndex;
@@ -751,8 +754,7 @@ class _StoryPageState extends State<StoryPage> {
         labelDisplay: displays[entry.key] ?? entry.key,
         score: double.parse(score.toStringAsFixed(3)),
       );
-    }).toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
+    }).toList()..sort((a, b) => b.score.compareTo(a.score));
 
     return result.take(5).toList();
   }
@@ -825,10 +827,7 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
-  List<_VocabTextMatch> _findVocabMatches(
-    String text,
-    List<VocabWord> vocab,
-  ) {
+  List<_VocabTextMatch> _findVocabMatches(String text, List<VocabWord> vocab) {
     final candidates = <_VocabTextMatch>[];
     final seenWords = <String>{};
     for (final word in vocab) {
@@ -837,11 +836,7 @@ class _StoryPageState extends State<StoryPage> {
       var start = text.indexOf(target);
       while (start >= 0) {
         candidates.add(
-          _VocabTextMatch(
-            start: start,
-            end: start + target.length,
-            word: word,
-          ),
+          _VocabTextMatch(start: start, end: start + target.length, word: word),
         );
         start = text.indexOf(target, start + target.length);
       }
@@ -973,8 +968,9 @@ class _StoryPageState extends State<StoryPage> {
                     ),
                     label: Text(alreadySaved ? '이미 저장된 단어' : '단어장에 저장'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          alreadySaved ? AppColors.gray2 : AppColors.p600,
+                      backgroundColor: alreadySaved
+                          ? AppColors.gray2
+                          : AppColors.p600,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -1008,9 +1004,7 @@ class _StoryPageState extends State<StoryPage> {
             decoration: BoxDecoration(
               color: AppColors.pink.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: AppColors.pink.withValues(alpha: 0.3),
-              ),
+              border: Border.all(color: AppColors.pink.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
@@ -1035,11 +1029,17 @@ class _StoryPageState extends State<StoryPage> {
         if (chapter.imageB64 != null) ...[
           _buildStoryImage(chapter.imageB64!),
           const SizedBox(height: 12),
+        ] else if (_isRemoteMediaUrl(chapter.imageUrl)) ...[
+          _buildNetworkStoryImage(chapter.imageUrl!),
+          const SizedBox(height: 12),
         ] else if (chapter.imageUrl?.startsWith('mock://image/') == true) ...[
           _buildTemporaryStoryImage(chapter),
           const SizedBox(height: 12),
         ],
-        if (chapter.videoUrl?.startsWith('mock://video/') == true) ...[
+        if (_isRemoteMediaUrl(chapter.videoUrl)) ...[
+          _buildGeneratedVideoCard(chapter.videoUrl!),
+          const SizedBox(height: 12),
+        ] else if (chapter.videoUrl?.startsWith('mock://video/') == true) ...[
           _buildTemporaryVideoCard(chapter),
           const SizedBox(height: 12),
         ],
@@ -1110,8 +1110,9 @@ class _StoryPageState extends State<StoryPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                   child: AspectRatio(
                     aspectRatio: 1.0,
                     child: Image.memory(
@@ -1122,8 +1123,10 @@ class _StoryPageState extends State<StoryPage> {
                   ),
                 ),
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: Row(
                     children: [
                       const Text('🎨', style: TextStyle(fontSize: 12)),
@@ -1155,6 +1158,111 @@ class _StoryPageState extends State<StoryPage> {
     } catch (_) {
       return const SizedBox.shrink();
     }
+  }
+
+  bool _isRemoteMediaUrl(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return false;
+    return trimmed.startsWith('http://') || trimmed.startsWith('https://');
+  }
+
+  Widget _buildNetworkStoryImage(String imageUrl) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 280),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.p700.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+                child: AspectRatio(
+                  aspectRatio: 1.0,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        color: AppColors.card2,
+                        alignment: Alignment.center,
+                        child: const CircularProgressIndicator(
+                          color: AppColors.p400,
+                          strokeWidth: 2,
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: AppColors.card2,
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.all(20),
+                        child: const Text(
+                          '이미지를 불러오지 못했어요',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.gray,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    const Text('🖼', style: TextStyle(fontSize: 12)),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '생성 이미지',
+                      style: TextStyle(
+                        color: AppColors.teal,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Flexible(
+                      child: Text(
+                        Uri.tryParse(imageUrl)?.host ?? 'remote',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: AppColors.gray.withValues(alpha: 0.6),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildTemporaryStoryImage(StoryChapter chapter) {
@@ -1205,10 +1313,7 @@ class _StoryPageState extends State<StoryPage> {
                   Positioned(
                     top: 22,
                     right: 18,
-                    child: Text(
-                      symbol,
-                      style: const TextStyle(fontSize: 58),
-                    ),
+                    child: Text(symbol, style: const TextStyle(fontSize: 58)),
                   ),
                   Positioned(
                     left: -26,
@@ -1327,6 +1432,71 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
+  Widget _buildGeneratedVideoCard(String videoUrl) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.p400.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.p600.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.movie_creation_outlined,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '생성된 동영상',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '앱 안의 플레이어는 아직 없어서 URL만 표시해요.',
+                  style: TextStyle(
+                    color: AppColors.gray,
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  videoUrl,
+                  maxLines: 2,
+                  style: const TextStyle(
+                    color: AppColors.p300,
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmotionPanel({
     required String title,
     required String subtitle,
@@ -1375,8 +1545,10 @@ class _StoryPageState extends State<StoryPage> {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(999),
@@ -1478,7 +1650,10 @@ class _StoryPageState extends State<StoryPage> {
   }
 
   Widget _buildChoices(
-      BuildContext context, StorySession story, AppState state) {
+    BuildContext context,
+    StorySession story,
+    AppState state,
+  ) {
     if (story.choices.isEmpty) return const SizedBox();
 
     return Column(
@@ -1615,9 +1790,7 @@ class _StoryPageState extends State<StoryPage> {
             decoration: BoxDecoration(
               color: AppColors.teal.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.teal.withValues(alpha: 0.3),
-              ),
+              border: Border.all(color: AppColors.teal.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
@@ -1721,11 +1894,7 @@ class _StoryPageState extends State<StoryPage> {
           const Text(
             '지금까지의 모험을 저장하고 다음 이야기를 시작할 수 있어요.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.gray,
-              fontSize: 12,
-              height: 1.5,
-            ),
+            style: TextStyle(color: AppColors.gray, fontSize: 12, height: 1.5),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -1746,10 +1915,7 @@ class _StoryPageState extends State<StoryPage> {
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          '이야기를 그만할까요?',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('이야기를 그만할까요?', style: TextStyle(color: Colors.white)),
         content: const Text(
           '지금까지의 이야기가 저장됩니다.',
           style: TextStyle(color: AppColors.gray),
@@ -1757,10 +1923,7 @@ class _StoryPageState extends State<StoryPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              '계속 읽기',
-              style: TextStyle(color: AppColors.p400),
-            ),
+            child: const Text('계속 읽기', style: TextStyle(color: AppColors.p400)),
           ),
           TextButton(
             onPressed: () {
@@ -1768,10 +1931,7 @@ class _StoryPageState extends State<StoryPage> {
               context.read<AppState>().finishCurrentStory();
               Navigator.pop(context);
             },
-            child: const Text(
-              '나가기',
-              style: TextStyle(color: AppColors.pink),
-            ),
+            child: const Text('나가기', style: TextStyle(color: AppColors.pink)),
           ),
         ],
       ),
@@ -1779,11 +1939,7 @@ class _StoryPageState extends State<StoryPage> {
   }
 
   String _ageLabel(String age) {
-    return const {
-          '유아': '4-6세',
-          '초등_저학년': '7-9세',
-          '초등_고학년': '10-12세',
-        }[age] ??
+    return const {'유아': '4-6세', '초등_저학년': '7-9세', '초등_고학년': '10-12세'}[age] ??
         age;
   }
 }
