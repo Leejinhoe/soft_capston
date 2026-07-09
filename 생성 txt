@@ -1,0 +1,45 @@
+/usr/local/lib/python3.12/dist-packages/bitsandbytes/backends/cuda/ops.py:468: FutureWarning: _check_is_size will be removed in a future PyTorch release along with guard_size_oblivious.     Use _check(i >= 0) instead.torch._check_is_size(blocksize)[STORY PLAN]{'chapter_goals': [{'goal': '레오와 까마귀 노아가 왕성 앞마당에서 아리아 공주가 용의 탑에 갇혔다는 소식을 듣고, ''모험을 시작한다','stage': 'opening'},{'goal': '대장장이 할머니의 도움으로 용의 비늘 열쇠를 얻고, 검은 숲길을 따라 용의 탑으로 가는 ''길을 찾는다','stage': 'exploration'},{'goal': '용의 탑으로 가는 길이 불꽃 다리로 막혀 있고, 용이 잠에서 깨어나서 레오와 아리아를 ''위협한다','stage': 'crisis'},{'goal': '까마귀 노아와 대장장이 할머니의 조언으로 용에게 말을 건네고, 용의 마음을 움직여 공주를 ''구해내고, 모두 안전하게 집으로 돌아간다','stage': 'ending'}],'core_entities': ['소년 기사 레오','아리아 공주','붉은 용 그라움','말하는 까마귀 노아','대장장이 할머니','용의 비늘 열쇠','용의 탑'],'emotional_arc': ['기쁨과 희망', '두려움과 혼란', '친구와의 협력', '용기와 지혜로 이겨낸 승리'],'final_goal': '용에게 납치된 아리아 공주를 구해내고, 용의 탑에서 안전하게 데려오기','main_conflict': '용의 탑으로 가는 길이 막혀 있고, 용은 큰 소리에 잠에서 깨어나서 위험할 수 있다','protagonist': '소년 기사 레오','title': '레오와 아리아 공주의 용의 탑'}
+
+[STAGE]opening
+
+[STORY]왕성 앞마당에는 따뜻한 태양빛이 내렸고, 꽃 향기가 진득했다. 레오는 바람처럼 자유롭게 달리는 말을 생각하며, 오늘 하루를 보내고 있었다. 그런데 어느덧 산책하던 까마귀 노아가 날카롭게 욱신거렸는데, “아리아 공주님이 용의 탑에 갇혔다고 해!”라고 말했다. 레오는 얼굴이 붉어졌고, 두 팔을 벌리며 “그렇다면 바로 나가야겠어!”, 하고 말았다.
+
+까마귀 노아는 작은 목소리로 “용의 탑까지 오는 길엔 검은 숲길을 따라야 해”라고 알려줬다. 하지만 레오는 눈을 치켜뜨며 “검은 숲길? 그런 길은 어딨어?”라고 궁금해졌다. 노아는 한참을 읊조리더니, “숲속深处에 숨어 있어요. 누구라도 쉽게 알아볼 수 없죠.”
+
+레오는 지금 당장 검은 숲길로 가야겠다고 결심했지만, 어떻게 들어갈지 몰랐다. 그래서 또 질문해야 할 것 같았지만...
+
+[STORY_QUALITY] warning
+
+장면이 너무 짧음: 408자 < 520자
+
+[SCENE_BLUEPRINT]{'beats': [{'must_include': ['왕성 앞마당', '태양 아래', '꽃 향기'],'name': 'setup','purpose': '장소와 분위기'},{'must_include': ['기쁨', '흥분'],'name': 'emotion','purpose': '주인공 감정'},{'must_include': ['까마귀 노아에게 물어보기'],'name': 'action','purpose': '구체 행동'},{'must_include': ['까마귀 노아가 대답하기'],'name': 'reaction','purpose': '인물 또는 환경 반응'},{'must_include': ['용의 탑으로 가는 길은 검은 숲길을 따라야 한다'],'name': 'discovery','purpose': '새 단서'},{'must_include': ['검은 숲길은 어둠 속에 숨어 있는 곳이라 찾기 어렵다'],'name': 'complication','purpose': '바로 해결하지 못하는 문제'},{'must_include': ['검은 숲길로 가야 할지, 다른 길을 찾아야 할지'],'name': 'decision_point','purpose': '다음 선택지가 필요한 열린 상황'}],'decision_anchors': ['검은 숲길로 가자', '다른 길을 찾아보자', '까마귀 노아에게 더 많은 정보를 물어보자'],'emotional_goal': '기쁨과 희망을 느끼며 모험을 시작하려는 의지를 갖는다','new_information': '아리아 공주는 용의 탑에 갇혔다는 소식을 들었다','new_problem': '용의 탑으로 가는 길이 어디인지 알 수 없다','required_elements': {'characters': ['소년 기사 레오', '말하는 까마귀 노아'],'clues': ['용의 탑에 갇힌 공주 소식'],'objects': ['은빛 방패', '낡은 지도'],'places': ['왕성 앞마당'],'problems': ['용의 탑으로 가는 길이 막혀 있다는 단서']},'scene_goal': '레오와 까마귀 노아가 왕성 앞마당에서 아리아 공주가 용의 탑에 갇혔다는 소식을 듣고, 모험을 시작한다','stage': 'opening'}
+
+[SCENE_ANCHORS]{'characters': ['레오', '까마귀 노아', '아리아 공주'],'clues': ['용의 탑에 갇힌 공주', '검은 숲길로 가야 함'],'objects': ['태양', '용의 탑', '검은 숲길'],'places': ['왕성 앞마당', '검은 숲길'],'problems': ['검은 숲길을 어떻게 들어갈지 모름'],'visible_items': ['태양', '용의 탑', '검은 숲길']}
+
+[DECISION_CONTEXT]{'available_anchors': ['까마귀 노아', '용의 탑', '검은 숲길', '태양', '용의 탑에 갇힌 공주'],'current_situation': "레오는 검은 숲길로 가야 하지만, 어떻게 들어갈지 모르겠어. 까마귀 노아가 말했다 '숲속深处에 숨어 ""있어요. 누구라도 쉽게 알아볼 수 없죠.'",'decision_question': '누구에게 도움을 받을까?','tension': '레오는 길을 찾기 위해 도움이 필요하지만, 누구에게 물어봐야 할지 모르겠어.'}
+
+[AFFORDANCES]
+
+A: 인물에게 질문 | anchor=까마귀 노아 | action=레오는 까마귀 노아에게 '검은 숲길로 들어가는 방법을 알려줄 수 있을까?'라고 물어봤어요. | risk=중간
+
+B: 장소 이동 | anchor=용의 탑 | action=레오는 용의 탑으로 향해 걸어갔어요. 탑 위에는 갇힌 공주가 있다는 소문이 있었거든요. | risk=중간
+
+C: 도구 사용 | anchor=태양 | action=레오는 태양 아래서 눈을 감고, 숲길로 가는 방법을 생각해 봤어요. 태양빛이 마음을 따뜻하게 해 줬어요. | risk=낮음
+
+[CHOICES] ok
+
+[A] 레오가 까마귀 노아에게 도움을 받을래요.  (anchor=까마귀 노아, role=인물에게 질문, risk=중간)contract: {'start_sentence': "까마귀 노아는 레오에게 '용의 탑에 갇힌 공주가 알고 있을 거야'라고 말했어요.", 'must_include_result': '레오는 용의 탑으로 가기로 했어요.', 'must_reveal': '용의 탑에 갇힌 공주가 알고 있을 수 있다는 사실', 'must_create_next_problem': '용의 탑에 도착하면 공주가 어떤 반응을 할지 궁금해졌어요.'}
+
+[B] 레오가 용의 탑으로 가볼래요.  (anchor=용의 탑, role=장소 이동, risk=중간)contract: {'start_sentence': '용의 탑에 도착한 레오는 공주가 눈치 채고, 그녀가 검은 숲길로 가는 비밀을 알려줄 것 같았어요.', 'must_include_result': '공주가 레오에게 도움을 주었어요.', 'must_reveal': '공주가 검은 숲길로 가는 비밀을 알고 있다는 사실', 'must_create_next_problem': '공주가 레오에게 어떤 조건을 걸었는지 궁금해졌어요.'}
+
+[C] 레오가 태양의 빛을 따라가볼래요.  (anchor=태양, role=도구 사용, risk=낮음)contract: {'start_sentence': '레오는 태양의 빛을 따라가며, 검은 숲길로 들어가는 길을 발견했어요.', 'must_include_result': '레오는 검은 숲길로 들어갔어요.', 'must_reveal': '태양의 빛이 숲길로 가는 길을 보여주는 능력', 'must_create_next_problem': '검은 숲길로 들어가면 어떤 일이 벌어질지 궁금해졌어요.'}
+
+[WORLD_DRIFT]{'allowed_entities': ['소년 기사 레오','아리아 공주','붉은 용 그라움','말하는 까마귀 노아','대장장이 할머니','은빛 방패','낡은 지도','용의 비늘 열쇠','작은 나침반','왕성 앞마당','검은 숲길','불꽃 다리','용의 탑','탑 꼭대기 방','공주가 용의 탑에 갇힘','용의 탑으로 가는 길이 막힘','용은 큰 소리에 잠에서 깨어남','레오와 아리아 공주의 용의 탑','용에게 납치된 아리아 공주를 구해내고, 용의 탑에서 안전하게 데려오기','용의 탑으로 가는 길이 막혀 있고, 용은 큰 소리에 잠에서 깨어나서 위험할 수 있다','용의 탑에 갇힌 공주 소식','용의 탑으로 가는 길이 막혀 있다는 단서'],'generated_entities': ['레오', '까마귀 노아', '아리아 공주', '용의 탑', '검은 숲길', '태양'],'unknown_entities': ['태양'],'unknown_entity_ratio': 0.16666666666666666}
+
+[STATE_AFTER]{'current_stage': 'exploration','inventory': ['은빛 방패', '낡은 지도'],'known_facts': ['아리아 공주는 용의 탑에 갇혔다','용의 탑으로 가는 길은 검은 숲길을 따라야 한다','아리아 공주는 용의 탑에 갇혔다는 소식을 들었다'],'locations': {'current': '왕성 앞마당', 'known': ['왕성 앞마당', '검은 숲길']},'open_threads': ['검은 숲길로 가야 할지, 다른 길을 찾아야 할지', '용의 탑으로 가는 길이 어디인지 알 수 없다'],'stage_turns': {'crisis': 0, 'ending': 0, 'exploration': 0, 'opening': 1}}
+
+[SELECTED]{'anchor': '까마귀 노아','contract': {'must_create_next_problem': '용의 탑에 도착하면 공주가 어떤 반응을 할지 궁금해졌어요.','must_include_result': '레오는 용의 탑으로 가기로 했어요.','must_reveal': '용의 탑에 갇힌 공주가 알고 있을 수 있다는 사실','start_sentence': "까마귀 노아는 레오에게 '용의 탑에 갇힌 공주가 알고 있을 거야'라고 말했어요."},'id': 'A','risk': '중간','role': '인물에게 질문','text': '레오가 까마귀 노아에게 도움을 받을래요.'}
+
+[STAGE]exploration
+
+[STORY]까마귀 노아는 레오에게 '용의 탑에 갇힌 공주가 알고 있을 거야'라고 말했어요. 레오는 눈을 크게睁いて 깊은 호흡을 하면서, “그럼 공주님이 우리를 돕도록 해줄까요?”라고 물었어요. 노아는 천천히 꾱긋한 목소리로 답했다. “공주님은 용에게 가장 중요한 보물을 가지고 있어요. 만약 당신들이 진짜 잘난 사람이라면, 공주님이 조금씩 알려 줄 수도 있겠지요.”
