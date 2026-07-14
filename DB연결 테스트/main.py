@@ -283,8 +283,9 @@ async def generate_and_store_backend_media(
     flux_steps: int = 1,
     video_width: int = 512,
     video_height: int = 384,
-    num_frames: int = 9,
+    num_frames: int = 48,
     video_steps: int = 2,
+    frame_rate: Optional[int] = None,
     seed: Optional[int] = None,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -314,6 +315,7 @@ async def generate_and_store_backend_media(
             num_frames=num_frames,
             steps=video_steps,
             seed=seed,
+            frame_rate=frame_rate,
         ))
 
     image_file = await upload_generated_media_file(
@@ -373,6 +375,7 @@ async def generate_and_store_backend_media(
     metadata = {
         "image_model": generated["model"],
         "video_model": video_generated["model"] if video_generated else None,
+        "video_provider": video_generated["provider"] if video_generated else None,
         "provider": generated["provider"],
         "elapsed_seconds": elapsed_seconds,
         "width": width,
@@ -383,8 +386,14 @@ async def generate_and_store_backend_media(
         "video_height": video_height,
         "num_frames": num_frames,
         "video_steps": video_steps,
+        "frame_rate": (
+            video_generated["parameters"].get("frame_rate")
+            if video_generated and isinstance(video_generated.get("parameters"), dict)
+            else frame_rate
+        ),
         "video_status": video_status,
         "video_error": video_error,
+        "video_parameters": video_generated.get("parameters") if video_generated else None,
         "saved": scene_saved,
     }
     result = {
@@ -424,8 +433,9 @@ async def execute_media_generation(
     flux_steps: int = 1,
     video_width: int = 512,
     video_height: int = 384,
-    num_frames: int = 9,
+    num_frames: int = 48,
     video_steps: int = 2,
+    frame_rate: Optional[int] = None,
 ):
     media = await generate_and_store_backend_media(
         story_text=story_text,
@@ -441,6 +451,7 @@ async def execute_media_generation(
         video_height=video_height,
         num_frames=num_frames,
         video_steps=video_steps,
+        frame_rate=frame_rate,
     )
     result = media["result"]
     return {**result, "saved": media["scene_saved"]}
@@ -598,8 +609,13 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
         flux_steps=int(_media_job_request_value(job, "flux_steps", 1)),
         video_width=int(_media_job_request_value(job, "video_width", 512)),
         video_height=int(_media_job_request_value(job, "video_height", 384)),
-        num_frames=int(_media_job_request_value(job, "num_frames", 9)),
+        num_frames=int(_media_job_request_value(job, "num_frames", 48)),
         video_steps=int(_media_job_request_value(job, "video_steps", 2)),
+        frame_rate=(
+            int(_media_job_request_value(job, "frame_rate"))
+            if _media_job_request_value(job, "frame_rate") is not None
+            else None
+        ),
         seed=_media_job_request_value(job, "seed"),
         job_id=job_id,
     )
@@ -1349,6 +1365,9 @@ async def create_scene_media_job(
         video_width=payload.video_width,
         video_height=payload.video_height,
         num_frames=payload.num_frames,
+        video_steps=payload.video_steps,
+        frame_rate=payload.frame_rate,
+        video_timeout=payload.video_timeout,
         story_id=story_id,
         step_number=step_number,
     )
@@ -1390,6 +1409,7 @@ async def generate_media(payload: MediaGenerationWithStorySchema):
             video_height=payload.video_height,
             num_frames=payload.num_frames,
             video_steps=payload.video_steps,
+            frame_rate=payload.frame_rate,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -1428,6 +1448,7 @@ async def generate_and_store_scene_media(
             video_height=payload.video_height,
             num_frames=payload.num_frames,
             video_steps=payload.video_steps,
+            frame_rate=payload.frame_rate,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))
