@@ -283,8 +283,8 @@ async def generate_and_store_backend_media(
     flux_steps: int = 1,
     video_width: int = 512,
     video_height: int = 384,
-    num_frames: int = 17,
-    video_steps: int = 4,
+    num_frames: int = 9,
+    video_steps: int = 2,
     seed: Optional[int] = None,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -298,9 +298,14 @@ async def generate_and_store_backend_media(
         steps=flux_steps,
         seed=seed,
     ))
+    generated = await image_task
+
+    video_generated = None
+    video_error = None
     video_task = None
     if include_video:
         video_task = asyncio.create_task(generate_hf_fairytale_video(
+            image_bytes=generated["image_bytes"],
             story_text=story_text,
             genre=genre,
             age=age,
@@ -310,31 +315,6 @@ async def generate_and_store_backend_media(
             steps=video_steps,
             seed=seed,
         ))
-
-    try:
-        generated = await image_task
-    except Exception:
-        if video_task is not None:
-            video_task.cancel()
-            try:
-                await video_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
-        raise
-
-    video_generated = None
-    video_error = None
-    if video_task is not None:
-        try:
-            video_generated = await video_task
-        except HfMediaError as exc:
-            video_error = str(exc)
-            logger.warning("Video generation failed for media job %s: %s", job_id, video_error)
-        except Exception as exc:
-            video_error = str(exc)
-            logger.exception("Unexpected video generation failure for media job %s.", job_id)
 
     image_file = await upload_generated_media_file(
         content=generated["image_bytes"],
@@ -346,6 +326,16 @@ async def generate_and_store_backend_media(
         provider=generated["provider"],
         model=generated["model"],
     )
+
+    if video_task is not None:
+        try:
+            video_generated = await video_task
+        except HfMediaError as exc:
+            video_error = str(exc)
+            logger.warning("Video generation failed for media job %s: %s", job_id, video_error)
+        except Exception as exc:
+            video_error = str(exc)
+            logger.exception("Unexpected video generation failure for media job %s.", job_id)
 
     image_file_id = image_file["file_id"]
     image_url = image_file["url"]
@@ -434,8 +424,8 @@ async def execute_media_generation(
     flux_steps: int = 1,
     video_width: int = 512,
     video_height: int = 384,
-    num_frames: int = 17,
-    video_steps: int = 4,
+    num_frames: int = 9,
+    video_steps: int = 2,
 ):
     media = await generate_and_store_backend_media(
         story_text=story_text,
@@ -608,8 +598,8 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
         flux_steps=int(_media_job_request_value(job, "flux_steps", 1)),
         video_width=int(_media_job_request_value(job, "video_width", 512)),
         video_height=int(_media_job_request_value(job, "video_height", 384)),
-        num_frames=int(_media_job_request_value(job, "num_frames", 17)),
-        video_steps=int(_media_job_request_value(job, "video_steps", 4)),
+        num_frames=int(_media_job_request_value(job, "num_frames", 9)),
+        video_steps=int(_media_job_request_value(job, "video_steps", 2)),
         seed=_media_job_request_value(job, "seed"),
         job_id=job_id,
     )
