@@ -36,6 +36,7 @@ from media_queue import (
 from hf_media_provider import (
     HfMediaError,
     generate_hf_fairytale_image,
+    generate_hf_fairytale_video,
     get_hf_media_config,
 )
 from models import (
@@ -224,8 +225,12 @@ def _media_file_extension(content_type: Optional[str]) -> str:
         return "jpg"
     if normalized == "image/webp":
         return "webp"
+    if normalized == "image/gif":
+        return "gif"
     if normalized == "video/mp4":
         return "mp4"
+    if normalized == "video/webm":
+        return "webm"
     return "png"
 
 
@@ -276,11 +281,15 @@ async def generate_and_store_backend_media(
     width: int = 512,
     height: int = 512,
     flux_steps: int = 1,
+    video_width: int = 512,
+    video_height: int = 384,
+    num_frames: int = 17,
+    video_steps: int = 4,
     seed: Optional[int] = None,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     started_at = time.monotonic()
-    generated = await generate_hf_fairytale_image(
+    image_task = asyncio.create_task(generate_hf_fairytale_image(
         story_text=story_text,
         genre=genre,
         age=age,
@@ -288,7 +297,45 @@ async def generate_and_store_backend_media(
         height=height,
         steps=flux_steps,
         seed=seed,
-    )
+    ))
+    video_task = None
+    if include_video:
+        video_task = asyncio.create_task(generate_hf_fairytale_video(
+            story_text=story_text,
+            genre=genre,
+            age=age,
+            width=video_width,
+            height=video_height,
+            num_frames=num_frames,
+            steps=video_steps,
+            seed=seed,
+        ))
+
+    try:
+        generated = await image_task
+    except Exception:
+        if video_task is not None:
+            video_task.cancel()
+            try:
+                await video_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        raise
+
+    video_generated = None
+    video_error = None
+    if video_task is not None:
+        try:
+            video_generated = await video_task
+        except HfMediaError as exc:
+            video_error = str(exc)
+            logger.warning("Video generation failed for media job %s: %s", job_id, video_error)
+        except Exception as exc:
+            video_error = str(exc)
+            logger.exception("Unexpected video generation failure for media job %s.", job_id)
+
     image_file = await upload_generated_media_file(
         content=generated["image_bytes"],
         content_type=generated["content_type"],
@@ -302,25 +349,52 @@ async def generate_and_store_backend_media(
 
     image_file_id = image_file["file_id"]
     image_url = image_file["url"]
+    video_file_id = None
+    video_url = None
+    if video_generated is not None:
+        video_file = await upload_generated_media_file(
+            content=video_generated["video_bytes"],
+            content_type=video_generated["content_type"],
+            media_kind="video",
+            job_id=job_id,
+            story_id=story_id,
+            step_number=step_number,
+            provider=video_generated["provider"],
+            model=video_generated["model"],
+        )
+        video_file_id = video_file["file_id"]
+        video_url = video_file["url"]
+
     scene_saved = False
     if story_id is not None and step_number is not None:
         scene_saved = await persist_scene_media(
             story_id=story_id,
             step_number=step_number,
             image_url=image_url,
+            video_url=video_url,
             image_file_id=image_file_id,
+            video_file_id=video_file_id,
         )
 
     elapsed_seconds = round(time.monotonic() - started_at, 2)
+    video_status = "not_requested"
+    if include_video:
+        video_status = "completed" if video_url else "failed"
     metadata = {
         "image_model": generated["model"],
+        "video_model": video_generated["model"] if video_generated else None,
         "provider": generated["provider"],
         "elapsed_seconds": elapsed_seconds,
         "width": width,
         "height": height,
         "steps": flux_steps,
         "include_video_requested": include_video,
-        "video_status": "not_requested" if not include_video else "not_supported",
+        "video_width": video_width,
+        "video_height": video_height,
+        "num_frames": num_frames,
+        "video_steps": video_steps,
+        "video_status": video_status,
+        "video_error": video_error,
         "saved": scene_saved,
     }
     result = {
@@ -328,9 +402,9 @@ async def generate_and_store_backend_media(
         "prompt_id": job_id,
         "provider": generated["provider"],
         "image_file_id": image_file_id,
-        "video_file_id": None,
+        "video_file_id": video_file_id,
         "image_url": image_url,
-        "video_url": None,
+        "video_url": video_url,
         "elapsed_seconds": elapsed_seconds,
         "saved": scene_saved,
         "metadata": metadata,
@@ -340,8 +414,8 @@ async def generate_and_store_backend_media(
         "metadata": metadata,
         "image_file_id": image_file_id,
         "image_url": image_url,
-        "video_file_id": None,
-        "video_url": None,
+        "video_file_id": video_file_id,
+        "video_url": video_url,
         "provider": generated["provider"],
         "scene_saved": scene_saved,
     }
@@ -358,6 +432,10 @@ async def execute_media_generation(
     width: int = 512,
     height: int = 512,
     flux_steps: int = 1,
+    video_width: int = 512,
+    video_height: int = 384,
+    num_frames: int = 17,
+    video_steps: int = 4,
 ):
     media = await generate_and_store_backend_media(
         story_text=story_text,
@@ -369,6 +447,10 @@ async def execute_media_generation(
         width=width,
         height=height,
         flux_steps=flux_steps,
+        video_width=video_width,
+        video_height=video_height,
+        num_frames=num_frames,
+        video_steps=video_steps,
     )
     result = media["result"]
     return {**result, "saved": media["scene_saved"]}
@@ -394,6 +476,9 @@ def build_media_job_document(
         "video_width": payload.video_width,
         "video_height": payload.video_height,
         "num_frames": payload.num_frames,
+        "video_steps": payload.video_steps,
+        "frame_rate": payload.frame_rate,
+        "video_timeout": payload.video_timeout,
     }
     return {
         "story_id": ObjectId(story_id) if story_id else None,
@@ -408,6 +493,9 @@ def build_media_job_document(
         "video_width": payload.video_width,
         "video_height": payload.video_height,
         "num_frames": payload.num_frames,
+        "video_steps": payload.video_steps,
+        "frame_rate": payload.frame_rate,
+        "video_timeout": payload.video_timeout,
         "status": "pending",
         "created_at": now,
         "updated_at": now,
@@ -518,6 +606,10 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
         width=int(_media_job_request_value(job, "width", 512)),
         height=int(_media_job_request_value(job, "height", 512)),
         flux_steps=int(_media_job_request_value(job, "flux_steps", 1)),
+        video_width=int(_media_job_request_value(job, "video_width", 512)),
+        video_height=int(_media_job_request_value(job, "video_height", 384)),
+        num_frames=int(_media_job_request_value(job, "num_frames", 17)),
+        video_steps=int(_media_job_request_value(job, "video_steps", 4)),
         seed=_media_job_request_value(job, "seed"),
         job_id=job_id,
     )
@@ -1304,6 +1396,10 @@ async def generate_media(payload: MediaGenerationWithStorySchema):
             width=payload.width,
             height=payload.height,
             flux_steps=payload.flux_steps,
+            video_width=payload.video_width,
+            video_height=payload.video_height,
+            num_frames=payload.num_frames,
+            video_steps=payload.video_steps,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -1338,6 +1434,10 @@ async def generate_and_store_scene_media(
             width=payload.width,
             height=payload.height,
             flux_steps=payload.flux_steps,
+            video_width=payload.video_width,
+            video_height=payload.video_height,
+            num_frames=payload.num_frames,
+            video_steps=payload.video_steps,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))

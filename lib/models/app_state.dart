@@ -8,6 +8,9 @@ import '../services/db_service.dart';
 import 'story_model.dart';
 
 class AppState extends ChangeNotifier {
+  static const bool _generateVideosForScenes =
+      bool.fromEnvironment('MEDIA_INCLUDE_VIDEO', defaultValue: true);
+
   static const List<List<String>> _temporaryChoicePools = [
     ['반짝이는 빛을 따라 깊은 숲으로 간다', '숲속 친구들에게 함께 가자고 말한다', '별조각을 손수건에 감싸 단서를 살핀다'],
     ['작은 문에 새겨진 문양을 읽어 본다', '요정에게 길을 물어본다', '용기를 내어 문을 열고 들어간다'],
@@ -617,7 +620,8 @@ class AppState extends ChangeNotifier {
 
     final hasImageUrl = chapter.imageUrl?.trim().isNotEmpty ?? false;
     final hasVideoUrl = chapter.videoUrl?.trim().isNotEmpty ?? false;
-    if (hasImageUrl || hasVideoUrl) {
+    final needsVideo = _generateVideosForScenes && !hasVideoUrl;
+    if (hasImageUrl && !needsVideo) {
       session.mediaGenerationChapterNumbers.add(chapter.chapter);
       return;
     }
@@ -636,7 +640,7 @@ class AppState extends ChangeNotifier {
       storyText: chapter.text,
       genre: session.genre,
       age: session.age,
-      includeVideo: false,
+      includeVideo: needsVideo,
     );
 
     if (media == null || !media.hasMedia) {

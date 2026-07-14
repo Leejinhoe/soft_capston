@@ -103,7 +103,7 @@ try {
     "--dart-define=DB_API_BASE_URL=$env:DB_API_BASE_URL"
   )
 
-  foreach ($name in @("GOOGLE_CLIENT_ID", "KAKAO_NATIVE_KEY", "KAKAO_JS_KEY")) {
+  foreach ($name in @("GOOGLE_CLIENT_ID", "KAKAO_NATIVE_KEY", "KAKAO_JS_KEY", "MEDIA_INCLUDE_VIDEO")) {
     $value = [Environment]::GetEnvironmentVariable($name)
     if ($value) {
       $flutterArgs += "--dart-define=$name=$value"
