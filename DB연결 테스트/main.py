@@ -374,6 +374,8 @@ async def generate_and_store_backend_media(
         video_status = "completed" if video_url else "failed"
     metadata = {
         "image_model": generated["model"],
+        "image_provider": generated.get("inference_provider"),
+        "image_provider_attempts": generated.get("attempted_providers", []),
         "video_model": video_generated["model"] if video_generated else None,
         "video_provider": video_generated["provider"] if video_generated else None,
         "provider": generated["provider"],
