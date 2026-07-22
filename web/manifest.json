@@ -1,6 +1,6 @@
 {
-    "name": "fairytale",
-    "short_name": "fairytale",
+    "name": "capstone_app",
+    "short_name": "capstone_app",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

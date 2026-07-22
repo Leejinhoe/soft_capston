@@ -1,53 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'models/app_state.dart';
-import 'screens/main_shell.dart';
+import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
+import 'package:provider/provider.dart';
 
-void main() {
+import 'login_page.dart';
+import 'models/app_state.dart';
+
+const String _definedKakaoNativeKey =
+    String.fromEnvironment('KAKAO_NATIVE_KEY');
+const String _definedKakaoJsKey = String.fromEnvironment('KAKAO_JS_KEY');
+
+String _envOrDefined(String key, String defined, [String fallback = '']) {
+  final fromDefine = defined.trim();
+  if (fromDefine.isNotEmpty) return fromDefine;
+
+  final fromDotenv = dotenv.env[key]?.trim() ?? '';
+  if (fromDotenv.isNotEmpty) return fromDotenv;
+
+  return fallback;
+}
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {}
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
     ),
   );
+
+  final kakaoJsKey = _envOrDefined('KAKAO_JS_KEY', _definedKakaoJsKey);
+  KakaoSdk.init(
+    nativeAppKey: _envOrDefined(
+      'KAKAO_NATIVE_KEY',
+      _definedKakaoNativeKey,
+      'fa2f07355c5d24ed9b226ff59a91d57a',
+    ),
+    javaScriptAppKey: kakaoJsKey.isEmpty ? null : kakaoJsKey,
+  );
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),
-      child: const FairytaleApp(),
+      child: const FairyTaleApp(),
     ),
   );
 }
 
-// ─── 앱 색상 팔레트 (HTML 디자인 동일) ───
 class AppColors {
-  static const bg    = Color(0xFF06041A);
-  static const bg2   = Color(0xFF0E0B28);
-  static const card  = Color(0xFF160F38);
+  static const bg = Color(0xFF06041A);
+  static const bg2 = Color(0xFF0E0B28);
+  static const card = Color(0xFF160F38);
   static const card2 = Color(0xFF1E1645);
-  static const p700  = Color(0xFF5B21B6);
-  static const p600  = Color(0xFF7C3AED);
-  static const p500  = Color(0xFF8B5CF6);
-  static const p400  = Color(0xFFA78BFA);
-  static const p300  = Color(0xFFC4B5FD);
-  static const pink  = Color(0xFFEC4899);
+  static const p700 = Color(0xFF5B21B6);
+  static const p600 = Color(0xFF7C3AED);
+  static const p500 = Color(0xFF8B5CF6);
+  static const p400 = Color(0xFFA78BFA);
+  static const p300 = Color(0xFFC4B5FD);
+  static const pink = Color(0xFFEC4899);
   static const pink2 = Color(0xFFF472B6);
-  static const teal  = Color(0xFF14B8A6);
-  static const gray  = Color(0xFF9CA3AF);
+  static const teal = Color(0xFF14B8A6);
+  static const gray = Color(0xFF9CA3AF);
   static const gray2 = Color(0xFF6B7280);
   static const border = Color(0x337C3AED);
 }
 
-class FairytaleApp extends StatelessWidget {
-  const FairytaleApp({super.key});
+class FairyTaleApp extends StatelessWidget {
+  const FairyTaleApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '동화 AI',
       debugShowCheckedModeBanner: false,
+      title: '동화 생성 앱',
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -65,24 +95,13 @@ class FairytaleApp extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
           titleTextStyle: TextStyle(
-            color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
           iconTheme: IconThemeData(color: Colors.white),
         ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.p600,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-          ),
-        ),
       ),
-      home: const MainShell(),
+      home: const LoginPage(),
     );
   }
 }

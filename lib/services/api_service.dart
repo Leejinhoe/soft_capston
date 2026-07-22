@@ -2,19 +2,26 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // 서버 주소 - 실제 서버 IP로 변경하세요
-  static const String baseUrl = 'https://racemose-stenohaline-braelynn.ngrok-free.dev';
+  static const String baseUrl =
+      'https://restaurant-reward-himself-vbulletin.trycloudflare.com';
 
   static Future<Map<String, dynamic>> startStory({
     required String genre,
     required String age,
     required String prompt,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/story/start'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'genre': genre, 'age': age, 'prompt': prompt}),
-    ).timeout(const Duration(seconds: 600));
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/story/start'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'genre': genre,
+            'age': age,
+            'prompt': prompt,
+            'include_image': false,
+          }),
+        )
+        .timeout(const Duration(seconds: 600));
 
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
@@ -29,17 +36,20 @@ class ApiService {
     required String genre,
     required String age,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/story/continue'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'story_id': storyId,
-        'story_so_far': storySoFar,
-        'choice': choice,
-        'genre': genre,
-        'age': age,
-      }),
-    ).timeout(const Duration(seconds: 600));
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/story/continue'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'story_id': storyId,
+            'story_so_far': storySoFar,
+            'choice': choice,
+            'genre': genre,
+            'age': age,
+            'include_image': false,
+          }),
+        )
+        .timeout(const Duration(seconds: 600));
 
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
@@ -51,11 +61,13 @@ class ApiService {
     required String storyId,
     required List<String> choicesMade,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/story/psych'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'story_id': storyId, 'choices_made': choicesMade}),
-    ).timeout(const Duration(seconds: 300));
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/story/psych'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'story_id': storyId, 'choices_made': choicesMade}),
+        )
+        .timeout(const Duration(seconds: 300));
 
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
@@ -69,15 +81,17 @@ class ApiService {
     required String age,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/story/image'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'story_text': storyText,
-          'genre': genre,
-          'age': age,
-        }),
-      ).timeout(const Duration(seconds: 120));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/story/image'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'story_text': storyText,
+              'genre': genre,
+              'age': age,
+            }),
+          )
+          .timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         final data = json.decode(utf8.decode(response.bodyBytes));

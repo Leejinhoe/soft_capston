@@ -27,26 +27,11 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
-**/.dart_tool/
 .flutter-plugins-dependencies
-**/.flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
-**/build/
 /coverage/
-
-# Local secrets / runtime environment
-.env
-*.env
-env
-**/.env
-**/*.env
-**/env
-
-# Python local caches
-__pycache__/
-**/__pycache__/
 
 # Symbolication related
 app.*.symbols
@@ -59,15 +44,15 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# AI 모델 — 용량 초과 파일 (GitHub 100MB 제한)
-ai_model/data/train.jsonl
-ai_model/final_model-20260331T125007Z-1-001.zip
-ai_model/final_model/adapter_model.safetensors
-ai_model/final_model/tokenizer.json
+# Local secrets
+.env
+**/.env
 
-# 빌드 산출물
-fairytale_ai_ㅡmodel/train.jsonl
+# Local backend/runtime state
+DB*/media_server_state.json
+DB*/__pycache__/
+DB*/**/*.pyc
 
-# Local model checkpoints
-emotion_checkpoint/
-**/emotion_checkpoint/
+# Generated or local-only files
+*.tmp
+*.bak
