@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../services/vocabulary_catalog.dart';
 import 'story_model.dart';
 
 class AppState extends ChangeNotifier {
@@ -186,13 +187,15 @@ class AppState extends ChangeNotifier {
         prompt: prompt,
       );
 
-      final vocab = (data['vocab'] as List? ?? [])
-          .map((e) => VocabWord.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final firstStoryText = data['story_text']?.toString() ?? '';
+      final vocab = await VocabularyCatalog.findMatches(
+        firstStoryText,
+        sourceStoryTitle: prompt,
+      );
 
       final firstChapter = StoryChapter(
         chapter: 1,
-        text: data['story_text']?.toString() ?? '',
+        text: firstStoryText,
         imageB64: data['image_b64'] as String?,
         storyEmotion: _parseEmotionAnalysis(data['story_emotion']),
       );
@@ -247,9 +250,10 @@ class AppState extends ChangeNotifier {
       final newText = data['new_text']?.toString() ?? '';
       final newChapter = session.currentChapter + 1;
 
-      final vocab = (data['vocab'] as List? ?? [])
-          .map((e) => VocabWord.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final vocab = await VocabularyCatalog.findMatches(
+        newText,
+        sourceStoryTitle: session.initialPrompt,
+      );
 
       final chapter = StoryChapter(
         chapter: newChapter,
@@ -268,7 +272,7 @@ class AppState extends ChangeNotifier {
         data['choices'] as List?,
         data['choice_emotions'] as List?,
       );
-      session.candidateVocab = _mergeTemporaryVocab(
+      session.candidateVocab = _mergeCatalogVocab(
         session.candidateVocab,
         vocab,
       );
@@ -469,21 +473,20 @@ class AppState extends ChangeNotifier {
     _setLoading(true);
     errorMessage = null;
     try {
-      final normalizedPrompt = prompt.trim().isEmpty
-          ? '반짝이는 숲속 모험'
-          : prompt.trim();
-      final chapterVocab = _temporaryVocabForChapter(
+      final normalizedPrompt =
+          prompt.trim().isEmpty ? '반짝이는 숲속 모험' : prompt.trim();
+      final openingText = _buildTemporaryOpening(
         genre: genre,
+        age: age,
         prompt: normalizedPrompt,
-        chapter: 1,
+      );
+      final chapterVocab = await VocabularyCatalog.findMatches(
+        openingText,
+        sourceStoryTitle: normalizedPrompt,
       );
       final firstChapter = StoryChapter(
         chapter: 1,
-        text: _buildTemporaryOpening(
-          genre: genre,
-          age: age,
-          prompt: normalizedPrompt,
-        ),
+        text: openingText,
         imageUrl: _temporaryImageMarker(genre, 1),
         videoUrl: _temporaryVideoMarker(genre, 1),
         storyEmotion: _temporaryStoryEmotion(genre: genre, chapter: 1),
@@ -745,11 +748,9 @@ class AppState extends ChangeNotifier {
     ];
     final start = seed % pool.length;
     final choices = <String>[];
-    for (
-      var offset = 0;
-      choices.length < 3 && offset < pool.length * 2;
-      offset++
-    ) {
+    for (var offset = 0;
+        choices.length < 3 && offset < pool.length * 2;
+        offset++) {
       final choice = pool[(start + offset) % pool.length];
       if (!choices.contains(choice)) choices.add(choice);
     }
@@ -872,33 +873,33 @@ class AppState extends ChangeNotifier {
   }) {
     final base = switch (genre) {
       '미스터리' => [
-        _emotionItem(15, '신기함/관심', 0.95),
-        _emotionItem(39, '놀람', 0.82),
-        _emotionItem(8, '기대감', 0.78),
-        _emotionItem(41, '불안/걱정', 0.42),
-        _emotionItem(2, '감동/감탄', 0.38),
-      ],
+          _emotionItem(15, '신기함/관심', 0.95),
+          _emotionItem(39, '놀람', 0.82),
+          _emotionItem(8, '기대감', 0.78),
+          _emotionItem(41, '불안/걱정', 0.42),
+          _emotionItem(2, '감동/감탄', 0.38),
+        ],
       '우정' => [
-        _emotionItem(16, '아껴주는', 0.94),
-        _emotionItem(4, '고마움', 0.88),
-        _emotionItem(40, '행복', 0.82),
-        _emotionItem(43, '안심/신뢰', 0.68),
-        _emotionItem(42, '기쁨', 0.63),
-      ],
+          _emotionItem(16, '아껴주는', 0.94),
+          _emotionItem(4, '고마움', 0.88),
+          _emotionItem(40, '행복', 0.82),
+          _emotionItem(43, '안심/신뢰', 0.68),
+          _emotionItem(42, '기쁨', 0.63),
+        ],
       '모험' => [
-        _emotionItem(8, '기대감', 0.96),
-        _emotionItem(28, '즐거움/신남', 0.86),
-        _emotionItem(15, '신기함/관심', 0.74),
-        _emotionItem(2, '감동/감탄', 0.55),
-        _emotionItem(39, '놀람', 0.42),
-      ],
+          _emotionItem(8, '기대감', 0.96),
+          _emotionItem(28, '즐거움/신남', 0.86),
+          _emotionItem(15, '신기함/관심', 0.74),
+          _emotionItem(2, '감동/감탄', 0.55),
+          _emotionItem(39, '놀람', 0.42),
+        ],
       _ => [
-        _emotionItem(2, '감동/감탄', 0.94),
-        _emotionItem(42, '기쁨', 0.88),
-        _emotionItem(40, '행복', 0.84),
-        _emotionItem(8, '기대감', 0.78),
-        _emotionItem(15, '신기함/관심', 0.62),
-      ],
+          _emotionItem(2, '감동/감탄', 0.94),
+          _emotionItem(42, '기쁨', 0.88),
+          _emotionItem(40, '행복', 0.84),
+          _emotionItem(8, '기대감', 0.78),
+          _emotionItem(15, '신기함/관심', 0.62),
+        ],
     };
 
     final adjusted = base
@@ -950,128 +951,7 @@ class AppState extends ChangeNotifier {
     ]);
   }
 
-  List<VocabWord> _temporaryVocabForChapter({
-    required String genre,
-    required String prompt,
-    required int chapter,
-    String? choice,
-  }) {
-    final common = <VocabWord>[
-      VocabWord(
-        hard: '호기심',
-        easy: '궁금한 마음',
-        definition: '새로운 것을 알고 싶어 하는 마음이에요.',
-        sourceStoryTitle: prompt,
-      ),
-      VocabWord(
-        hard: '소원',
-        easy: '바라는 일',
-        definition: '마음속으로 꼭 이루어지면 좋겠다고 바라는 일이에요.',
-        sourceStoryTitle: prompt,
-      ),
-      VocabWord(
-        hard: '단서',
-        easy: '힌트',
-        definition: '문제를 풀거나 비밀을 알아내는 데 도움이 되는 작은 실마리예요.',
-        sourceStoryTitle: prompt,
-      ),
-    ];
-
-    final byGenre = switch (genre) {
-      '판타지' => [
-        VocabWord(
-          hard: '주문',
-          easy: '마법 말',
-          definition: '마법을 부릴 때 외우는 특별한 말이에요.',
-          sourceStoryTitle: prompt,
-        ),
-        VocabWord(
-          hard: '별가루',
-          easy: '반짝 가루',
-          definition: '별빛처럼 반짝이는 상상 속의 가루예요.',
-          sourceStoryTitle: prompt,
-        ),
-      ],
-      '미스터리' => [
-        VocabWord(
-          hard: '수상한',
-          easy: '이상한',
-          definition: '평소와 달라서 궁금하거나 의심이 드는 모습이에요.',
-          sourceStoryTitle: prompt,
-        ),
-        VocabWord(
-          hard: '비밀',
-          easy: '숨긴 이야기',
-          definition: '아직 다른 사람에게 알려지지 않은 일이에요.',
-          sourceStoryTitle: prompt,
-        ),
-      ],
-      '자연' => [
-        VocabWord(
-          hard: '시냇물',
-          easy: '작은 물길',
-          definition: '졸졸 흐르는 작은 물줄기를 말해요.',
-          sourceStoryTitle: prompt,
-        ),
-        VocabWord(
-          hard: '관찰하다',
-          easy: '자세히 보다',
-          definition: '무엇이 어떻게 움직이는지 찬찬히 살펴보는 거예요.',
-          sourceStoryTitle: prompt,
-        ),
-      ],
-      _ => [
-        VocabWord(
-          hard: '용기',
-          easy: '씩씩한 마음',
-          definition: '무섭거나 어려워도 해 보려는 마음이에요.',
-          sourceStoryTitle: prompt,
-        ),
-        VocabWord(
-          hard: '다정한',
-          easy: '친절한',
-          definition: '상대방을 따뜻하게 대해 주는 모습이에요.',
-          sourceStoryTitle: prompt,
-        ),
-      ],
-    };
-
-    final byChapter = [
-      VocabWord(
-        hard: chapter == 1
-            ? '모험'
-            : chapter == 2
-            ? '문양'
-            : '약속',
-        easy: chapter == 1
-            ? '새로운 일을 겪는 것'
-            : chapter == 2
-            ? '그림 무늬'
-            : '꼭 하기로 한 말',
-        definition: chapter == 1
-            ? '낯선 곳에서 새롭고 신나는 일을 겪는 거예요.'
-            : chapter == 2
-            ? '물건이나 문에 새겨진 특별한 모양이에요.'
-            : '서로 믿고 꼭 지키기로 한 말이에요.',
-        sourceStoryTitle: prompt,
-      ),
-    ];
-
-    final result = [...common, ...byGenre, ...byChapter];
-    if (choice != null && RegExp('친구|함께|도움').hasMatch(choice)) {
-      result.add(
-        VocabWord(
-          hard: '협동',
-          easy: '함께하기',
-          definition: '여럿이 힘을 합쳐 같은 목표를 이루는 거예요.',
-          sourceStoryTitle: prompt,
-        ),
-      );
-    }
-    return result;
-  }
-
-  List<VocabWord> _mergeTemporaryVocab(
+  List<VocabWord> _mergeCatalogVocab(
     List<VocabWord> current,
     List<VocabWord> incoming,
   ) {
@@ -1143,15 +1023,18 @@ class AppState extends ChangeNotifier {
     try {
       final session = currentStory!;
       final newChapterNumber = session.currentChapter + 1;
-      final chapterVocab = _temporaryVocabForChapter(
-        genre: session.genre,
-        prompt: session.initialPrompt,
-        chapter: newChapterNumber,
-        choice: choice,
+      final continuationText = _buildTemporaryContinuation(
+        session,
+        choice,
+        newChapterNumber,
+      );
+      final chapterVocab = await VocabularyCatalog.findMatches(
+        continuationText,
+        sourceStoryTitle: session.initialPrompt,
       );
       final chapter = StoryChapter(
         chapter: newChapterNumber,
-        text: _buildTemporaryContinuation(session, choice, newChapterNumber),
+        text: continuationText,
         choiceMade: choice,
         imageUrl: _temporaryImageMarker(session.genre, newChapterNumber),
         videoUrl: _temporaryVideoMarker(session.genre, newChapterNumber),
@@ -1182,7 +1065,7 @@ class AppState extends ChangeNotifier {
             ),
           )
           .toList();
-      session.candidateVocab = _mergeTemporaryVocab(
+      session.candidateVocab = _mergeCatalogVocab(
         session.candidateVocab,
         chapterVocab,
       );
@@ -1216,9 +1099,8 @@ class AppState extends ChangeNotifier {
           ? emotion.topEmotions
           : emotion.activeEmotions;
       for (final item in items.take(5)) {
-        final label = item.labelDisplay.isNotEmpty
-            ? item.labelDisplay
-            : item.label;
+        final label =
+            item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
         emotionScores[label] = (emotionScores[label] ?? 0) + item.score;
       }
     }

@@ -65,13 +65,12 @@ class _StoryPageState extends State<StoryPage> {
       await _flutterTts.setVolume(1.0);
 
       final rawLanguages = await _flutterTts.getLanguages;
-      final languages = (rawLanguages as List? ?? const [])
-          .map((e) => e.toString())
-          .toList();
+      final languages =
+          (rawLanguages as List? ?? const []).map((e) => e.toString()).toList();
       final koLanguage = languages.cast<String?>().firstWhere(
-        (lang) => lang != null && lang.toLowerCase().startsWith('ko'),
-        orElse: () => 'ko-KR',
-      )!;
+            (lang) => lang != null && lang.toLowerCase().startsWith('ko'),
+            orElse: () => 'ko-KR',
+          )!;
       await _flutterTts.setLanguage(koLanguage);
 
       _flutterTts.setStartHandler(() {
@@ -154,9 +153,8 @@ class _StoryPageState extends State<StoryPage> {
     setState(() {
       _activeNarrationTarget = target;
       _ttsSpeaking = false;
-      _ttsStatus = target == _NarrationTarget.fullStory
-          ? '전체 이야기를 준비 중'
-          : '현재 장을 준비 중';
+      _ttsStatus =
+          target == _NarrationTarget.fullStory ? '전체 이야기를 준비 중' : '현재 장을 준비 중';
     });
     await _flutterTts.speak(cleaned);
   }
@@ -492,9 +490,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                          currentChapterText,
-                          _NarrationTarget.currentChapter,
-                        ),
+                            currentChapterText,
+                            _NarrationTarget.currentChapter,
+                          ),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('현재 장 읽기'),
                   style: ElevatedButton.styleFrom(
@@ -508,9 +506,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                          story.fullStoryText,
-                          _NarrationTarget.fullStory,
-                        ),
+                            story.fullStoryText,
+                            _NarrationTarget.fullStory,
+                          ),
                   icon: const Icon(Icons.menu_book_rounded, size: 18),
                   label: const Text('전체 읽기'),
                   style: OutlinedButton.styleFrom(
@@ -670,9 +668,8 @@ class _StoryPageState extends State<StoryPage> {
           ...emotions.asMap().entries.map((entry) {
             final color = colors[entry.key % colors.length];
             final item = entry.value;
-            final label = item.labelDisplay.isNotEmpty
-                ? item.labelDisplay
-                : item.label;
+            final label =
+                item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
             final percent = item.score.clamp(0.0, 1.0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
@@ -727,9 +724,8 @@ class _StoryPageState extends State<StoryPage> {
     void collect(EmotionAnalysis? analysis) {
       if (analysis == null) return;
       for (final item in analysis.topEmotions.take(5)) {
-        final key = item.labelDisplay.isNotEmpty
-            ? item.labelDisplay
-            : item.label;
+        final key =
+            item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
         totals[key] = (totals[key] ?? 0) + item.score;
         counts[key] = (counts[key] ?? 0) + 1;
         indexes[key] = item.labelIndex;
@@ -754,7 +750,8 @@ class _StoryPageState extends State<StoryPage> {
         labelDisplay: displays[entry.key] ?? entry.key,
         score: double.parse(score.toStringAsFixed(3)),
       );
-    }).toList()..sort((a, b) => b.score.compareTo(a.score));
+    }).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
 
     return result.take(5).toList();
   }
@@ -873,6 +870,11 @@ class _StoryPageState extends State<StoryPage> {
     VocabWord word,
   ) async {
     final alreadySaved = _isVocabSaved(story, word);
+    final hasSeparateEasyMeaning = word.easy.trim().isNotEmpty &&
+        word.easy.trim() != word.definition.trim();
+    final displayDefinition = word.definition.trim().isNotEmpty
+        ? word.definition.trim()
+        : word.easy.trim();
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.card,
@@ -914,15 +916,17 @@ class _StoryPageState extends State<StoryPage> {
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '쉬운 뜻: ${word.easy}',
-                            style: const TextStyle(
-                              color: AppColors.teal,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                          if (hasSeparateEasyMeaning) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              '쉬운 뜻: ${word.easy}',
+                              style: const TextStyle(
+                                color: AppColors.teal,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -930,7 +934,7 @@ class _StoryPageState extends State<StoryPage> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  word.definition,
+                  displayDefinition,
                   style: const TextStyle(
                     color: AppColors.gray,
                     fontSize: 13,
@@ -968,9 +972,8 @@ class _StoryPageState extends State<StoryPage> {
                     ),
                     label: Text(alreadySaved ? '이미 저장된 단어' : '단어장에 저장'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: alreadySaved
-                          ? AppColors.gray2
-                          : AppColors.p600,
+                      backgroundColor:
+                          alreadySaved ? AppColors.gray2 : AppColors.p600,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
