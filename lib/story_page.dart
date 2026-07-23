@@ -1,17 +1,25 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import 'main.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'psych_page.dart';
+import 'services/db_service.dart';
 
 enum _NarrationTarget { currentChapter, fullStory }
+
+const _voiceSampleScript = '안녕하세요. 저는 따뜻한 목소리로 동화를 읽어요. '
+    '별빛이 반짝이는 숲에서 작은 토끼가 용기를 냈어요. '
+    '친구와 함께라면 어려운 길도 즐겁게 갈 수 있어요.';
 
 class _VocabTextMatch {
   final int start;
@@ -36,11 +44,20 @@ class StoryPage extends StatefulWidget {
 class _StoryPageState extends State<StoryPage> {
   bool _showVocab = false;
   final _scrollCtrl = ScrollController();
-  final FlutterTts _flutterTts = FlutterTts();
+  final AudioPlayer _narrationPlayer = AudioPlayer();
+  final AudioRecorder _voiceRecorder = AudioRecorder();
+  StreamSubscription<void>? _ttsCompletionSubscription;
+  StreamSubscription<Uint8List>? _voiceRecordingSubscription;
+  final BytesBuilder _voicePcm = BytesBuilder(copy: false);
+  Timer? _voiceRecordingTimer;
+  int _ttsRequestNumber = 0;
 
   bool _ttsReady = false;
   bool _ttsInitializing = true;
   bool _ttsSpeaking = false;
+  bool _isRecordingVoice = false;
+  int _voiceRecordSeconds = 0;
+  Uint8List? _recordedVoiceWav;
   String _ttsStatus = '낭독 준비 중';
   _NarrationTarget? _activeNarrationTarget;
 
@@ -52,39 +69,21 @@ class _StoryPageState extends State<StoryPage> {
 
   @override
   void dispose() {
-    _flutterTts.stop();
+    _ttsRequestNumber++;
+    _ttsCompletionSubscription?.cancel();
+    _voiceRecordingTimer?.cancel();
+    _voiceRecordingSubscription?.cancel();
+    _voiceRecorder.dispose();
+    _narrationPlayer.dispose();
     _scrollCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _initTts() async {
     try {
-      await _flutterTts.awaitSpeakCompletion(true);
-      await _flutterTts.setSpeechRate(0.42);
-      await _flutterTts.setPitch(1.0);
-      await _flutterTts.setVolume(1.0);
-
-      final rawLanguages = await _flutterTts.getLanguages;
-      final languages = (rawLanguages as List? ?? const [])
-          .map((e) => e.toString())
-          .toList();
-      final koLanguage = languages.cast<String?>().firstWhere(
-        (lang) => lang != null && lang.toLowerCase().startsWith('ko'),
-        orElse: () => 'ko-KR',
-      )!;
-      await _flutterTts.setLanguage(koLanguage);
-
-      _flutterTts.setStartHandler(() {
-        if (!mounted) return;
-        setState(() {
-          _ttsSpeaking = true;
-          _ttsStatus = _activeNarrationTarget == _NarrationTarget.fullStory
-              ? '전체 이야기를 읽는 중'
-              : '현재 장을 읽는 중';
-        });
-      });
-
-      _flutterTts.setCompletionHandler(() {
+      await _narrationPlayer.setReleaseMode(ReleaseMode.stop);
+      _ttsCompletionSubscription =
+          _narrationPlayer.onPlayerComplete.listen((_) {
         if (!mounted) return;
         setState(() {
           _ttsSpeaking = false;
@@ -93,29 +92,11 @@ class _StoryPageState extends State<StoryPage> {
         });
       });
 
-      _flutterTts.setCancelHandler(() {
-        if (!mounted) return;
-        setState(() {
-          _ttsSpeaking = false;
-          _ttsStatus = '낭독이 멈췄어요';
-          _activeNarrationTarget = null;
-        });
-      });
-
-      _flutterTts.setErrorHandler((msg) {
-        if (!mounted) return;
-        setState(() {
-          _ttsSpeaking = false;
-          _ttsStatus = '낭독 오류: $msg';
-          _activeNarrationTarget = null;
-        });
-      });
-
       if (!mounted) return;
       setState(() {
         _ttsReady = true;
         _ttsInitializing = false;
-        _ttsStatus = '한국어 낭독 준비 완료';
+        _ttsStatus = '자연스러운 한국어 낭독 준비 완료';
       });
     } catch (_) {
       if (!mounted) return;
@@ -123,7 +104,7 @@ class _StoryPageState extends State<StoryPage> {
         _ttsReady = false;
         _ttsInitializing = false;
         _ttsSpeaking = false;
-        _ttsStatus = '이 기기에서는 낭독을 준비하지 못했어요';
+        _ttsStatus = '서버 낭독을 준비하지 못했어요';
         _activeNarrationTarget = null;
       });
     }
@@ -134,6 +115,130 @@ class _StoryPageState extends State<StoryPage> {
         .replaceAll(RegExp(r'[❤💖✨❤️]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  String get _voiceRecordingTime {
+    final minutes = (_voiceRecordSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_voiceRecordSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Uint8List _pcm16ToWav(Uint8List pcm, {int sampleRate = 24000}) {
+    const channels = 1;
+    const bytesPerSample = 2;
+    final wav = Uint8List(44 + pcm.length);
+    final header = ByteData.sublistView(wav);
+
+    void writeAscii(int offset, String value) {
+      for (var i = 0; i < value.length; i++) {
+        header.setUint8(offset + i, value.codeUnitAt(i));
+      }
+    }
+
+    writeAscii(0, 'RIFF');
+    header.setUint32(4, 36 + pcm.length, Endian.little);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, channels, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(
+      28,
+      sampleRate * channels * bytesPerSample,
+      Endian.little,
+    );
+    header.setUint16(32, channels * bytesPerSample, Endian.little);
+    header.setUint16(34, bytesPerSample * 8, Endian.little);
+    writeAscii(36, 'data');
+    header.setUint32(40, pcm.length, Endian.little);
+    wav.setRange(44, wav.length, pcm);
+    return wav;
+  }
+
+  Future<void> _startVoiceRecording() async {
+    try {
+      if (!await _voiceRecorder.hasPermission()) {
+        throw Exception('마이크 권한이 필요해요. 브라우저 또는 기기 설정에서 허용해 주세요.');
+      }
+
+      await _stopTts();
+      _voicePcm.clear();
+      _voiceRecordSeconds = 0;
+      final stream = await _voiceRecorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 24000,
+          numChannels: 1,
+        ),
+      );
+      _voiceRecordingSubscription = stream.listen(
+        _voicePcm.add,
+        onError: (Object error) {
+          if (!mounted) return;
+          setState(() {
+            _isRecordingVoice = false;
+            _ttsStatus = '녹음 오류: $error';
+          });
+        },
+      );
+      _voiceRecordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted || !_isRecordingVoice) return;
+        if (_voiceRecordSeconds >= 20) {
+          unawaited(_stopVoiceRecording());
+          return;
+        }
+        setState(() {
+          _voiceRecordSeconds++;
+          _ttsStatus = '내 목소리를 녹음하고 있어요 ($_voiceRecordingTime / 00:20)';
+        });
+      });
+
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = true;
+        _ttsStatus = '내 목소리를 녹음하고 있어요 (00:00 / 00:20)';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = false;
+        _ttsStatus = '녹음을 시작하지 못했어요: $error';
+      });
+    }
+  }
+
+  Future<void> _stopVoiceRecording() async {
+    if (!_isRecordingVoice) return;
+    _voiceRecordingTimer?.cancel();
+    _voiceRecordingTimer = null;
+    try {
+      await _voiceRecorder.stop();
+      await _voiceRecordingSubscription?.cancel();
+      _voiceRecordingSubscription = null;
+      final pcm = _voicePcm.takeBytes();
+      const minimumBytes = 24000 * 2 * 3;
+      if (pcm.length < minimumBytes) {
+        throw Exception('목소리를 3초 이상 녹음해 주세요.');
+      }
+      final wav = _pcm16ToWav(pcm);
+      if (!mounted) return;
+      setState(() {
+        _recordedVoiceWav = wav;
+        _isRecordingVoice = false;
+        _ttsStatus = '내 목소리 샘플이 준비됐어요. 낭독 버튼을 눌러 들어보세요.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = false;
+        _ttsStatus = '녹음을 저장하지 못했어요: $error';
+      });
+    }
+  }
+
+  Future<void> _toggleVoiceRecording() {
+    return _isRecordingVoice ? _stopVoiceRecording() : _startVoiceRecording();
   }
 
   Future<void> _speakText(String text, _NarrationTarget target) async {
@@ -149,20 +254,42 @@ class _StoryPageState extends State<StoryPage> {
       return;
     }
 
-    await _flutterTts.stop();
+    final requestNumber = ++_ttsRequestNumber;
+    await _narrationPlayer.stop();
     if (!mounted) return;
     setState(() {
       _activeNarrationTarget = target;
       _ttsSpeaking = false;
-      _ttsStatus = target == _NarrationTarget.fullStory
-          ? '전체 이야기를 준비 중'
-          : '현재 장을 준비 중';
+      _ttsStatus = '자연스러운 목소리를 만들고 있어요';
     });
-    await _flutterTts.speak(cleaned);
+
+    try {
+      final audioBytes = await DbService.synthesizeNarration(
+        cleaned,
+        speakerWav: _recordedVoiceWav,
+      );
+      if (!mounted || requestNumber != _ttsRequestNumber) return;
+      await _narrationPlayer.play(BytesSource(audioBytes));
+      if (!mounted || requestNumber != _ttsRequestNumber) return;
+      setState(() {
+        _ttsSpeaking = true;
+        final scope = target == _NarrationTarget.fullStory ? '전체 이야기' : '현재 장';
+        _ttsStatus =
+            _recordedVoiceWav == null ? '$scope을 읽는 중' : '내 목소리로 $scope을 읽는 중';
+      });
+    } catch (error) {
+      if (!mounted || requestNumber != _ttsRequestNumber) return;
+      setState(() {
+        _ttsSpeaking = false;
+        _ttsStatus = '낭독 오류: $error';
+        _activeNarrationTarget = null;
+      });
+    }
   }
 
   Future<void> _stopTts() async {
-    await _flutterTts.stop();
+    _ttsRequestNumber++;
+    await _narrationPlayer.stop();
     if (!mounted) return;
     setState(() {
       _ttsSpeaking = false;
@@ -427,7 +554,11 @@ class _StoryPageState extends State<StoryPage> {
 
   Widget _buildTtsPanel(StorySession story) {
     final currentChapterText = story.chapters.last.text;
-    final statusColor = _ttsReady ? AppColors.teal : AppColors.gray;
+    final statusColor = _ttsStatus.startsWith('낭독 오류')
+        ? AppColors.pink2
+        : _ttsReady
+            ? AppColors.teal
+            : AppColors.gray;
 
     return Container(
       width: double.infinity,
@@ -454,7 +585,26 @@ class _StoryPageState extends State<StoryPage> {
                   ),
                 ),
               ),
-              if (_ttsSpeaking)
+              if (_isRecordingVoice)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.pink2.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    '녹음 중',
+                    style: TextStyle(
+                      color: AppColors.pink2,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              else if (_ttsSpeaking)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -484,6 +634,69 @@ class _StoryPageState extends State<StoryPage> {
               fontWeight: FontWeight.w500,
             ),
           ),
+          if (_recordedVoiceWav == null || _isRecordingVoice) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.pink2.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.pink2.withValues(alpha: 0.28),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.record_voice_over_outlined,
+                    color: AppColors.pink2,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '따라 읽어보세요',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          _voiceSampleScript,
+                          style: TextStyle(
+                            color: AppColors.gray,
+                            fontSize: 12,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '문장 복사',
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        const ClipboardData(text: _voiceSampleScript),
+                      );
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('따라 읽기 문장을 복사했어요.')),
+                      );
+                    },
+                    icon: const Icon(Icons.copy_rounded, size: 18),
+                    color: AppColors.pink2,
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -496,7 +709,7 @@ class _StoryPageState extends State<StoryPage> {
                           _NarrationTarget.currentChapter,
                         ),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                  label: const Text('현재 장 읽기'),
+                  label: const Text('현재 장'),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
@@ -512,10 +725,32 @@ class _StoryPageState extends State<StoryPage> {
                           _NarrationTarget.fullStory,
                         ),
                   icon: const Icon(Icons.menu_book_rounded, size: 18),
-                  label: const Text('전체 읽기'),
+                  label: const Text('전체'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.p300,
                     side: const BorderSide(color: AppColors.border),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _ttsInitializing ? null : _toggleVoiceRecording,
+                  icon: Icon(
+                    _isRecordingVoice
+                        ? Icons.stop_circle_outlined
+                        : Icons.mic_none_rounded,
+                    size: 18,
+                  ),
+                  label: Text(_isRecordingVoice ? '녹음 완료' : '내 목소리'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.pink2,
+                    side: BorderSide(
+                      color: _recordedVoiceWav == null
+                          ? AppColors.border
+                          : AppColors.pink2,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
@@ -579,7 +814,7 @@ class _StoryPageState extends State<StoryPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '색칠된 단어를 눌러 저장해요',
+                  '밑줄 친 단어를 눌러 저장해요',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 13,
@@ -789,28 +1024,16 @@ class _StoryPageState extends State<StoryPage> {
           baseline: TextBaseline.alphabetic,
           child: GestureDetector(
             onTap: () => _showVocabSaveSheet(context, state, story, match.word),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: BoxDecoration(
-                color: saved
-                    ? AppColors.teal.withValues(alpha: 0.24)
-                    : AppColors.pink.withValues(alpha: 0.22),
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(
-                  color: saved
-                      ? AppColors.teal.withValues(alpha: 0.42)
-                      : AppColors.pink.withValues(alpha: 0.48),
-                ),
-              ),
-              child: Text(
-                text.substring(match.start, match.end),
-                style: TextStyle(
-                  color: saved ? AppColors.teal : AppColors.pink2,
-                  fontSize: 15,
-                  height: 1.35,
-                  fontWeight: FontWeight.w800,
-                ),
+            child: Text(
+              text.substring(match.start, match.end),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                height: 1.8,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline,
+                decorationColor: saved ? AppColors.teal : AppColors.p300,
+                decorationThickness: 1.3,
               ),
             ),
           ),
@@ -941,36 +1164,38 @@ class _StoryPageState extends State<StoryPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: alreadySaved
-                        ? null
-                        : () async {
-                            final ok = await state.saveVocabularyFromStory(
-                              story,
-                              word,
-                            );
-                            if (!sheetContext.mounted) return;
-                            Navigator.pop(sheetContext);
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok
-                                      ? '"${word.hard}" 단어를 저장했어요.'
-                                      : '단어 저장에 실패했어요.',
-                                ),
-                              ),
-                            );
-                          },
+                    onPressed: () async {
+                      if (alreadySaved) {
+                        Navigator.pop(sheetContext);
+                        return;
+                      }
+
+                      final ok = await state.saveVocabularyFromStory(
+                        story,
+                        word,
+                      );
+                      if (!sheetContext.mounted) return;
+                      Navigator.pop(sheetContext);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            ok ? '"${word.hard}" 단어를 저장했어요.' : '단어 저장에 실패했어요.',
+                          ),
+                        ),
+                      );
+                    },
                     icon: Icon(
                       alreadySaved
                           ? Icons.check_circle_rounded
                           : Icons.bookmark_add_rounded,
                     ),
-                    label: Text(alreadySaved ? '이미 저장된 단어' : '단어장에 저장'),
+                    label: Text(alreadySaved ? '단어장에 저장됨' : '단어장에 저장'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: alreadySaved
-                          ? AppColors.gray2
-                          : AppColors.p600,
+                      backgroundColor:
+                          alreadySaved ? AppColors.teal : AppColors.p600,
+                      foregroundColor: Colors.white,
+                      elevation: 2,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),

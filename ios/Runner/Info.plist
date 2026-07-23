@@ -8,6 +8,8 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Capstone App</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>내 목소리로 동화를 낭독하기 위한 음성 샘플을 녹음합니다.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
