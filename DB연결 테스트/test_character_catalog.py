@@ -21,6 +21,11 @@ EXPECTED_SUFFIXES = (
     "rescue",
 )
 
+PREMIUM_REFERENCE_KEYS = {
+    *(f"male_{index:02d}" for index in range(1, 9)),
+    *(f"female_{index:02d}" for index in range(1, 9)),
+}
+
 
 def _runtime_profile(profile):
     result = dict(profile)
@@ -64,12 +69,27 @@ class CharacterCatalogTests(unittest.TestCase):
                 self.assertTrue(profile["role_tags"])
                 self.assertTrue(profile["genres"])
                 self.assertTrue(profile["description"])
-                self.assertEqual(
-                    [asset["filename"] for asset in profile["assets"]],
-                    [
-                        f"{profile['character_key']}_{suffix}.png"
-                        for suffix in EXPECTED_SUFFIXES
-                    ],
+                filenames = [asset["filename"] for asset in profile["assets"]]
+                expected = [
+                    f"{profile['character_key']}_{suffix}.png"
+                    for suffix in EXPECTED_SUFFIXES
+                ]
+                if profile["character_key"] in PREMIUM_REFERENCE_KEYS:
+                    self.assertEqual(
+                        filenames[0],
+                        f"{profile['character_key']}_reference_v2.png",
+                    )
+                    self.assertEqual(
+                        profile["assets"][0]["quality_tier"],
+                        "premium_reference",
+                    )
+                    filenames = filenames[1:]
+                self.assertEqual(filenames, expected)
+                self.assertTrue(
+                    all(
+                        asset["quality_tier"] == "fast_action"
+                        for asset in profile["assets"][-len(EXPECTED_SUFFIXES):]
+                    )
                 )
 
     def test_infers_korean_gender_and_age_terms(self):

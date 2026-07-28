@@ -1,7 +1,7 @@
 from io import BytesIO
 from typing import Tuple
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 
 def _fit_background(image: Image.Image, size: Tuple[int, int]) -> Image.Image:
@@ -55,13 +55,31 @@ def compose_story_scene(
     shadow = Image.new("RGBA", background.size, (0, 0, 0, 0))
     shadow_width = max(16, round(character.width * 0.62))
     shadow_height = max(8, round(height * 0.035))
+    blur_radius = max(3, shadow_height // 2)
+    shadow_padding = blur_radius * 3
     shadow_blob = Image.new(
         "RGBA",
-        (shadow_width, shadow_height),
-        (35, 35, 45, 92),
-    ).filter(ImageFilter.GaussianBlur(max(3, shadow_height // 2)))
-    shadow_x = (width - shadow_width) // 2
-    shadow_y = min(height - shadow_height, y + character.height - shadow_height // 2)
+        (
+            shadow_width + shadow_padding * 2,
+            shadow_height + shadow_padding * 2,
+        ),
+        (0, 0, 0, 0),
+    )
+    ImageDraw.Draw(shadow_blob).ellipse(
+        (
+            shadow_padding,
+            shadow_padding,
+            shadow_padding + shadow_width,
+            shadow_padding + shadow_height,
+        ),
+        fill=(35, 35, 45, 92),
+    )
+    shadow_blob = shadow_blob.filter(ImageFilter.GaussianBlur(blur_radius))
+    shadow_x = (width - shadow_blob.width) // 2
+    shadow_y = min(
+        height - shadow_blob.height,
+        y + character.height - shadow_height // 2 - shadow_padding,
+    )
     shadow.alpha_composite(shadow_blob, (shadow_x, shadow_y))
 
     background.alpha_composite(shadow)

@@ -3,6 +3,7 @@ import importlib.util
 import sys
 import tempfile
 import unittest
+from collections import deque
 from pathlib import Path
 
 from PIL import Image, ImageColor
@@ -16,6 +17,10 @@ KEYS = tuple(
     [f"male_{index:02d}" for index in range(1, 9)]
     + [f"female_{index:02d}" for index in range(1, 9)]
 )
+PREMIUM_REFERENCES = {
+    f"{key}_reference_v2.png"
+    for key in KEYS
+}
 
 spec = importlib.util.spec_from_file_location("generate_character_assets", GENERATOR_PATH)
 generator = importlib.util.module_from_spec(spec)
@@ -32,7 +37,70 @@ class GeneratedCharacterAssetTests(unittest.TestCase):
             for path in ASSET_DIR.glob("*.png")
             if path.name.startswith(("male_", "female_"))
         }
-        self.assertEqual(actual, expected)
+        self.assertEqual(actual, expected | PREMIUM_REFERENCES)
+
+    def test_premium_references_are_large_transparent_and_visible(self):
+        for filename in PREMIUM_REFERENCES:
+            path = ASSET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertGreaterEqual(image.width, 1024)
+                self.assertGreaterEqual(image.height, 1024)
+                alpha = image.getchannel("A")
+                minimum, maximum = alpha.getextrema()
+                self.assertEqual(minimum, 0)
+                self.assertEqual(maximum, 255)
+                self.assertIsNotNone(alpha.getbbox())
+                self.assertGreater(
+                    alpha.histogram()[0],
+                    image.width * image.height // 3,
+                )
+
+    def test_premium_references_have_no_large_detached_body_parts(self):
+        for filename in PREMIUM_REFERENCES:
+            path = ASSET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                alpha = image.getchannel("A")
+                alpha.thumbnail((128, 192), Image.Resampling.LANCZOS)
+                mask = [value >= 96 for value in alpha.getdata()]
+                width, height = alpha.size
+                visited = bytearray(len(mask))
+                component_sizes = []
+
+                for start, visible in enumerate(mask):
+                    if not visible or visited[start]:
+                        continue
+                    visited[start] = 1
+                    queue = deque([start])
+                    size = 0
+                    while queue:
+                        index = queue.popleft()
+                        size += 1
+                        x = index % width
+                        y = index // width
+                        for neighbor in (
+                            index - 1 if x else -1,
+                            index + 1 if x + 1 < width else -1,
+                            index - width if y else -1,
+                            index + width if y + 1 < height else -1,
+                        ):
+                            if (
+                                neighbor >= 0
+                                and mask[neighbor]
+                                and not visited[neighbor]
+                            ):
+                                visited[neighbor] = 1
+                                queue.append(neighbor)
+                    component_sizes.append(size)
+
+                component_sizes.sort(reverse=True)
+                self.assertTrue(component_sizes)
+                detached_pixels = sum(component_sizes[1:])
+                self.assertLess(
+                    detached_pixels,
+                    component_sizes[0] * 0.06,
+                    f"{filename} contains a large detached visible component.",
+                )
 
     def test_assets_are_rgba_transparent_and_visible(self):
         for key in KEYS:

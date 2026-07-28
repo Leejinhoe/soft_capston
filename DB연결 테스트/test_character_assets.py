@@ -42,6 +42,44 @@ class CharacterAssetSelectionTests(unittest.TestCase):
 
         self.assertEqual(selected["image_file_id"], "default-file")
 
+    def test_prefers_first_premium_reference_for_neutral_scene(self):
+        self.profile["assets"].insert(
+            0,
+            {
+                "pose": "default",
+                "emotion": "neutral",
+                "quality_tier": "premium_reference",
+                "image_file_id": "premium-file",
+                "scene_keywords": [],
+            },
+        )
+
+        selected = select_character_asset(
+            self.profile,
+            "A quiet moment before the journey begins.",
+        )
+
+        self.assertEqual(selected["image_file_id"], "premium-file")
+
+    def test_action_asset_still_beats_premium_reference(self):
+        self.profile["assets"].insert(
+            0,
+            {
+                "pose": "default",
+                "emotion": "neutral",
+                "quality_tier": "premium_reference",
+                "image_file_id": "premium-file",
+                "scene_keywords": [],
+            },
+        )
+
+        selected = select_character_asset(
+            self.profile,
+            "The hero begins to cast magic.",
+        )
+
+        self.assertEqual(selected["image_file_id"], "magic-file")
+
 
 if __name__ == "__main__":
     unittest.main()

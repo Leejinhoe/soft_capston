@@ -33,15 +33,37 @@ ASSET_VARIANTS = (
     ("rescue", "rescuing", "brave", ("action", "rescue"), ("help", "rescue", "protect")),
 )
 
+REFERENCE_VARIANT = (
+    "reference_v2",
+    "default",
+    "neutral",
+    ("portrait", "reference", "premium"),
+    (),
+)
+
 
 def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
     specs = []
+    reference_filename = f"{character_key}_{REFERENCE_VARIANT[0]}.png"
+    if (CHARACTER_ASSET_DIR / reference_filename).is_file():
+        _, pose, emotion, variant_tags, keywords = REFERENCE_VARIANT
+        specs.append(
+            {
+                "filename": reference_filename,
+                "pose": pose,
+                "emotion": emotion,
+                "quality_tier": "premium_reference",
+                "tags": sorted(set(tags).union(variant_tags)),
+                "scene_keywords": list(keywords),
+            }
+        )
     for suffix, pose, emotion, variant_tags, keywords in ASSET_VARIANTS:
         specs.append(
             {
                 "filename": f"{character_key}_{suffix}.png",
                 "pose": pose,
                 "emotion": emotion,
+                "quality_tier": "fast_action",
                 "tags": sorted(set(tags).union(variant_tags)),
                 "scene_keywords": list(keywords),
             }
@@ -181,6 +203,14 @@ async def _store_character_asset(
 
     content = await asyncio.to_thread(asset_path.read_bytes)
     sha256 = hashlib.sha256(content).hexdigest()
+    quality_tier = asset.get("quality_tier", "fast_action")
+    is_premium_reference = quality_tier == "premium_reference"
+    provider = "openai-imagegen" if is_premium_reference else "local-procedural"
+    model = (
+        "storybook-character-reference-v2"
+        if is_premium_reference
+        else "storybook-character-vector-v1"
+    )
     files_collection = database.get_collection(f"{MEDIA_GRIDFS_BUCKET}.files")
     existing = await files_collection.find_one(
         {
@@ -202,8 +232,9 @@ async def _store_character_asset(
                 "character_key": character["character_key"],
                 "pose": asset["pose"],
                 "emotion": asset["emotion"],
-                "provider": "local-procedural",
-                "model": "storybook-character-vector-v1",
+                "quality_tier": quality_tier,
+                "provider": provider,
+                "model": model,
                 "sha256": sha256,
                 "created_at": datetime.utcnow().isoformat(),
             },
@@ -248,6 +279,7 @@ async def seed_default_character_profiles() -> int:
                     "emotion": asset_spec["emotion"],
                     "image_file_id": stored["file_id"],
                     "image_url": stored["url"],
+                    "quality_tier": asset_spec.get("quality_tier", "fast_action"),
                     "tags": asset_spec["tags"],
                     "scene_keywords": asset_spec["scene_keywords"],
                 }
