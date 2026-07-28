@@ -239,6 +239,58 @@ class StoryChapter {
   });
 }
 
+class StoryCastMember {
+  final String role;
+  final String name;
+  final String characterKey;
+  final String? profileName;
+  final String? sourceDescription;
+
+  const StoryCastMember({
+    required this.role,
+    required this.name,
+    required this.characterKey,
+    this.profileName,
+    this.sourceDescription,
+  });
+
+  factory StoryCastMember.fromJson(Map<String, dynamic> json) {
+    return StoryCastMember(
+      role: json['role']?.toString().trim() ?? '',
+      name: json['name']?.toString().trim() ?? '',
+      characterKey: json['character_key']?.toString().trim() ?? '',
+      profileName: _nullableText(json['profile_name']),
+      sourceDescription: _nullableText(json['source_description']),
+    );
+  }
+
+  factory StoryCastMember.fromCharacter(String role, String description) {
+    final quotedName = RegExp(
+      "['\"]([^'\"]+)['\"]",
+    ).firstMatch(description)?.group(1);
+    return StoryCastMember(
+      role: role,
+      name: quotedName?.trim().isNotEmpty == true
+          ? quotedName!.trim()
+          : description.trim(),
+      characterKey: '',
+      sourceDescription: description.trim(),
+    );
+  }
+
+  String get identityLabel {
+    final profile = profileName?.trim() ?? '';
+    if (profile.isNotEmpty) return profile;
+    if (characterKey.isNotEmpty) return characterKey;
+    return '프로필 배정 대기';
+  }
+
+  static String? _nullableText(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
+  }
+}
+
 class StorySession {
   String storyId;
   String? dbStoryId;
@@ -250,6 +302,8 @@ class StorySession {
   List<ChoiceOption> choiceOptions;
   List<VocabWord> candidateVocab;
   List<VocabWord> vocab;
+  Map<String, String> characters;
+  List<StoryCastMember> storyCast;
   List<String> allChoicesMade;
   int currentChapter;
   final DateTime? createdAt;
@@ -268,6 +322,8 @@ class StorySession {
     required this.choiceOptions,
     this.candidateVocab = const [],
     required this.vocab,
+    this.characters = const {},
+    this.storyCast = const [],
     this.allChoicesMade = const [],
     this.currentChapter = 1,
     this.createdAt,
@@ -279,6 +335,18 @@ class StorySession {
        mediaGenerationChapterNumbers = mediaGenerationChapterNumbers ?? <int>{};
 
   String get fullStoryText => chapters.map((c) => c.text).join('\n\n');
+
+  List<StoryCastMember> get effectiveStoryCast {
+    if (storyCast.isNotEmpty) return storyCast;
+    return characters.entries
+        .where(
+          (entry) =>
+              entry.key.toLowerCase() != 'key_item' &&
+              entry.value.trim().isNotEmpty,
+        )
+        .map((entry) => StoryCastMember.fromCharacter(entry.key, entry.value))
+        .toList(growable: false);
+  }
 
   EmotionAnalysis? emotionForChoice(String choice) {
     for (final option in choiceOptions) {
@@ -322,6 +390,24 @@ class StorySession {
         .whereType<String>()
         .where((choice) => choice.isNotEmpty)
         .toList();
+    final rawCharacters = json['characters'];
+    final characters = rawCharacters is Map
+        ? rawCharacters.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          )
+        : <String, String>{};
+    final rawStoryCast = json['story_cast'];
+    final storyCast = rawStoryCast is List
+        ? rawStoryCast
+              .whereType<Map>()
+              .map(
+                (item) => StoryCastMember.fromJson(
+                  item.map((key, value) => MapEntry(key.toString(), value)),
+                ),
+              )
+              .where((member) => member.role.isNotEmpty)
+              .toList()
+        : <StoryCastMember>[];
 
     final syncedKeys = vocab
         .map((word) => '${word.hard}|${word.easy}|${word.definition}')
@@ -353,6 +439,8 @@ class StorySession {
       choiceOptions: const [],
       candidateVocab: const [],
       vocab: vocab,
+      characters: characters,
+      storyCast: storyCast,
       allChoicesMade: choicesMade,
       currentChapter: chapters.fold<int>(
         0,

@@ -5,13 +5,34 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/admin_model.dart';
+import '../models/media_readiness.dart';
+import '../models/moderation_model.dart';
 import '../models/story_model.dart';
 
 class DbService {
-  static const String _definedBaseUrl =
-      String.fromEnvironment('DB_API_BASE_URL');
-  static const String _definedTtsBaseUrl =
-      String.fromEnvironment('TTS_API_BASE_URL');
+  static String? _accessToken;
+
+  static void setAccessToken(String? token) {
+    final normalized = token?.trim();
+    _accessToken = normalized == null || normalized.isEmpty ? null : normalized;
+  }
+
+  static void clearAccessToken() => _accessToken = null;
+
+  static Map<String, String> get _jsonHeaders {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (_accessToken != null) {
+      headers['Authorization'] = 'Bearer $_accessToken';
+    }
+    return headers;
+  }
+
+  static const String _definedBaseUrl = String.fromEnvironment(
+    'DB_API_BASE_URL',
+  );
+  static const String _definedTtsBaseUrl = String.fromEnvironment(
+    'TTS_API_BASE_URL',
+  );
 
   static String get baseUrl {
     final defined = _definedBaseUrl.trim();
@@ -111,7 +132,7 @@ class DbService {
       response = await http
           .post(
             _ttsUri('/api/tts'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _jsonHeaders,
             body: jsonEncode({'text': text}),
           )
           .timeout(const Duration(seconds: 180));
@@ -125,8 +146,9 @@ class DbService {
             filename: 'my_fairytale_voice.wav',
           ),
         );
-      final streamed =
-          await request.send().timeout(const Duration(seconds: 180));
+      final streamed = await request.send().timeout(
+            const Duration(seconds: 180),
+          );
       response = await http.Response.fromStream(streamed);
     }
 
@@ -141,10 +163,12 @@ class DbService {
     String accountId,
   ) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/users/by-account/$accountId'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/users/by-account/$accountId'),
+            headers: _jsonHeaders,
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -166,7 +190,7 @@ class DbService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/users/register'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({
             'account_id': accountId,
             'password': password,
@@ -181,7 +205,9 @@ class DbService {
         .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200 || response.statusCode == 201) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      setAccessToken(data['access_token']?.toString());
+      return data;
     }
     throw Exception(
       _extractDetailMessage(response.body) ??
@@ -196,13 +222,15 @@ class DbService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/users/login'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({'account_id': accountId, 'password': password}),
         )
         .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      setAccessToken(data['access_token']?.toString());
+      return data;
     }
     throw Exception(
       _extractDetailMessage(response.body) ?? '로그인 실패: ${response.statusCode}',
@@ -212,12 +240,14 @@ class DbService {
   static Future<AdminDashboard> fetchAdminDashboard({
     required String accountId,
   }) async {
-    final response = await http.get(
-      Uri.parse(
-        '$baseUrl/api/admin/dashboard',
-      ).replace(queryParameters: {'account_id': accountId}),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 20));
+    final response = await http
+        .get(
+          Uri.parse(
+            '$baseUrl/api/admin/dashboard',
+          ).replace(queryParameters: {'account_id': accountId}),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode == 200) {
       return AdminDashboard.fromJson(
@@ -230,16 +260,37 @@ class DbService {
     );
   }
 
+  static Future<MediaReadiness> fetchMediaReadiness() async {
+    final response = await http
+        .get(
+          _apiUri('/api/media/readiness'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      return MediaReadiness.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '미디어 준비 현황 조회 실패: ${response.statusCode}',
+    );
+  }
+
   static Future<bool> deleteAdminUser({
     required String adminAccountId,
     required String userId,
   }) async {
-    final response = await http.delete(
-      Uri.parse(
-        '$baseUrl/api/admin/users/$userId',
-      ).replace(queryParameters: {'account_id': adminAccountId}),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .delete(
+          Uri.parse(
+            '$baseUrl/api/admin/users/$userId',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200 || response.statusCode == 204) return true;
     throw Exception(
@@ -252,12 +303,14 @@ class DbService {
     required String adminAccountId,
     required String storyId,
   }) async {
-    final response = await http.delete(
-      Uri.parse(
-        '$baseUrl/api/admin/stories/$storyId',
-      ).replace(queryParameters: {'account_id': adminAccountId}),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .delete(
+          Uri.parse(
+            '$baseUrl/api/admin/stories/$storyId',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200 || response.statusCode == 204) return true;
     throw Exception(
@@ -270,12 +323,14 @@ class DbService {
     required String adminAccountId,
     required String vocabId,
   }) async {
-    final response = await http.delete(
-      Uri.parse(
-        '$baseUrl/api/admin/vocabularies/$vocabId',
-      ).replace(queryParameters: {'account_id': adminAccountId}),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .delete(
+          Uri.parse(
+            '$baseUrl/api/admin/vocabularies/$vocabId',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200 || response.statusCode == 204) return true;
     throw Exception(
@@ -288,12 +343,14 @@ class DbService {
     required String adminAccountId,
     required String postId,
   }) async {
-    final response = await http.delete(
-      Uri.parse(
-        '$baseUrl/api/admin/community/posts/$postId',
-      ).replace(queryParameters: {'account_id': adminAccountId}),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .delete(
+          Uri.parse(
+            '$baseUrl/api/admin/community/posts/$postId',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200 || response.statusCode == 204) return true;
     throw Exception(
@@ -310,7 +367,7 @@ class DbService {
     final response = await http
         .patch(
           Uri.parse('$baseUrl/api/admin/community/posts/$postId/visibility'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({
             'account_id': adminAccountId,
             'is_hidden': isHidden,
@@ -339,7 +396,7 @@ class DbService {
     final response = await http
         .put(
           Uri.parse('$baseUrl/api/users/$accountId/profile'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({
             'nickname': nickname?.trim(),
             'email': email?.trim(),
@@ -366,7 +423,7 @@ class DbService {
     final response = await http
         .patch(
           Uri.parse('$baseUrl/api/users/$accountId/password'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({
             'current_password': currentPassword,
             'new_password': newPassword,
@@ -381,24 +438,227 @@ class DbService {
     );
   }
 
+  static Future<ReportSubmissionResult> createCommunityReport({
+    required String targetType,
+    required String targetId,
+    required String reason,
+    String? reporterAccountId,
+    String? postId,
+    String? details,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/community/reports'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'reporter_account_id': reporterAccountId?.trim(),
+            'target_type': targetType,
+            'target_id': targetId,
+            'post_id': postId,
+            'reason': reason.trim(),
+            'details': details?.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return ReportSubmissionResult.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '신고 접수에 실패했습니다: ${response.statusCode}',
+    );
+  }
+
+  static Future<List<ModerationReport>> fetchAdminReports({
+    required String adminAccountId,
+    String? status,
+  }) async {
+    final query = <String, String>{'account_id': adminAccountId};
+    if (status != null && status.isNotEmpty) query['status'] = status;
+    final response = await http
+        .get(
+          _apiUri('/api/admin/reports').replace(queryParameters: query),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return (data['reports'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(ModerationReport.fromJson)
+          .toList();
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '신고 목록 조회에 실패했습니다: ${response.statusCode}',
+    );
+  }
+
+  static Future<List<UserWarning>> fetchAdminWarnings({
+    required String adminAccountId,
+    String? userId,
+  }) async {
+    final query = <String, String>{'account_id': adminAccountId};
+    if (userId != null && userId.isNotEmpty) query['user_id'] = userId;
+    final response = await http
+        .get(
+          _apiUri('/api/admin/warnings').replace(queryParameters: query),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return (data['warnings'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(UserWarning.fromJson)
+          .toList();
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '경고 목록 조회에 실패했습니다: ${response.statusCode}',
+    );
+  }
+
+  static Future<UserWarning> createAdminWarning({
+    required String adminAccountId,
+    required String userId,
+    required String reason,
+    String severity = 'notice',
+    DateTime? expiresAt,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri(
+            '/api/admin/users/$userId/warnings',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'reason': reason.trim(),
+            'severity': severity,
+            'expires_at': expiresAt?.toUtc().toIso8601String(),
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return UserWarning.fromJson(
+        data['warning'] as Map<String, dynamic>? ?? const {},
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '경고 등록에 실패했습니다: ${response.statusCode}',
+    );
+  }
+
+  static Future<UserWarning> resolveAdminWarning({
+    required String adminAccountId,
+    required String warningId,
+    required String status,
+    String? resolutionNote,
+  }) async {
+    final response = await http
+        .patch(
+          _apiUri(
+            '/api/admin/warnings/$warningId',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'status': status,
+            'resolution_note': resolutionNote?.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return UserWarning.fromJson(
+        data['warning'] as Map<String, dynamic>? ?? const {},
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '경고 처리에 실패했습니다: ${response.statusCode}',
+    );
+  }
+
+  static Future<ModerationReport> resolveAdminReport({
+    required String adminAccountId,
+    required String reportId,
+    required String status,
+    String? actionTaken,
+    String? resolutionNote,
+  }) async {
+    final response = await http
+        .patch(
+          _apiUri(
+            '/api/admin/reports/$reportId',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'status': status,
+            'action_taken': actionTaken,
+            'resolution_note': resolutionNote?.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return ModerationReport.fromJson(
+        data['report'] as Map<String, dynamic>? ?? const {},
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '신고 처리에 실패했습니다: ${response.statusCode}',
+    );
+  }
+
+  static Future<void> withdrawAccount({
+    required String accountId,
+    String? password,
+    String? reason,
+  }) async {
+    final request = http.Request('DELETE', _apiUri('/api/users/$accountId'))
+      ..headers.addAll(_jsonHeaders)
+      ..body = jsonEncode({'password': password, 'reason': reason?.trim()});
+    final streamed = await request.send().timeout(const Duration(seconds: 20));
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode == 200 || response.statusCode == 204) return;
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '회원 탈퇴에 실패했습니다: ${response.statusCode}',
+    );
+  }
+
   static Future<String?> createStorySession({
     required String userId,
     required String title,
     required String genre,
     required String age,
     required String prompt,
+    Map<String, String> characters = const {},
   }) async {
     try {
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/stories/create'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _jsonHeaders,
             body: jsonEncode({
               'user_id': userId,
               'title': title,
               'genre': genre,
               'age': age,
               'prompt': prompt,
+              'characters': characters,
               'created_at': DateTime.now().toUtc().toIso8601String(),
             }),
           )
@@ -410,6 +670,21 @@ class DbService {
       }
     } catch (_) {}
     return null;
+  }
+
+  static Future<bool> saveStoryCharacters({
+    required String storyId,
+    required Map<String, String> characters,
+    String? userId,
+  }) async {
+    final response = await http
+        .put(
+          Uri.parse('$baseUrl/api/stories/$storyId/characters'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'characters': characters, 'user_id': userId}),
+        )
+        .timeout(const Duration(seconds: 20));
+    return response.statusCode == 200;
   }
 
   static Future<bool> pushScene({
@@ -424,7 +699,7 @@ class DbService {
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/stories/$storyId/scenes'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _jsonHeaders,
             body: jsonEncode({
               'step_number': stepNumber,
               'story_text': storyText,
@@ -453,7 +728,7 @@ class DbService {
       final response = await http
           .post(
             _apiUri('/api/stories/$storyId/scenes/$stepNumber/media/jobs'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _jsonHeaders,
             body: jsonEncode({
               'story_text': storyText,
               'genre': genre,
@@ -504,10 +779,12 @@ class DbService {
 
       await Future.delayed(const Duration(seconds: 3));
       try {
-        final response = await http.get(
-          _apiUri(pollPathOrUrl),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 20));
+        final response = await http
+            .get(
+              _apiUri(pollPathOrUrl),
+              headers: _jsonHeaders,
+            )
+            .timeout(const Duration(seconds: 20));
         if (response.statusCode == 404) return null;
         if (response.statusCode >= 500) continue;
         if (response.statusCode >= 400) return null;
@@ -550,7 +827,7 @@ class DbService {
       final response = await http
           .post(
             _apiUri('/api/stories/$storyId/scenes/$stepNumber/media/generate'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _jsonHeaders,
             body: jsonEncode({
               'story_text': storyText,
               'genre': genre,
@@ -585,7 +862,7 @@ class DbService {
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/vocabularies/add'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _jsonHeaders,
             body: jsonEncode({
               'user_id': userId,
               'origin_story_id': storyId,
@@ -614,7 +891,7 @@ class DbService {
     final response = await http
         .delete(
           Uri.parse('$baseUrl/api/stories/$storyId'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({'user_id': userId}),
         )
         .timeout(const Duration(seconds: 15));
@@ -636,7 +913,7 @@ class DbService {
     final response = await http
         .patch(
           Uri.parse('$baseUrl/api/stories/$storyId'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({'user_id': userId, 'title': title}),
         )
         .timeout(const Duration(seconds: 15));
@@ -661,7 +938,7 @@ class DbService {
     final response = await http
         .delete(
           Uri.parse('$baseUrl/api/vocabularies/$vocabId'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({'user_id': userId}),
         )
         .timeout(const Duration(seconds: 15));
@@ -676,10 +953,12 @@ class DbService {
   }
 
   static Future<List<StorySession>> fetchUserStories(String userId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/users/$userId/stories'),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/users/$userId/stories'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -700,10 +979,12 @@ class DbService {
   }
 
   static Future<List<VocabWord>> fetchUserVocabularies(String userId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/users/$userId/vocabularies'),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/users/$userId/vocabularies'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -722,10 +1003,12 @@ class DbService {
   static Future<List<CommunityPost>> fetchCommunityPosts({
     String sort = 'latest',
   }) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/community/posts?sort=$sort'),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/community/posts?sort=$sort'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -750,7 +1033,7 @@ class DbService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/community/posts'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({
             'author_name': authorName,
             'author_account_id': authorAccountId,
@@ -774,10 +1057,12 @@ class DbService {
   }
 
   static Future<CommunityPost> fetchCommunityPostDetail(String postId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/community/posts/$postId'),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/community/posts/$postId'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
       return CommunityPost.fromJson(
@@ -794,7 +1079,7 @@ class DbService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/community/posts/$postId/like'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({'account_id': accountId}),
         )
         .timeout(const Duration(seconds: 15));
@@ -817,7 +1102,7 @@ class DbService {
     final response = await http
         .delete(
           Uri.parse('$baseUrl/api/community/posts/$postId'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({'account_id': accountId}),
         )
         .timeout(const Duration(seconds: 15));
@@ -839,7 +1124,7 @@ class DbService {
     final response = await http
         .delete(
           Uri.parse('$baseUrl/api/community/posts/$postId/comments/$commentId'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({'account_id': accountId}),
         )
         .timeout(const Duration(seconds: 15));
@@ -864,7 +1149,7 @@ class DbService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/community/posts/$postId/comments'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders,
           body: jsonEncode({
             'author_name': authorName,
             'author_account_id': authorAccountId,

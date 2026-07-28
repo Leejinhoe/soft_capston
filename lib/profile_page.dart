@@ -12,17 +12,153 @@ import 'services/db_service.dart';
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
-  Future<void> _showPasswordDialog(
+  Future<void> _showWithdrawalDialog(
     BuildContext context,
     AppState state,
   ) async {
+    final accountId = state.currentAccountId?.trim();
+    if (accountId == null || accountId.isEmpty) return;
+
+    final isLocal = state.currentProvider == 'local';
+    final passwordController = TextEditingController();
+    final reasonController = TextEditingController();
+    var isSubmitting = false;
+    var dialogClosed = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> submit() async {
+            final password = passwordController.text;
+            if (isLocal && password.isEmpty) {
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('비밀번호를 입력해 주세요.')));
+              return;
+            }
+
+            setDialogState(() => isSubmitting = true);
+            try {
+              await DbService.withdrawAccount(
+                accountId: accountId,
+                password: isLocal ? password : null,
+                reason: reasonController.text,
+              );
+              if (!context.mounted) return;
+              dialogClosed = true;
+              Navigator.pop(dialogContext);
+              state.clearSignedInUser();
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginPage()),
+                (_) => false,
+              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('회원 탈퇴가 완료되었습니다.')));
+            } catch (e) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(e.toString().replaceAll('Exception: ', '')),
+                ),
+              );
+            } finally {
+              if (context.mounted && !dialogClosed) {
+                setDialogState(() => isSubmitting = false);
+              }
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF140028),
+            title: const Text('회원 탈퇴', style: TextStyle(color: Colors.white)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '개인정보와 단어장은 삭제되며, 작성한 동화·게시물·댓글은 '
+                    '탈퇴한 사용자 이름으로 익명화됩니다. 이 작업은 되돌릴 수 없습니다.',
+                    style: TextStyle(color: Colors.white70, height: 1.5),
+                  ),
+                  if (isLocal) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: true,
+                      enabled: !isSubmitting,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: '현재 비밀번호',
+                        labelStyle: TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      '소셜 로그인 계정은 비밀번호 확인 없이 탈퇴됩니다.',
+                      style: TextStyle(color: Colors.orangeAccent),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: reasonController,
+                    enabled: !isSubmitting,
+                    maxLength: 500,
+                    maxLines: 3,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: '탈퇴 사유 (선택)',
+                      labelStyle: TextStyle(color: Colors.white60),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    isSubmitting ? null : () => Navigator.pop(dialogContext),
+                child: const Text('취소'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                ),
+                onPressed: isSubmitting ? null : submit,
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('탈퇴 확인'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    passwordController.dispose();
+    reasonController.dispose();
+  }
+
+  Future<void> _showPasswordDialog(BuildContext context, AppState state) async {
     final currentController = TextEditingController();
     final newController = TextEditingController();
     final confirmController = TextEditingController();
     bool isSubmitting = false;
     bool didCloseDialog = false;
 
-    Future<void> submit(StateSetter setDialogState) async {
+    Future<void> submit(
+      StateSetter setDialogState,
+      BuildContext dialogContext,
+    ) async {
       final accountId = state.currentAccountId;
       final currentPassword = currentController.text;
       final newPassword = newController.text;
@@ -30,15 +166,15 @@ class ProfilePage extends StatelessWidget {
 
       if (accountId == null || accountId.isEmpty) return;
       if (newPassword.length < 9) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('새 비밀번호는 9자 이상이어야 해요.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('새 비밀번호는 9자 이상이어야 해요.')));
         return;
       }
       if (newPassword != confirmPassword) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('새 비밀번호 확인이 일치하지 않아요.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('새 비밀번호 확인이 일치하지 않아요.')));
         return;
       }
 
@@ -51,10 +187,10 @@ class ProfilePage extends StatelessWidget {
         );
         if (!context.mounted) return;
         didCloseDialog = true;
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('비밀번호를 변경했어요.')),
-        );
+        Navigator.pop(dialogContext);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('비밀번호를 변경했어요.')));
       } catch (e) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -115,7 +251,7 @@ class ProfilePage extends StatelessWidget {
                       labelText: '새 비밀번호 확인',
                       labelStyle: TextStyle(color: Colors.white60),
                     ),
-                    onSubmitted: (_) => submit(setDialogState),
+                    onSubmitted: (_) => submit(setDialogState, dialogContext),
                   ),
                 ],
               ),
@@ -126,7 +262,9 @@ class ProfilePage extends StatelessWidget {
                   child: const Text('취소'),
                 ),
                 ElevatedButton(
-                  onPressed: isSubmitting ? null : () => submit(setDialogState),
+                  onPressed: isSubmitting
+                      ? null
+                      : () => submit(setDialogState, dialogContext),
                   child: isSubmitting
                       ? const SizedBox(
                           width: 18,
@@ -311,8 +449,10 @@ class ProfilePage extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       providerLabel,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 15),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 15,
+                      ),
                     ),
                   ],
                 ),
@@ -492,6 +632,13 @@ class ProfilePage extends StatelessWidget {
                   );
                 },
               ),
+              if (state.currentAccountId != null &&
+                  state.currentAccountId!.isNotEmpty)
+                _menuButton(
+                  icon: Icons.person_off_outlined,
+                  title: '회원 탈퇴',
+                  onTap: () => _showWithdrawalDialog(context, state),
+                ),
               const SizedBox(height: 100),
             ],
           ),
