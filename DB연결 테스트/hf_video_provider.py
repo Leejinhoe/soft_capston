@@ -84,6 +84,10 @@ def _normalize_frame_count(num_frames: int, frame_rate: int) -> int:
     return min(max(requested, default_frames), max_frames)
 
 
+def _quality_render_scale(steps: int) -> float:
+    return min(1.5, max(1.0, 1.0 + int(steps) * 0.025))
+
+
 def _ease_in_out(progress: float) -> float:
     return 0.5 - 0.5 * math.cos(math.pi * progress)
 
@@ -222,14 +226,41 @@ def _render_frame(
     return frame
 
 
-def _alternate_lower_body_pose(character, Image, ImageOps):
-    split_y = max(1, min(character.height - 1, round(character.height * 0.68)))
-    upper = character.crop((0, 0, character.width, split_y))
-    lower = character.crop((0, split_y, character.width, character.height))
-    alternate = Image.new("RGBA", character.size, (0, 0, 0, 0))
-    alternate.alpha_composite(upper, (0, 0))
-    alternate.alpha_composite(ImageOps.mirror(lower), (0, split_y))
-    return alternate
+def _rotate_leg_layer(layer, Image, angle: float):
+    padding = max(4, round(layer.width * 0.28))
+    padded = Image.new(
+        "RGBA",
+        (layer.width + padding * 2, layer.height + padding),
+        (0, 0, 0, 0),
+    )
+    padded.alpha_composite(layer, (padding, 0))
+    return padded.rotate(
+        angle,
+        resample=getattr(Image, "Resampling", Image).BICUBIC,
+        center=(padding + layer.width / 2, 0),
+        expand=False,
+    )
+
+
+def _animate_leg_layers(character, Image, *, phase: float, preset: str):
+    split_y = max(1, min(character.height - 1, round(character.height * 0.69)))
+    overlap = max(2, round(character.height * 0.025))
+    midpoint = character.width // 2
+    left_leg = character.crop((0, split_y, midpoint, character.height))
+    right_leg = character.crop((midpoint, split_y, character.width, character.height))
+    amplitude = 7.0 if preset == "walk" else 12.0
+    swing = math.sin(phase) * amplitude
+    left_rotated = _rotate_leg_layer(left_leg, Image, swing)
+    right_rotated = _rotate_leg_layer(right_leg, Image, -swing)
+
+    animated = Image.new("RGBA", character.size, (0, 0, 0, 0))
+    left_x = midpoint // 2 - left_rotated.width // 2
+    right_x = midpoint + (character.width - midpoint) // 2 - right_rotated.width // 2
+    animated.alpha_composite(left_rotated, (left_x, split_y))
+    animated.alpha_composite(right_rotated, (right_x, split_y))
+    upper = character.crop((0, 0, character.width, min(character.height, split_y + overlap)))
+    animated.alpha_composite(upper, (0, 0))
+    return animated
 
 
 def _render_layered_frame(
@@ -272,8 +303,12 @@ def _render_layered_frame(
             else elapsed_seconds
         )
         cadence = 1.5 if motion_preset == "walk" else 2.4
-        if math.sin(math.tau * elapsed * cadence) < 0:
-            character = _alternate_lower_body_pose(character, Image, ImageOps)
+        character = _animate_leg_layers(
+            character,
+            Image,
+            phase=math.tau * elapsed * cadence,
+            preset=motion_preset,
+        )
     scaled_width = max(1, round(character.width * motion["scale_x"]))
     scaled_height = max(1, round(character.height * motion["scale_y"]))
     animated = character.resize(
@@ -312,6 +347,7 @@ def _generate_local_video_bytes(
     num_frames: int,
     frame_rate: int,
     motion_strength: int,
+    quality_steps: int,
     story_text: str,
     background_bytes: Optional[bytes] = None,
     character_layer_bytes: Optional[bytes] = None,
@@ -321,6 +357,9 @@ def _generate_local_video_bytes(
     height = _even_dimension(height)
     frame_rate = min(max(int(frame_rate), 6), 30)
     total_frames = _normalize_frame_count(num_frames, frame_rate)
+    render_scale = _quality_render_scale(quality_steps)
+    render_width = _even_dimension(round(width * render_scale))
+    render_height = _even_dimension(round(height * render_scale))
 
     layered_scene = None
     if background_bytes and character_layer_bytes:
@@ -328,8 +367,8 @@ def _generate_local_video_bytes(
             layered_scene = prepare_story_scene_layers(
                 background_bytes,
                 character_layer_bytes,
-                width=width,
-                height=height,
+                width=render_width,
+                height=render_height,
             )
         except Exception:
             layered_scene = None
@@ -366,8 +405,8 @@ def _generate_local_video_bytes(
                         Image=Image,
                         ImageEnhance=ImageEnhance,
                         ImageOps=ImageOps,
-                        width=width,
-                        height=height,
+                        width=render_width,
+                        height=render_height,
                         progress=progress,
                         motion_strength=motion_strength,
                         motion_preset=motion_preset,
@@ -379,10 +418,15 @@ def _generate_local_video_bytes(
                         Image=Image,
                         ImageEnhance=ImageEnhance,
                         ImageOps=ImageOps,
-                        width=width,
-                        height=height,
+                        width=render_width,
+                        height=render_height,
                         progress=progress,
                         motion_strength=motion_strength,
+                    )
+                if frame.size != (width, height):
+                    frame = frame.resize(
+                        (width, height),
+                        getattr(Image, "Resampling", Image).LANCZOS,
                     )
                 writer.append_data(np.asarray(frame, dtype=np.uint8))
         finally:
@@ -404,7 +448,7 @@ async def generate_hf_fairytale_video(
     width: int = 512,
     height: int = 384,
     num_frames: int = 48,
-    steps: int = 2,
+    steps: int = 12,
     seed: Optional[int] = None,
     frame_rate: Optional[int] = None,
     background_bytes: Optional[bytes] = None,
@@ -425,6 +469,8 @@ async def generate_hf_fairytale_video(
         LOCAL_VIDEO_TIMEOUT_SECONDS,
         max(5.0, float(timeout_seconds or LOCAL_VIDEO_TIMEOUT_SECONDS)),
     )
+    quality_steps = min(max(int(steps), 2), 16)
+    motion_strength = min(5, max(3, round(quality_steps / 3)))
 
     try:
         video_bytes, animation_mode = await asyncio.wait_for(
@@ -435,7 +481,8 @@ async def generate_hf_fairytale_video(
                 height=height,
                 num_frames=normalized_frames,
                 frame_rate=normalized_frame_rate,
-                motion_strength=steps,
+                motion_strength=motion_strength,
+                quality_steps=quality_steps,
                 story_text=story_text,
                 background_bytes=background_bytes,
                 character_layer_bytes=character_layer_bytes,
@@ -463,7 +510,9 @@ async def generate_hf_fairytale_video(
             "duration_seconds": round(normalized_frames / normalized_rate, 2),
             "max_duration_seconds": LOCAL_VIDEO_MAX_DURATION_SECONDS,
             "timeout_seconds": normalized_timeout,
-            "motion_strength": int(steps),
+            "motion_strength": motion_strength,
+            "quality_steps": quality_steps,
+            "render_scale": _quality_render_scale(quality_steps),
             "motion_preset": motion_preset,
             "animation_mode": animation_mode,
             "character_motion": animation_mode == "layered_character_motion",

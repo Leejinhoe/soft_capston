@@ -88,6 +88,12 @@ class LocalCharacterVideoTests(unittest.TestCase):
 
         self.assertEqual(frames, 15 * frame_rate)
 
+    def test_quality_steps_increase_internal_render_scale(self):
+        self.assertEqual(hf_video_provider._quality_render_scale(0), 1.0)
+        self.assertEqual(hf_video_provider._quality_render_scale(8), 1.2)
+        self.assertEqual(hf_video_provider._quality_render_scale(12), 1.3)
+        self.assertEqual(hf_video_provider._quality_render_scale(50), 1.5)
+
     def test_run_motion_keeps_character_near_center(self):
         motion = hf_video_provider._character_motion(
             preset="run",
@@ -101,7 +107,7 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertLessEqual(abs(motion["x"]), 2)
         self.assertLessEqual(abs(motion["angle"]), 0.5)
 
-    def test_gait_alternation_keeps_upper_body_unchanged(self):
+    def test_leg_animation_keeps_upper_body_unchanged(self):
         character = Image.new("RGBA", (40, 100), (0, 0, 0, 0))
         for x in range(4, 18):
             for y in range(5, 60):
@@ -110,13 +116,14 @@ class LocalCharacterVideoTests(unittest.TestCase):
             for y in range(75, 98):
                 character.putpixel((x, y), (40, 80, 220, 255))
 
-        alternate = hf_video_provider._alternate_lower_body_pose(
+        alternate = hf_video_provider._animate_leg_layers(
             character,
             Image,
-            ImageOps,
+            phase=1.2,
+            preset="run",
         )
 
-        split_y = round(character.height * 0.68)
+        split_y = round(character.height * 0.69)
         self.assertEqual(
             character.crop((0, 0, character.width, split_y)).tobytes(),
             alternate.crop((0, 0, alternate.width, split_y)).tobytes(),

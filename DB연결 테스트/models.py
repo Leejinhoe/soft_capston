@@ -82,7 +82,7 @@ class MediaGenerationSchema(BaseModel):
     video_width: int = Field(default=512, ge=256, le=1280)
     video_height: int = Field(default=384, ge=256, le=768)
     num_frames: int = Field(default=48, ge=9, le=240)
-    video_steps: int = Field(default=2, ge=2, le=50)
+    video_steps: int = Field(default=12, ge=2, le=16)
     frame_rate: Optional[int] = Field(default=12, ge=6, le=30)
     video_timeout: Optional[int] = Field(default=15, ge=5, le=15)
 
