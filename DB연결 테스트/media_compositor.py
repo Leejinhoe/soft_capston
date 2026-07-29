@@ -16,13 +16,13 @@ def _fit_background(image: Image.Image, size: Tuple[int, int]) -> Image.Image:
     return resized.crop((left, top, left + target_width, top + target_height))
 
 
-def compose_story_scene(
+def prepare_story_scene_layers(
     background_bytes: bytes,
     character_bytes: bytes,
     *,
     width: int = 512,
     height: int = 512,
-) -> bytes:
+) -> Tuple[Image.Image, Image.Image, Tuple[int, int]]:
     if width < 128 or height < 128:
         raise ValueError("Composite dimensions must be at least 128x128.")
 
@@ -51,10 +51,23 @@ def compose_story_scene(
 
     x = (width - character.width) // 2
     y = max(0, height - character.height - round(height * 0.035))
+    return background, character, (x, y)
 
-    shadow = Image.new("RGBA", background.size, (0, 0, 0, 0))
-    shadow_width = max(16, round(character.width * 0.62))
-    shadow_height = max(8, round(height * 0.035))
+
+def build_character_shadow(
+    canvas_size: Tuple[int, int],
+    character_size: Tuple[int, int],
+    position: Tuple[int, int],
+    *,
+    opacity: int = 92,
+    scale: float = 1.0,
+) -> Image.Image:
+    width, height = canvas_size
+    character_width, character_height = character_size
+    x, y = position
+    shadow = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+    shadow_width = max(16, round(character_width * 0.62 * scale))
+    shadow_height = max(8, round(height * 0.035 * scale))
     blur_radius = max(3, shadow_height // 2)
     shadow_padding = blur_radius * 3
     shadow_blob = Image.new(
@@ -72,15 +85,37 @@ def compose_story_scene(
             shadow_padding + shadow_width,
             shadow_padding + shadow_height,
         ),
-        fill=(35, 35, 45, 92),
+        fill=(35, 35, 45, min(max(int(opacity), 0), 255)),
     )
     shadow_blob = shadow_blob.filter(ImageFilter.GaussianBlur(blur_radius))
-    shadow_x = (width - shadow_blob.width) // 2
+    feet_x = x + character_width // 2
+    shadow_x = feet_x - shadow_blob.width // 2
     shadow_y = min(
         height - shadow_blob.height,
-        y + character.height - shadow_height // 2 - shadow_padding,
+        y + character_height - shadow_height // 2 - shadow_padding,
     )
     shadow.alpha_composite(shadow_blob, (shadow_x, shadow_y))
+    return shadow
+
+
+def compose_story_scene(
+    background_bytes: bytes,
+    character_bytes: bytes,
+    *,
+    width: int = 512,
+    height: int = 512,
+) -> bytes:
+    background, character, (x, y) = prepare_story_scene_layers(
+        background_bytes,
+        character_bytes,
+        width=width,
+        height=height,
+    )
+    shadow = build_character_shadow(
+        background.size,
+        character.size,
+        (x, y),
+    )
 
     background.alpha_composite(shadow)
     background.alpha_composite(character, (x, y))

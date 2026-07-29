@@ -534,6 +534,8 @@ async def generate_composite_scene(
         "image_mode": "local_composite",
         "background_key": background_asset["key"],
         "background_source": "bundled_asset",
+        "_background_bytes": background_bytes,
+        "_character_bytes": character_bytes,
     }
 
 
@@ -642,6 +644,8 @@ async def generate_and_store_backend_media(
             steps=video_steps,
             seed=seed,
             frame_rate=frame_rate,
+            background_bytes=generated.get("_background_bytes"),
+            character_layer_bytes=generated.get("_character_bytes"),
         ))
 
     image_file = await upload_generated_media_file(

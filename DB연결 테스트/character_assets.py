@@ -1,6 +1,26 @@
 from typing import Any, Dict, Optional
 
 
+POSE_ACTION_KEYWORDS = {
+    "walking": (
+        "walk",
+        "walking",
+        "run",
+        "runs",
+        "running",
+        "race",
+        "sprint",
+        "dash",
+        "걷",
+        "달리",
+        "뛰어가",
+    ),
+    "talking": ("talk", "speak", "whisper", "sing", "말하", "이야기", "노래"),
+    "casting-magic": ("cast", "spell", "magic", "마법", "주문"),
+    "rescuing": ("help", "rescue", "protect", "구하", "구조", "지키"),
+}
+
+
 def select_character_asset(
     profile: Optional[Dict[str, Any]],
     story_text: str,
@@ -28,6 +48,13 @@ def select_character_asset(
             and keyword.strip()
             and keyword.strip().lower() in normalized_story
         )
+        pose = str(asset.get("pose") or "").strip().lower()
+        action_matches = sum(
+            1
+            for keyword in POSE_ACTION_KEYWORDS.get(pose, ())
+            if keyword in normalized_story
+        )
+        score += action_matches * 4
         context = visual_context or {}
         if asset.get("pose") in context.get("action_tags", []):
             score += 5

@@ -14,6 +14,12 @@ class CharacterAssetSelectionTests(unittest.TestCase):
                     "scene_keywords": [],
                 },
                 {
+                    "pose": "walking",
+                    "emotion": "determined",
+                    "image_file_id": "walking-file",
+                    "scene_keywords": ["walk"],
+                },
+                {
                     "pose": "casting-magic",
                     "emotion": "joyful",
                     "image_file_id": "magic-file",
@@ -79,6 +85,14 @@ class CharacterAssetSelectionTests(unittest.TestCase):
         )
 
         self.assertEqual(selected["image_file_id"], "magic-file")
+
+    def test_primary_movement_beats_decorative_magic_keyword(self):
+        selected = select_character_asset(
+            self.profile,
+            "The hero runs quickly toward the magic door.",
+        )
+
+        self.assertEqual(selected["image_file_id"], "walking-file")
 
 
 if __name__ == "__main__":
