@@ -104,10 +104,12 @@ class LocalCharacterVideoTests(unittest.TestCase):
             elapsed_seconds=0.25,
         )
 
-        self.assertLessEqual(abs(motion["x"]), 2)
-        self.assertLessEqual(abs(motion["angle"]), 0.5)
+        self.assertGreater(abs(motion["x"]), 1)
+        self.assertLessEqual(abs(motion["x"]), 4)
+        self.assertGreater(abs(motion["angle"]), 0.2)
+        self.assertLessEqual(abs(motion["angle"]), 1.0)
 
-    def test_leg_animation_keeps_upper_body_unchanged(self):
+    def test_walk_render_does_not_mutate_or_split_character_source(self):
         character = Image.new("RGBA", (40, 100), (0, 0, 0, 0))
         for x in range(4, 18):
             for y in range(5, 60):
@@ -115,23 +117,25 @@ class LocalCharacterVideoTests(unittest.TestCase):
         for x in range(4, 14):
             for y in range(75, 98):
                 character.putpixel((x, y), (40, 80, 220, 255))
+        original = character.tobytes()
+        background = Image.new("RGBA", (320, 256), (70, 120, 180, 255))
 
-        alternate = hf_video_provider._animate_leg_layers(
-            character,
-            Image,
-            phase=1.2,
-            preset="run",
+        frame = hf_video_provider._render_layered_frame(
+            background=background,
+            character=character,
+            position=(120, 90),
+            Image=Image,
+            ImageEnhance=ImageEnhance,
+            ImageOps=ImageOps,
+            width=320,
+            height=256,
+            progress=0.25,
+            motion_strength=8,
+            motion_preset="walk",
         )
 
-        split_y = round(character.height * 0.69)
-        self.assertEqual(
-            character.crop((0, 0, character.width, split_y)).tobytes(),
-            alternate.crop((0, 0, alternate.width, split_y)).tobytes(),
-        )
-        self.assertNotEqual(
-            character.crop((0, split_y, character.width, character.height)).tobytes(),
-            alternate.crop((0, split_y, alternate.width, alternate.height)).tobytes(),
-        )
+        self.assertEqual(character.tobytes(), original)
+        self.assertEqual(frame.size, (320, 256))
 
 
 if __name__ == "__main__":

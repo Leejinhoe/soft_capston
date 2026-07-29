@@ -26,7 +26,11 @@ from account_moderation import (
     serialize_warning,
 )
 from background_assets import select_background_asset
-from character_assets import build_character_action_hint, select_character_asset
+from character_assets import (
+    build_character_action_hint,
+    select_character_asset,
+    select_premium_reference_asset,
+)
 from character_seed import DEFAULT_CHARACTERS, seed_default_character_profiles
 from database import (
     character_profiles_collection,
@@ -580,6 +584,11 @@ async def generate_and_store_backend_media(
         story_text,
         visual_context=visual_context,
     )
+    if include_video:
+        selected_character_asset = (
+            select_premium_reference_asset(character_profile)
+            or selected_character_asset
+        )
     composite_error = None
     if selected_character_asset:
         try:
@@ -713,12 +722,20 @@ async def generate_and_store_backend_media(
         "story_character_description": (story_cast_member or {}).get(
             "source_description"
         ),
-        "character_identity_locked": bool(story_cast_member),
+        "character_identity_locked": bool(
+            story_cast_member
+            or (
+                selected_character_asset
+                and selected_character_asset.get("quality_tier")
+                == "premium_reference"
+            )
+        ),
         "character_asset_count": len((character_profile or {}).get("assets", [])),
         "selected_character_asset": (
             {
                 "pose": selected_character_asset.get("pose"),
                 "emotion": selected_character_asset.get("emotion"),
+                "quality_tier": selected_character_asset.get("quality_tier"),
                 "image_file_id": selected_character_asset.get("image_file_id"),
                 "image_url": selected_character_asset.get("image_url"),
             }

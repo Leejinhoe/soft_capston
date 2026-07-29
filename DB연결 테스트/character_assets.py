@@ -21,6 +21,25 @@ POSE_ACTION_KEYWORDS = {
 }
 
 
+def select_premium_reference_asset(
+    profile: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == "premium_reference"
+            and asset.get("image_file_id")
+        ),
+        None,
+    )
+
+
 def select_character_asset(
     profile: Optional[Dict[str, Any]],
     story_text: str,

@@ -1,6 +1,10 @@
 import unittest
 
-from character_assets import build_character_action_hint, select_character_asset
+from character_assets import (
+    build_character_action_hint,
+    select_character_asset,
+    select_premium_reference_asset,
+)
 
 
 class CharacterAssetSelectionTests(unittest.TestCase):
@@ -93,6 +97,22 @@ class CharacterAssetSelectionTests(unittest.TestCase):
         )
 
         self.assertEqual(selected["image_file_id"], "walking-file")
+
+    def test_video_reference_selection_uses_premium_profile_asset(self):
+        self.profile["assets"].insert(
+            0,
+            {
+                "pose": "default",
+                "emotion": "neutral",
+                "quality_tier": "premium_reference",
+                "image_file_id": "premium-file",
+                "scene_keywords": [],
+            },
+        )
+
+        selected = select_premium_reference_asset(self.profile)
+
+        self.assertEqual(selected["image_file_id"], "premium-file")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip(
 LOCAL_VIDEO_MODEL = (
     os.getenv("LOCAL_VIDEO_MODEL")
     or os.getenv("VIDEO_MODEL")
-    or "storybook-layered-motion-v2"
+    or "storybook-identity-safe-parallax-v3"
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "12"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
@@ -33,7 +33,7 @@ def get_hf_video_config() -> Dict[str, Any]:
         "video_supported": True,
         "video_provider": LOCAL_VIDEO_PROVIDER,
         "video_model": LOCAL_VIDEO_MODEL,
-        "video_task": "layered-character-animation",
+        "video_task": "identity-preserving-character-animation",
         "video_requires_gpu": False,
         "video_requires_external_api": False,
         "video_default_frame_rate": LOCAL_VIDEO_FRAME_RATE,
@@ -117,7 +117,7 @@ def _character_motion(
     motion_strength: int,
     elapsed_seconds: Optional[float] = None,
 ) -> Dict[str, float]:
-    strength = min(max(int(motion_strength), 1), 8) / 8.0
+    strength = 0.7 + 0.3 * (min(max(int(motion_strength), 1), 8) / 8.0)
     elapsed = progress * LOCAL_VIDEO_DURATION_SECONDS if elapsed_seconds is None else elapsed_seconds
     cadence = {
         "idle": 0.45,
@@ -132,25 +132,25 @@ def _character_motion(
     sway = math.sin(phase)
     pulse = math.sin(phase * 2.0)
     values = {
-        "x": sway * width * 0.002 * strength,
-        "y": -abs(pulse) * height * 0.002 * strength,
-        "angle": sway * 0.35 * strength,
+        "x": sway * width * 0.006 * strength,
+        "y": -abs(pulse) * height * 0.007 * strength,
+        "angle": sway * 1.1 * strength,
         "scale_x": 1.0 + pulse * 0.004 * strength,
-        "scale_y": 1.0 + pulse * 0.01 * strength,
-        "shadow_scale": 1.0,
-        "shadow_opacity": 92.0,
+        "scale_y": 1.0 + pulse * 0.012 * strength,
+        "shadow_scale": 1.0 - abs(pulse) * 0.035 * strength,
+        "shadow_opacity": 92.0 - abs(pulse) * 8.0 * strength,
     }
     if preset == "walk":
         values.update(
-            x=sway * width * 0.002 * strength,
-            y=-abs(pulse) * height * 0.007 * strength,
-            angle=sway * 0.25 * strength,
+            x=sway * width * 0.007 * strength,
+            y=-abs(pulse) * height * 0.009 * strength,
+            angle=sway * 0.85 * strength,
         )
     elif preset == "run":
         values.update(
-            x=sway * width * 0.003 * strength,
-            y=-abs(pulse) * height * 0.014 * strength,
-            angle=sway * 0.4 * strength,
+            x=sway * width * 0.008 * strength,
+            y=-abs(pulse) * height * 0.012 * strength,
+            angle=sway * 1.0 * strength,
             scale_x=1.0 + pulse * 0.005 * strength,
         )
     elif preset == "jump":
@@ -226,43 +226,6 @@ def _render_frame(
     return frame
 
 
-def _rotate_leg_layer(layer, Image, angle: float):
-    padding = max(4, round(layer.width * 0.28))
-    padded = Image.new(
-        "RGBA",
-        (layer.width + padding * 2, layer.height + padding),
-        (0, 0, 0, 0),
-    )
-    padded.alpha_composite(layer, (padding, 0))
-    return padded.rotate(
-        angle,
-        resample=getattr(Image, "Resampling", Image).BICUBIC,
-        center=(padding + layer.width / 2, 0),
-        expand=False,
-    )
-
-
-def _animate_leg_layers(character, Image, *, phase: float, preset: str):
-    split_y = max(1, min(character.height - 1, round(character.height * 0.69)))
-    overlap = max(2, round(character.height * 0.025))
-    midpoint = character.width // 2
-    left_leg = character.crop((0, split_y, midpoint, character.height))
-    right_leg = character.crop((midpoint, split_y, character.width, character.height))
-    amplitude = 7.0 if preset == "walk" else 12.0
-    swing = math.sin(phase) * amplitude
-    left_rotated = _rotate_leg_layer(left_leg, Image, swing)
-    right_rotated = _rotate_leg_layer(right_leg, Image, -swing)
-
-    animated = Image.new("RGBA", character.size, (0, 0, 0, 0))
-    left_x = midpoint // 2 - left_rotated.width // 2
-    right_x = midpoint + (character.width - midpoint) // 2 - right_rotated.width // 2
-    animated.alpha_composite(left_rotated, (left_x, split_y))
-    animated.alpha_composite(right_rotated, (right_x, split_y))
-    upper = character.crop((0, 0, character.width, min(character.height, split_y + overlap)))
-    animated.alpha_composite(upper, (0, 0))
-    return animated
-
-
 def _render_layered_frame(
     *,
     background,
@@ -296,19 +259,6 @@ def _render_layered_frame(
         motion_strength=motion_strength,
         elapsed_seconds=elapsed_seconds,
     )
-    if motion_preset in {"walk", "run"}:
-        elapsed = (
-            progress * LOCAL_VIDEO_DURATION_SECONDS
-            if elapsed_seconds is None
-            else elapsed_seconds
-        )
-        cadence = 1.5 if motion_preset == "walk" else 2.4
-        character = _animate_leg_layers(
-            character,
-            Image,
-            phase=math.tau * elapsed * cadence,
-            preset=motion_preset,
-        )
     scaled_width = max(1, round(character.width * motion["scale_x"]))
     scaled_height = max(1, round(character.height * motion["scale_y"]))
     animated = character.resize(
@@ -326,11 +276,10 @@ def _render_layered_frame(
     base_feet_y = base_y + character.height
     character_x = round(base_center_x - animated.width / 2 + motion["x"])
     character_y = round(base_feet_y - animated.height + motion["y"])
-    shadow_y = base_feet_y - animated.height
     shadow = build_character_shadow(
         camera_frame.size,
         animated.size,
-        (character_x, shadow_y),
+        (character_x, character_y),
         opacity=round(motion["shadow_opacity"]),
         scale=motion["shadow_scale"],
     )
@@ -435,7 +384,11 @@ def _generate_local_video_bytes(
         video_bytes = output_path.read_bytes()
         if not video_bytes:
             raise HfMediaError("Local video renderer returned an empty MP4 file.")
-        animation_mode = "layered_character_motion" if layered_scene is not None else "ken_burns"
+        animation_mode = (
+            "identity_safe_character_parallax"
+            if layered_scene is not None
+            else "ken_burns"
+        )
         return video_bytes, animation_mode
 
 
@@ -515,7 +468,10 @@ async def generate_hf_fairytale_video(
             "render_scale": _quality_render_scale(quality_steps),
             "motion_preset": motion_preset,
             "animation_mode": animation_mode,
-            "character_motion": animation_mode == "layered_character_motion",
+            "character_motion": animation_mode == "identity_safe_character_parallax",
+            "character_identity_locked": (
+                animation_mode == "identity_safe_character_parallax"
+            ),
             "seed": seed,
         },
     }
