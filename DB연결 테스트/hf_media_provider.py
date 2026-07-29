@@ -6,8 +6,13 @@ from hf_video_provider import generate_hf_fairytale_video, get_hf_video_config
 
 
 def get_hf_media_config() -> Dict[str, Any]:
+    image_config = get_hf_image_config()
+    video_config = get_hf_video_config()
     return {
         "provider": "huggingface",
-        **get_hf_image_config(),
-        **get_hf_video_config(),
+        **image_config,
+        **video_config,
+        "configured": bool(image_config.get("configured")),
+        "image_configured": bool(image_config.get("configured")),
+        "video_configured": bool(video_config.get("configured")),
     }

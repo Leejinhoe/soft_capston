@@ -3,8 +3,10 @@ import 'package:http/http.dart' as http;
 import 'dart:convert'; // json 변환용
 
 class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
   @override
-  _RegisterScreenState createState() => _RegisterScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
@@ -31,10 +33,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         }),
       );
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         // 가입 성공!
-        final responseData = jsonDecode(response.body);
-        print("서버 응답: ${responseData['message']}");
+        jsonDecode(response.body);
 
         // 성공 팝업 띄우기
         ScaffoldMessenger.of(context).showSnackBar(
@@ -44,18 +46,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       } else {
         // 백엔드에는 도착했으나 처리 중 에러 발생
-        print("가입 실패: 상태 코드 ${response.statusCode}");
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('가입 실패: 상태 코드 ${response.statusCode}')),
         );
       }
     } catch (e) {
       // 서버 연결 자체가 실패한 경우 (폰 화면에 에러 원인 출력)
-      print("서버 연결 에러: $e");
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('통신 에러 원인: $e')));
     }
+  }
+
+  @override
+  void dispose() {
+    idController.dispose();
+    passwordController.dispose();
+    nicknameController.dispose();
+    super.dispose();
   }
 
   @override

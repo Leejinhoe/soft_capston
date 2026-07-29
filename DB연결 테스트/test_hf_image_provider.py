@@ -5,6 +5,7 @@ import httpx
 from PIL import Image
 
 import hf_image_provider
+import hf_media_provider
 from hf_media_common import HfMediaError
 
 
@@ -35,6 +36,25 @@ class FakeClient:
 
 
 class HuggingFaceImageProviderTests(unittest.IsolatedAsyncioTestCase):
+    def test_combined_config_preserves_image_and_video_readiness(self):
+        with (
+            patch.object(
+                hf_media_provider,
+                "get_hf_image_config",
+                return_value={"configured": False, "image_model": "test-image"},
+            ),
+            patch.object(
+                hf_media_provider,
+                "get_hf_video_config",
+                return_value={"configured": True, "video_model": "test-video"},
+            ),
+        ):
+            config = hf_media_provider.get_hf_media_config()
+
+        self.assertFalse(config["configured"])
+        self.assertFalse(config["image_configured"])
+        self.assertTrue(config["video_configured"])
+
     def test_prompt_includes_stable_character_context(self):
         prompt = hf_image_provider.build_fairytale_image_prompt(
             story_text="The child enters a moonlit library.",
