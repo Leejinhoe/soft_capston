@@ -21,6 +21,10 @@ PREMIUM_REFERENCES = {
     f"{key}_reference_v2.png"
     for key in KEYS
 }
+ACTION_CYCLE_SHEETS = {
+    "male_01_walk_cycle_v1_sheet.png",
+    "male_01_fight_cycle_v1_sheet.png",
+}
 
 spec = importlib.util.spec_from_file_location("generate_character_assets", GENERATOR_PATH)
 generator = importlib.util.module_from_spec(spec)
@@ -37,7 +41,28 @@ class GeneratedCharacterAssetTests(unittest.TestCase):
             for path in ASSET_DIR.glob("*.png")
             if path.name.startswith(("male_", "female_"))
         }
-        self.assertEqual(actual, expected | PREMIUM_REFERENCES)
+        self.assertEqual(actual, expected | PREMIUM_REFERENCES | ACTION_CYCLE_SHEETS)
+
+    def test_action_cycle_sheets_have_four_transparent_visible_cells(self):
+        for filename in ACTION_CYCLE_SHEETS:
+            path = ASSET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.width, image.height)
+                cell_width = image.width // 2
+                cell_height = image.height // 2
+                for index in range(4):
+                    x = (index % 2) * cell_width
+                    y = (index // 2) * cell_height
+                    cell = image.crop(
+                        (x, y, x + cell_width, y + cell_height)
+                    )
+                    alpha = cell.getchannel("A")
+                    self.assertIsNotNone(alpha.getbbox())
+                    self.assertGreater(
+                        alpha.histogram()[0],
+                        cell_width * cell_height // 2,
+                    )
 
     def test_premium_references_are_large_transparent_and_visible(self):
         for filename in PREMIUM_REFERENCES:

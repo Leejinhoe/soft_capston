@@ -1,3 +1,4 @@
+import io
 import unittest
 
 from PIL import Image, ImageEnhance, ImageOps
@@ -22,6 +23,12 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertEqual(
             hf_video_provider.select_motion_preset("A quiet portrait in the library."),
             "idle",
+        )
+        self.assertEqual(
+            hf_video_provider.select_motion_preset(
+                "\uc6a9\uc0ac\uac00 \uac80\uc744 \ub4e4\uace0 \uc2f8\uc6b0\uae30 \uc2dc\uc791\ud588\ub2e4."
+            ),
+            "fight",
         )
 
     def test_layered_character_frame_changes_character_position(self):
@@ -136,6 +143,101 @@ class LocalCharacterVideoTests(unittest.TestCase):
 
         self.assertEqual(character.tobytes(), original)
         self.assertEqual(frame.size, (320, 256))
+
+    def test_action_sheet_is_split_and_normalized_as_four_frames(self):
+        sheet = Image.new("RGBA", (80, 80), (0, 0, 0, 0))
+        colors = (
+            (230, 40, 40, 255),
+            (40, 230, 40, 255),
+            (40, 40, 230, 255),
+            (230, 180, 40, 255),
+        )
+        for index, color in enumerate(colors):
+            x = (index % 2) * 40
+            y = (index // 2) * 40
+            for px in range(x + 8, x + 32):
+                for py in range(y + 5, y + 36):
+                    sheet.putpixel((px, py), color)
+        buffer = io.BytesIO()
+        sheet.save(buffer, format="PNG")
+
+        frames, position = hf_video_provider._prepare_action_cycle_frames(
+            buffer.getvalue(),
+            Image,
+            width=320,
+            height=256,
+            layout="2x2",
+            frame_count=4,
+        )
+
+        self.assertEqual(len(frames), 4)
+        self.assertIsNotNone(position)
+        self.assertEqual({frame.size for frame in frames}, {frames[0].size})
+        self.assertTrue(all(frame.getchannel("A").getbbox() for frame in frames))
+
+    def test_action_cycle_index_advances_by_action_timing(self):
+        walk_indexes = [
+            hf_video_provider._action_cycle_frame_index("walk", time, 4)
+            for time in (0.0, 0.2, 0.4, 0.6)
+        ]
+        fight_indexes = [
+            hf_video_provider._action_cycle_frame_index("fight", time, 4)
+            for time in (0.0, 0.4, 0.8, 1.2)
+        ]
+
+        self.assertGreater(len(set(walk_indexes)), 1)
+        self.assertGreater(len(set(fight_indexes)), 1)
+
+    def test_walk_action_cycle_travels_across_the_scene(self):
+        start = hf_video_provider._action_cycle_motion(
+            "walk",
+            elapsed_seconds=0.0,
+            progress=0.0,
+            width=512,
+            height=384,
+            frame_index=0,
+        )
+        end = hf_video_provider._action_cycle_motion(
+            "walk",
+            elapsed_seconds=6.0,
+            progress=1.0,
+            width=512,
+            height=384,
+            frame_index=0,
+        )
+
+        self.assertLess(start["x"], 0)
+        self.assertGreater(end["x"], 0)
+        self.assertGreater(end["x"] - start["x"], 200)
+
+    def test_fight_action_cycle_lunges_and_returns_to_guard(self):
+        guard = hf_video_provider._action_cycle_motion(
+            "fight",
+            elapsed_seconds=0.0,
+            progress=0.0,
+            width=512,
+            height=384,
+            frame_index=3,
+        )
+        lunge = hf_video_provider._action_cycle_motion(
+            "fight",
+            elapsed_seconds=1.6,
+            progress=0.5,
+            width=512,
+            height=384,
+            frame_index=2,
+        )
+        recovered = hf_video_provider._action_cycle_motion(
+            "fight",
+            elapsed_seconds=2.99,
+            progress=1.0,
+            width=512,
+            height=384,
+            frame_index=3,
+        )
+
+        self.assertGreater(lunge["x"], guard["x"] + 30)
+        self.assertAlmostEqual(recovered["x"], guard["x"], delta=1.0)
 
 
 if __name__ == "__main__":

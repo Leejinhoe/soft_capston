@@ -52,6 +52,10 @@ class CharacterAssetSchema(BaseModel):
     emotion: str = Field(default="neutral", min_length=1, max_length=40)
     image_file_id: Optional[str] = None
     image_url: Optional[str] = None
+    quality_tier: Optional[str] = Field(default=None, max_length=40)
+    animation_group: Optional[str] = Field(default=None, max_length=40)
+    animation_layout: Optional[str] = Field(default=None, max_length=20)
+    animation_frame_count: Optional[int] = Field(default=None, ge=2, le=16)
     tags: List[str] = Field(default_factory=list)
     scene_keywords: List[str] = Field(default_factory=list)
 

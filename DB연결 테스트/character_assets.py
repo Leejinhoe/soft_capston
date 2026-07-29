@@ -11,14 +11,106 @@ POSE_ACTION_KEYWORDS = {
         "race",
         "sprint",
         "dash",
-        "걷",
-        "달리",
-        "뛰어가",
+        "\uac77",
+        "\uac78\uc5b4",
+        "\ub2ec\ub9ac",
+        "\ub6f0",
     ),
-    "talking": ("talk", "speak", "whisper", "sing", "말하", "이야기", "노래"),
-    "casting-magic": ("cast", "spell", "magic", "마법", "주문"),
-    "rescuing": ("help", "rescue", "protect", "구하", "구조", "지키"),
+    "talking": (
+        "talk",
+        "speak",
+        "whisper",
+        "sing",
+        "\ub9d0\ud558",
+        "\uc774\uc57c\uae30",
+        "\ub178\ub798",
+    ),
+    "casting-magic": (
+        "cast",
+        "spell",
+        "magic",
+        "\ub9c8\ubc95",
+        "\uc8fc\ubb38",
+    ),
+    "rescuing": (
+        "help",
+        "rescue",
+        "protect",
+        "\uad6c\ud558",
+        "\uad6c\ucd9c",
+        "\uc9c0\ucf1c",
+    ),
 }
+
+ACTION_GROUP_KEYWORDS = (
+    (
+        "fight",
+        (
+            "fight",
+            "fighting",
+            "battle",
+            "combat",
+            "attack",
+            "slash",
+            "defend",
+            "block",
+            "sword",
+            "\uc2f8\uc6b0",
+            "\uc804\ud22c",
+            "\uacf5\uaca9",
+            "\uacb0\ud22c",
+            "\uac80\uc744",
+            "\uac80\uc73c\ub85c",
+            "\uce7c\uc744",
+            "\ubca0\uc5b4",
+            "\ub9c9\uc544",
+            "\ubc29\uc5b4",
+        ),
+    ),
+    (
+        "walk",
+        (
+            "walk",
+            "walking",
+            "stroll",
+            "journey",
+            "run",
+            "running",
+            "sprint",
+            "dash",
+            "\uac77",
+            "\uac78\uc5b4",
+            "\uc0b0\ucc45",
+            "\uc5ec\ud589",
+            "\ub2ec\ub9ac",
+            "\ub6f0",
+        ),
+    ),
+)
+
+
+def detect_character_action_group(
+    story_text: str,
+    visual_context: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    normalized_story = " ".join(story_text.lower().split())
+    context_actions = {
+        str(action).strip().lower().replace("-", "_")
+        for action in (visual_context or {}).get("action_tags", [])
+        if str(action).strip()
+    }
+    if context_actions.intersection(
+        {"fight", "fighting", "battle", "combat", "attack", "defending"}
+    ):
+        return "fight"
+    if context_actions.intersection(
+        {"walk", "walking", "run", "running", "journey", "travel"}
+    ):
+        return "walk"
+    for action_group, keywords in ACTION_GROUP_KEYWORDS:
+        if any(keyword in normalized_story for keyword in keywords):
+            return action_group
+    return None
 
 
 def select_premium_reference_asset(
@@ -34,6 +126,31 @@ def select_premium_reference_asset(
             asset
             for asset in assets
             if asset.get("quality_tier") == "premium_reference"
+            and asset.get("image_file_id")
+        ),
+        None,
+    )
+
+
+def select_character_action_cycle(
+    profile: Optional[Dict[str, Any]],
+    story_text: str,
+    visual_context: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    action_group = detect_character_action_group(story_text, visual_context)
+    if not action_group:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == "premium_action_cycle"
+            and asset.get("animation_group") == action_group
             and asset.get("image_file_id")
         ),
         None,

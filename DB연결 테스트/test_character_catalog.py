@@ -84,7 +84,27 @@ class CharacterCatalogTests(unittest.TestCase):
                         "premium_reference",
                     )
                     filenames = filenames[1:]
-                self.assertEqual(filenames, expected)
+                action_cycles = [
+                    asset
+                    for asset in profile["assets"]
+                    if asset["quality_tier"] == "premium_action_cycle"
+                ]
+                if profile["character_key"] == "male_01":
+                    self.assertEqual(
+                        {asset["animation_group"] for asset in action_cycles},
+                        {"walk", "fight"},
+                    )
+                    self.assertTrue(
+                        all(asset["animation_frame_count"] == 4 for asset in action_cycles)
+                    )
+                else:
+                    self.assertEqual(action_cycles, [])
+                fast_action_filenames = [
+                    asset["filename"]
+                    for asset in profile["assets"]
+                    if asset["quality_tier"] == "fast_action"
+                ]
+                self.assertEqual(fast_action_filenames, expected)
                 self.assertTrue(
                     all(
                         asset["quality_tier"] == "fast_action"

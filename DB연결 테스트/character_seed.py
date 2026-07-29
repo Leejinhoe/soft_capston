@@ -41,6 +41,33 @@ REFERENCE_VARIANT = (
     (),
 )
 
+ACTION_CYCLE_VARIANTS = (
+    (
+        "walk_cycle_v1_sheet",
+        "walking",
+        "determined",
+        "walk",
+        ("action", "walking", "premium", "animation-cycle"),
+        ("walk", "walking", "run", "running", "\uac77", "\ub2ec\ub9ac"),
+    ),
+    (
+        "fight_cycle_v1_sheet",
+        "fighting",
+        "brave",
+        "fight",
+        ("action", "fight", "premium", "animation-cycle"),
+        (
+            "fight",
+            "battle",
+            "attack",
+            "sword",
+            "\uc2f8\uc6b0",
+            "\uc804\ud22c",
+            "\uacf5\uaca9",
+        ),
+    ),
+)
+
 
 def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
     specs = []
@@ -53,6 +80,25 @@ def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
                 "pose": pose,
                 "emotion": emotion,
                 "quality_tier": "premium_reference",
+                "tags": sorted(set(tags).union(variant_tags)),
+                "scene_keywords": list(keywords),
+            }
+        )
+    for suffix, pose, emotion, animation_group, variant_tags, keywords in (
+        ACTION_CYCLE_VARIANTS
+    ):
+        filename = f"{character_key}_{suffix}.png"
+        if not (CHARACTER_ASSET_DIR / filename).is_file():
+            continue
+        specs.append(
+            {
+                "filename": filename,
+                "pose": pose,
+                "emotion": emotion,
+                "quality_tier": "premium_action_cycle",
+                "animation_group": animation_group,
+                "animation_layout": "2x2",
+                "animation_frame_count": 4,
                 "tags": sorted(set(tags).union(variant_tags)),
                 "scene_keywords": list(keywords),
             }
@@ -205,16 +251,22 @@ async def _store_character_asset(
     sha256 = hashlib.sha256(content).hexdigest()
     quality_tier = asset.get("quality_tier", "fast_action")
     is_premium_reference = quality_tier == "premium_reference"
-    provider = "openai-imagegen" if is_premium_reference else "local-procedural"
-    model = (
-        "storybook-character-reference-v2"
-        if is_premium_reference
-        else "storybook-character-vector-v1"
+    is_premium_cycle = quality_tier == "premium_action_cycle"
+    is_generated_asset = is_premium_reference or is_premium_cycle
+    provider = "openai-imagegen" if is_generated_asset else "local-procedural"
+    if is_premium_reference:
+        model = "storybook-character-reference-v2"
+    elif is_premium_cycle:
+        model = "storybook-character-action-cycle-v1"
+    else:
+        model = "storybook-character-vector-v1"
+    asset_role = (
+        "character_action_cycle" if is_premium_cycle else "character_reference"
     )
     files_collection = database.get_collection(f"{MEDIA_GRIDFS_BUCKET}.files")
     existing = await files_collection.find_one(
         {
-            "metadata.asset_role": "character_reference",
+            "metadata.asset_role": asset_role,
             "metadata.character_key": character["character_key"],
             "metadata.sha256": sha256,
         }
@@ -228,11 +280,14 @@ async def _store_character_asset(
             metadata={
                 "content_type": "image/png",
                 "media_kind": "image",
-                "asset_role": "character_reference",
+                "asset_role": asset_role,
                 "character_key": character["character_key"],
                 "pose": asset["pose"],
                 "emotion": asset["emotion"],
                 "quality_tier": quality_tier,
+                "animation_group": asset.get("animation_group"),
+                "animation_layout": asset.get("animation_layout"),
+                "animation_frame_count": asset.get("animation_frame_count"),
                 "provider": provider,
                 "model": model,
                 "sha256": sha256,
@@ -280,6 +335,11 @@ async def seed_default_character_profiles() -> int:
                     "image_file_id": stored["file_id"],
                     "image_url": stored["url"],
                     "quality_tier": asset_spec.get("quality_tier", "fast_action"),
+                    "animation_group": asset_spec.get("animation_group"),
+                    "animation_layout": asset_spec.get("animation_layout"),
+                    "animation_frame_count": asset_spec.get(
+                        "animation_frame_count"
+                    ),
                     "tags": asset_spec["tags"],
                     "scene_keywords": asset_spec["scene_keywords"],
                 }

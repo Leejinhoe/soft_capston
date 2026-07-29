@@ -2,6 +2,8 @@ import unittest
 
 from character_assets import (
     build_character_action_hint,
+    detect_character_action_group,
+    select_character_action_cycle,
     select_character_asset,
     select_premium_reference_asset,
 )
@@ -113,6 +115,48 @@ class CharacterAssetSelectionTests(unittest.TestCase):
         selected = select_premium_reference_asset(self.profile)
 
         self.assertEqual(selected["image_file_id"], "premium-file")
+
+    def test_detects_korean_walk_and_fight_actions(self):
+        self.assertEqual(
+            detect_character_action_group(
+                "\uc6a9\uc0ac\ub294 \uc131\uc744 \ud5a5\ud574 \uac78\uc5b4\uac14\ub2e4."
+            ),
+            "walk",
+        )
+        self.assertEqual(
+            detect_character_action_group(
+                "\uc6a9\uc0ac\ub294 \uac80\uc744 \ub4e4\uace0 \uc801\uacfc \uc2f8\uc6b0\uae30 \uc2dc\uc791\ud588\ub2e4."
+            ),
+            "fight",
+        )
+
+    def test_selects_matching_premium_action_cycle(self):
+        profile = {
+            "assets": [
+                {
+                    "quality_tier": "premium_action_cycle",
+                    "animation_group": "walk",
+                    "image_file_id": "walk-cycle",
+                },
+                {
+                    "quality_tier": "premium_action_cycle",
+                    "animation_group": "fight",
+                    "image_file_id": "fight-cycle",
+                },
+            ]
+        }
+
+        walking = select_character_action_cycle(
+            profile,
+            "The hero walks toward the castle.",
+        )
+        fighting = select_character_action_cycle(
+            profile,
+            "The hero blocks an attack with his sword.",
+        )
+
+        self.assertEqual(walking["image_file_id"], "walk-cycle")
+        self.assertEqual(fighting["image_file_id"], "fight-cycle")
 
 
 if __name__ == "__main__":
