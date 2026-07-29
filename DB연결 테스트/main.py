@@ -556,6 +556,7 @@ async def generate_and_store_backend_media(
     num_frames: int = 48,
     video_steps: int = 2,
     frame_rate: Optional[int] = None,
+    video_timeout: Optional[int] = 15,
     seed: Optional[int] = None,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -646,6 +647,7 @@ async def generate_and_store_backend_media(
             frame_rate=frame_rate,
             background_bytes=generated.get("_background_bytes"),
             character_layer_bytes=generated.get("_character_bytes"),
+            timeout_seconds=video_timeout,
         ))
 
     image_file = await upload_generated_media_file(
@@ -800,6 +802,7 @@ async def execute_media_generation(
     num_frames: int = 48,
     video_steps: int = 2,
     frame_rate: Optional[int] = None,
+    video_timeout: Optional[int] = 15,
 ):
     media = await generate_and_store_backend_media(
         story_text=story_text,
@@ -817,6 +820,7 @@ async def execute_media_generation(
         num_frames=num_frames,
         video_steps=video_steps,
         frame_rate=frame_rate,
+        video_timeout=video_timeout,
     )
     result = media["result"]
     return {**result, "saved": media["scene_saved"]}
@@ -984,6 +988,7 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
             if _media_job_request_value(job, "frame_rate") is not None
             else None
         ),
+        video_timeout=int(_media_job_request_value(job, "video_timeout", 15)),
         seed=_media_job_request_value(job, "seed"),
         job_id=job_id,
     )
@@ -2194,6 +2199,7 @@ async def generate_media(payload: MediaGenerationWithStorySchema):
             num_frames=payload.num_frames,
             video_steps=payload.video_steps,
             frame_rate=payload.frame_rate,
+            video_timeout=payload.video_timeout,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -2235,6 +2241,7 @@ async def generate_and_store_scene_media(
             num_frames=payload.num_frames,
             video_steps=payload.video_steps,
             frame_rate=payload.frame_rate,
+            video_timeout=payload.video_timeout,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))

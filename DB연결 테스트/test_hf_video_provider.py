@@ -82,6 +82,50 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertLess(airborne["shadow_scale"], grounded["shadow_scale"])
         self.assertLess(airborne["shadow_opacity"], grounded["shadow_opacity"])
 
+    def test_video_length_is_capped_at_fifteen_seconds(self):
+        frame_rate = 12
+        frames = hf_video_provider._normalize_frame_count(999, frame_rate)
+
+        self.assertEqual(frames, 15 * frame_rate)
+
+    def test_run_motion_keeps_character_near_center(self):
+        motion = hf_video_provider._character_motion(
+            preset="run",
+            progress=0.25,
+            width=512,
+            height=384,
+            motion_strength=8,
+            elapsed_seconds=0.25,
+        )
+
+        self.assertLessEqual(abs(motion["x"]), 2)
+        self.assertLessEqual(abs(motion["angle"]), 0.5)
+
+    def test_gait_alternation_keeps_upper_body_unchanged(self):
+        character = Image.new("RGBA", (40, 100), (0, 0, 0, 0))
+        for x in range(4, 18):
+            for y in range(5, 60):
+                character.putpixel((x, y), (220, 60, 80, 255))
+        for x in range(4, 14):
+            for y in range(75, 98):
+                character.putpixel((x, y), (40, 80, 220, 255))
+
+        alternate = hf_video_provider._alternate_lower_body_pose(
+            character,
+            Image,
+            ImageOps,
+        )
+
+        split_y = round(character.height * 0.68)
+        self.assertEqual(
+            character.crop((0, 0, character.width, split_y)).tobytes(),
+            alternate.crop((0, 0, alternate.width, split_y)).tobytes(),
+        )
+        self.assertNotEqual(
+            character.crop((0, split_y, character.width, character.height)).tobytes(),
+            alternate.crop((0, split_y, alternate.width, alternate.height)).tobytes(),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

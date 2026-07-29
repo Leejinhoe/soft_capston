@@ -17,6 +17,14 @@ LOCAL_VIDEO_MODEL = (
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "12"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
+LOCAL_VIDEO_MAX_DURATION_SECONDS = min(
+    15.0,
+    max(1.0, float(os.getenv("LOCAL_VIDEO_MAX_DURATION_SECONDS", "15.0"))),
+)
+LOCAL_VIDEO_TIMEOUT_SECONDS = min(
+    15.0,
+    max(5.0, float(os.getenv("LOCAL_VIDEO_TIMEOUT_SECONDS", "15.0"))),
+)
 
 
 def get_hf_video_config() -> Dict[str, Any]:
@@ -30,6 +38,8 @@ def get_hf_video_config() -> Dict[str, Any]:
         "video_requires_external_api": False,
         "video_default_frame_rate": LOCAL_VIDEO_FRAME_RATE,
         "video_default_duration_seconds": LOCAL_VIDEO_DURATION_SECONDS,
+        "video_max_duration_seconds": LOCAL_VIDEO_MAX_DURATION_SECONDS,
+        "video_timeout_seconds": LOCAL_VIDEO_TIMEOUT_SECONDS,
     }
 
 
@@ -70,7 +80,8 @@ def _even_dimension(value: int, minimum: int = 256) -> int:
 def _normalize_frame_count(num_frames: int, frame_rate: int) -> int:
     requested = max(1, int(num_frames))
     default_frames = max(1, int(round(LOCAL_VIDEO_DURATION_SECONDS * frame_rate)))
-    return max(requested, default_frames)
+    max_frames = max(1, int(LOCAL_VIDEO_MAX_DURATION_SECONDS * frame_rate))
+    return min(max(requested, default_frames), max_frames)
 
 
 def _ease_in_out(progress: float) -> float:
@@ -100,15 +111,26 @@ def _character_motion(
     width: int,
     height: int,
     motion_strength: int,
+    elapsed_seconds: Optional[float] = None,
 ) -> Dict[str, float]:
     strength = min(max(int(motion_strength), 1), 8) / 8.0
-    phase = math.tau * progress
+    elapsed = progress * LOCAL_VIDEO_DURATION_SECONDS if elapsed_seconds is None else elapsed_seconds
+    cadence = {
+        "idle": 0.45,
+        "walk": 1.5,
+        "run": 2.4,
+        "jump": 0.75,
+        "fly": 0.55,
+        "wave": 1.2,
+        "talk": 1.1,
+    }.get(preset, 0.45)
+    phase = math.tau * elapsed * cadence
     sway = math.sin(phase)
     pulse = math.sin(phase * 2.0)
     values = {
-        "x": sway * width * 0.006 * strength,
-        "y": -abs(pulse) * height * 0.003 * strength,
-        "angle": sway * 0.8 * strength,
+        "x": sway * width * 0.002 * strength,
+        "y": -abs(pulse) * height * 0.002 * strength,
+        "angle": sway * 0.35 * strength,
         "scale_x": 1.0 + pulse * 0.004 * strength,
         "scale_y": 1.0 + pulse * 0.01 * strength,
         "shadow_scale": 1.0,
@@ -116,29 +138,29 @@ def _character_motion(
     }
     if preset == "walk":
         values.update(
-            x=sway * width * 0.018 * strength,
-            y=-abs(pulse) * height * 0.012 * strength,
-            angle=sway * 1.8 * strength,
+            x=sway * width * 0.002 * strength,
+            y=-abs(pulse) * height * 0.007 * strength,
+            angle=sway * 0.25 * strength,
         )
     elif preset == "run":
         values.update(
-            x=sway * width * 0.03 * strength,
-            y=-abs(pulse) * height * 0.025 * strength,
-            angle=sway * 3.2 * strength,
-            scale_x=1.0 + pulse * 0.012 * strength,
+            x=sway * width * 0.003 * strength,
+            y=-abs(pulse) * height * 0.014 * strength,
+            angle=sway * 0.4 * strength,
+            scale_x=1.0 + pulse * 0.005 * strength,
         )
     elif preset == "jump":
-        lift = abs(math.sin(math.pi * progress)) * height * 0.14 * strength
+        lift = max(0.0, math.sin(phase)) * height * 0.14 * strength
         values.update(
             x=sway * width * 0.014 * strength,
             y=-lift,
             angle=sway * 2.0 * strength,
-            scale_y=1.0 + math.sin(math.pi * progress) * 0.025 * strength,
+            scale_y=1.0 + max(0.0, math.sin(phase)) * 0.025 * strength,
             shadow_scale=max(0.5, 1.0 - lift / max(height * 0.25, 1)),
             shadow_opacity=max(35.0, 92.0 - lift * 0.45),
         )
     elif preset == "fly":
-        lift = (0.45 + 0.35 * math.sin(phase)) * height * 0.11 * strength
+        lift = (0.55 + 0.25 * math.sin(phase)) * height * 0.11 * strength
         values.update(
             x=sway * width * 0.025 * strength,
             y=-lift,
@@ -200,6 +222,16 @@ def _render_frame(
     return frame
 
 
+def _alternate_lower_body_pose(character, Image, ImageOps):
+    split_y = max(1, min(character.height - 1, round(character.height * 0.68)))
+    upper = character.crop((0, 0, character.width, split_y))
+    lower = character.crop((0, split_y, character.width, character.height))
+    alternate = Image.new("RGBA", character.size, (0, 0, 0, 0))
+    alternate.alpha_composite(upper, (0, 0))
+    alternate.alpha_composite(ImageOps.mirror(lower), (0, split_y))
+    return alternate
+
+
 def _render_layered_frame(
     *,
     background,
@@ -213,6 +245,7 @@ def _render_layered_frame(
     progress: float,
     motion_strength: int,
     motion_preset: str,
+    elapsed_seconds: Optional[float] = None,
 ):
     camera_frame = _render_frame(
         source_image=background.convert("RGB"),
@@ -230,7 +263,17 @@ def _render_layered_frame(
         width=width,
         height=height,
         motion_strength=motion_strength,
+        elapsed_seconds=elapsed_seconds,
     )
+    if motion_preset in {"walk", "run"}:
+        elapsed = (
+            progress * LOCAL_VIDEO_DURATION_SECONDS
+            if elapsed_seconds is None
+            else elapsed_seconds
+        )
+        cadence = 1.5 if motion_preset == "walk" else 2.4
+        if math.sin(math.tau * elapsed * cadence) < 0:
+            character = _alternate_lower_body_pose(character, Image, ImageOps)
     scaled_width = max(1, round(character.width * motion["scale_x"]))
     scaled_height = max(1, round(character.height * motion["scale_y"]))
     animated = character.resize(
@@ -328,6 +371,7 @@ def _generate_local_video_bytes(
                         progress=progress,
                         motion_strength=motion_strength,
                         motion_preset=motion_preset,
+                        elapsed_seconds=index / frame_rate,
                     )
                 else:
                     frame = _render_frame(
@@ -365,6 +409,7 @@ async def generate_hf_fairytale_video(
     frame_rate: Optional[int] = None,
     background_bytes: Optional[bytes] = None,
     character_layer_bytes: Optional[bytes] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     if not image_bytes:
         raise HfMediaError("image_bytes is empty.")
@@ -376,20 +421,33 @@ async def generate_hf_fairytale_video(
     )
     normalized_frame_rate = frame_rate or LOCAL_VIDEO_FRAME_RATE
     normalized_frames = _normalize_frame_count(num_frames, normalized_frame_rate)
-
-    video_bytes, animation_mode = await asyncio.to_thread(
-        _generate_local_video_bytes,
-        image_bytes=image_bytes,
-        width=width,
-        height=height,
-        num_frames=normalized_frames,
-        frame_rate=normalized_frame_rate,
-        motion_strength=steps,
-        story_text=story_text,
-        background_bytes=background_bytes,
-        character_layer_bytes=character_layer_bytes,
+    normalized_timeout = min(
+        LOCAL_VIDEO_TIMEOUT_SECONDS,
+        max(5.0, float(timeout_seconds or LOCAL_VIDEO_TIMEOUT_SECONDS)),
     )
+
+    try:
+        video_bytes, animation_mode = await asyncio.wait_for(
+            asyncio.to_thread(
+                _generate_local_video_bytes,
+                image_bytes=image_bytes,
+                width=width,
+                height=height,
+                num_frames=normalized_frames,
+                frame_rate=normalized_frame_rate,
+                motion_strength=steps,
+                story_text=story_text,
+                background_bytes=background_bytes,
+                character_layer_bytes=character_layer_bytes,
+            ),
+            timeout=normalized_timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HfMediaError(
+            f"Local video generation exceeded {normalized_timeout:g} seconds."
+        ) from exc
     motion_preset = select_motion_preset(story_text)
+    normalized_rate = min(max(int(normalized_frame_rate), 6), 30)
 
     return {
         "video_bytes": video_bytes,
@@ -401,7 +459,10 @@ async def generate_hf_fairytale_video(
             "width": _even_dimension(width),
             "height": _even_dimension(height),
             "num_frames": normalized_frames,
-            "frame_rate": min(max(int(normalized_frame_rate), 6), 30),
+            "frame_rate": normalized_rate,
+            "duration_seconds": round(normalized_frames / normalized_rate, 2),
+            "max_duration_seconds": LOCAL_VIDEO_MAX_DURATION_SECONDS,
+            "timeout_seconds": normalized_timeout,
             "motion_strength": int(steps),
             "motion_preset": motion_preset,
             "animation_mode": animation_mode,

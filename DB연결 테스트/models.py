@@ -84,7 +84,7 @@ class MediaGenerationSchema(BaseModel):
     num_frames: int = Field(default=48, ge=9, le=240)
     video_steps: int = Field(default=2, ge=2, le=50)
     frame_rate: Optional[int] = Field(default=12, ge=6, le=30)
-    video_timeout: Optional[int] = Field(default=None, ge=30, le=1800)
+    video_timeout: Optional[int] = Field(default=15, ge=5, le=15)
 
 
 class MediaGenerationWithStorySchema(MediaGenerationSchema):
