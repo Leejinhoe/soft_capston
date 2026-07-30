@@ -22,8 +22,12 @@ PREMIUM_REFERENCES = {
     for key in KEYS
 }
 ACTION_CYCLE_SHEETS = {
-    "male_01_walk_cycle_v1_sheet.png",
-    "male_01_fight_cycle_v1_sheet.png",
+    "male_01_walk_cycle_v1_sheet.png": (2, 2),
+    "male_01_fight_cycle_v1_sheet.png": (2, 2),
+    "male_01_fight_cycle_v2_sheet.png": (3, 2),
+    "male_01_run_cycle_v1_sheet.png": (3, 2),
+    "male_01_jump_cycle_v1_sheet.png": (3, 2),
+    "male_01_magic_cycle_v1_sheet.png": (3, 2),
 }
 
 spec = importlib.util.spec_from_file_location("generate_character_assets", GENERATOR_PATH)
@@ -41,19 +45,23 @@ class GeneratedCharacterAssetTests(unittest.TestCase):
             for path in ASSET_DIR.glob("*.png")
             if path.name.startswith(("male_", "female_"))
         }
-        self.assertEqual(actual, expected | PREMIUM_REFERENCES | ACTION_CYCLE_SHEETS)
+        self.assertEqual(
+            actual,
+            expected | PREMIUM_REFERENCES | set(ACTION_CYCLE_SHEETS),
+        )
 
-    def test_action_cycle_sheets_have_four_transparent_visible_cells(self):
-        for filename in ACTION_CYCLE_SHEETS:
+    def test_action_cycle_sheets_have_transparent_visible_cells(self):
+        for filename, (columns, rows) in ACTION_CYCLE_SHEETS.items():
             path = ASSET_DIR / filename
             with self.subTest(path=filename), Image.open(path) as image:
                 self.assertEqual(image.mode, "RGBA")
-                self.assertEqual(image.width, image.height)
-                cell_width = image.width // 2
-                cell_height = image.height // 2
-                for index in range(4):
-                    x = (index % 2) * cell_width
-                    y = (index // 2) * cell_height
+                self.assertEqual(image.width % columns, 0)
+                self.assertEqual(image.height % rows, 0)
+                cell_width = image.width // columns
+                cell_height = image.height // rows
+                for index in range(columns * rows):
+                    x = (index % columns) * cell_width
+                    y = (index // columns) * cell_height
                     cell = image.crop(
                         (x, y, x + cell_width, y + cell_height)
                     )

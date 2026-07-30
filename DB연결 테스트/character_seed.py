@@ -42,21 +42,17 @@ REFERENCE_VARIANT = (
 )
 
 ACTION_CYCLE_VARIANTS = (
-    (
-        "walk_cycle_v1_sheet",
-        "walking",
-        "determined",
-        "walk",
-        ("action", "walking", "premium", "animation-cycle"),
-        ("walk", "walking", "run", "running", "\uac77", "\ub2ec\ub9ac"),
-    ),
-    (
-        "fight_cycle_v1_sheet",
-        "fighting",
-        "brave",
-        "fight",
-        ("action", "fight", "premium", "animation-cycle"),
-        (
+    {
+        "suffix": "fight_cycle_v2_sheet",
+        "pose": "fighting",
+        "emotion": "brave",
+        "animation_group": "fight",
+        "animation_layout": "3x2",
+        "animation_frame_count": 6,
+        "animation_version": 2,
+        "animation_cycle_seconds": 3.0,
+        "tags": ("action", "fight", "premium", "animation-cycle"),
+        "keywords": (
             "fight",
             "battle",
             "attack",
@@ -65,7 +61,75 @@ ACTION_CYCLE_VARIANTS = (
             "\uc804\ud22c",
             "\uacf5\uaca9",
         ),
-    ),
+    },
+    {
+        "suffix": "walk_cycle_v1_sheet",
+        "pose": "walking",
+        "emotion": "determined",
+        "animation_group": "walk",
+        "animation_layout": "2x2",
+        "animation_frame_count": 4,
+        "animation_version": 1,
+        "animation_cycle_seconds": 1.0,
+        "tags": ("action", "walking", "premium", "animation-cycle"),
+        "keywords": ("walk", "walking", "\uac77", "\uac78\uc5b4"),
+    },
+    {
+        "suffix": "run_cycle_v1_sheet",
+        "pose": "running",
+        "emotion": "determined",
+        "animation_group": "run",
+        "animation_layout": "3x2",
+        "animation_frame_count": 6,
+        "animation_version": 1,
+        "animation_cycle_seconds": 0.8,
+        "tags": ("action", "running", "premium", "animation-cycle"),
+        "keywords": ("run", "running", "sprint", "\ub2ec\ub9ac", "\ub6f0"),
+    },
+    {
+        "suffix": "jump_cycle_v1_sheet",
+        "pose": "jumping",
+        "emotion": "brave",
+        "animation_group": "jump",
+        "animation_layout": "3x2",
+        "animation_frame_count": 6,
+        "animation_version": 1,
+        "animation_cycle_seconds": 2.4,
+        "tags": ("action", "jump", "premium", "animation-cycle"),
+        "keywords": ("jump", "leap", "hop", "\uc810\ud504", "\ub6f0\uc5b4"),
+    },
+    {
+        "suffix": "magic_cycle_v1_sheet",
+        "pose": "casting-magic",
+        "emotion": "focused",
+        "animation_group": "magic",
+        "animation_layout": "3x2",
+        "animation_frame_count": 6,
+        "animation_version": 1,
+        "animation_cycle_seconds": 3.0,
+        "tags": ("action", "magic", "premium", "animation-cycle"),
+        "keywords": ("magic", "spell", "cast", "\ub9c8\ubc95", "\uc8fc\ubb38"),
+    },
+    {
+        "suffix": "fight_cycle_v1_sheet",
+        "pose": "fighting",
+        "emotion": "brave",
+        "animation_group": "fight",
+        "animation_layout": "2x2",
+        "animation_frame_count": 4,
+        "animation_version": 1,
+        "animation_cycle_seconds": 3.0,
+        "tags": ("action", "fight", "premium", "animation-cycle"),
+        "keywords": (
+            "fight",
+            "battle",
+            "attack",
+            "sword",
+            "\uc2f8\uc6b0",
+            "\uc804\ud22c",
+            "\uacf5\uaca9",
+        ),
+    },
 )
 
 
@@ -84,23 +148,23 @@ def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
                 "scene_keywords": list(keywords),
             }
         )
-    for suffix, pose, emotion, animation_group, variant_tags, keywords in (
-        ACTION_CYCLE_VARIANTS
-    ):
-        filename = f"{character_key}_{suffix}.png"
+    for variant in ACTION_CYCLE_VARIANTS:
+        filename = f"{character_key}_{variant['suffix']}.png"
         if not (CHARACTER_ASSET_DIR / filename).is_file():
             continue
         specs.append(
             {
                 "filename": filename,
-                "pose": pose,
-                "emotion": emotion,
+                "pose": variant["pose"],
+                "emotion": variant["emotion"],
                 "quality_tier": "premium_action_cycle",
-                "animation_group": animation_group,
-                "animation_layout": "2x2",
-                "animation_frame_count": 4,
-                "tags": sorted(set(tags).union(variant_tags)),
-                "scene_keywords": list(keywords),
+                "animation_group": variant["animation_group"],
+                "animation_layout": variant["animation_layout"],
+                "animation_frame_count": variant["animation_frame_count"],
+                "animation_version": variant["animation_version"],
+                "animation_cycle_seconds": variant["animation_cycle_seconds"],
+                "tags": sorted(set(tags).union(variant["tags"])),
+                "scene_keywords": list(variant["keywords"]),
             }
         )
     for suffix, pose, emotion, variant_tags, keywords in ASSET_VARIANTS:
@@ -288,6 +352,8 @@ async def _store_character_asset(
                 "animation_group": asset.get("animation_group"),
                 "animation_layout": asset.get("animation_layout"),
                 "animation_frame_count": asset.get("animation_frame_count"),
+                "animation_version": asset.get("animation_version"),
+                "animation_cycle_seconds": asset.get("animation_cycle_seconds"),
                 "provider": provider,
                 "model": model,
                 "sha256": sha256,
@@ -339,6 +405,10 @@ async def seed_default_character_profiles() -> int:
                     "animation_layout": asset_spec.get("animation_layout"),
                     "animation_frame_count": asset_spec.get(
                         "animation_frame_count"
+                    ),
+                    "animation_version": asset_spec.get("animation_version"),
+                    "animation_cycle_seconds": asset_spec.get(
+                        "animation_cycle_seconds"
                     ),
                     "tags": asset_spec["tags"],
                     "scene_keywords": asset_spec["scene_keywords"],

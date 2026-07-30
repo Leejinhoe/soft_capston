@@ -26,6 +26,12 @@ class LocalCharacterVideoTests(unittest.TestCase):
         )
         self.assertEqual(
             hf_video_provider.select_motion_preset(
+                "The hero walks toward the castle."
+            ),
+            "walk",
+        )
+        self.assertEqual(
+            hf_video_provider.select_motion_preset(
                 "\uc6a9\uc0ac\uac00 \uac80\uc744 \ub4e4\uace0 \uc2f8\uc6b0\uae30 \uc2dc\uc791\ud588\ub2e4."
             ),
             "fight",
@@ -175,6 +181,56 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertEqual({frame.size for frame in frames}, {frames[0].size})
         self.assertTrue(all(frame.getchannel("A").getbbox() for frame in frames))
 
+    def test_three_by_two_action_sheet_is_split_as_six_frames(self):
+        sheet = Image.new("RGBA", (120, 80), (0, 0, 0, 0))
+        for index in range(6):
+            x = (index % 3) * 40
+            y = (index // 3) * 40
+            for px in range(x + 7, x + 33):
+                for py in range(y + 4, y + 37):
+                    sheet.putpixel((px, py), (30 * index, 100, 220, 255))
+        buffer = io.BytesIO()
+        sheet.save(buffer, format="PNG")
+
+        frames, position = hf_video_provider._prepare_action_cycle_frames(
+            buffer.getvalue(),
+            Image,
+            width=320,
+            height=256,
+            layout="3x2",
+            frame_count=6,
+        )
+
+        self.assertEqual(len(frames), 6)
+        self.assertIsNotNone(position)
+        self.assertEqual({frame.size for frame in frames}, {frames[0].size})
+
+    def test_action_sheet_preserves_relative_pose_scale(self):
+        sheet = Image.new("RGBA", (80, 40), (0, 0, 0, 0))
+        for px in range(8, 32):
+            for py in range(18, 36):
+                sheet.putpixel((px, py), (230, 60, 80, 255))
+        for px in range(48, 72):
+            for py in range(4, 36):
+                sheet.putpixel((px, py), (60, 120, 230, 255))
+        buffer = io.BytesIO()
+        sheet.save(buffer, format="PNG")
+
+        frames, _ = hf_video_provider._prepare_action_cycle_frames(
+            buffer.getvalue(),
+            Image,
+            width=320,
+            height=256,
+            layout="2x1",
+            frame_count=2,
+        )
+        visible_heights = [
+            frame.getchannel("A").getbbox()[3] - frame.getchannel("A").getbbox()[1]
+            for frame in frames
+        ]
+
+        self.assertGreater(visible_heights[1], visible_heights[0] * 1.5)
+
     def test_action_cycle_index_advances_by_action_timing(self):
         walk_indexes = [
             hf_video_provider._action_cycle_frame_index("walk", time, 4)
@@ -238,6 +294,81 @@ class LocalCharacterVideoTests(unittest.TestCase):
 
         self.assertGreater(lunge["x"], guard["x"] + 30)
         self.assertAlmostEqual(recovered["x"], guard["x"], delta=1.0)
+
+    def test_jump_action_has_clear_airborne_apex(self):
+        grounded = hf_video_provider._action_cycle_motion(
+            "jump",
+            elapsed_seconds=0.0,
+            progress=0.0,
+            width=512,
+            height=384,
+            frame_index=0,
+            cycle_progress=0.0,
+        )
+        apex = hf_video_provider._action_cycle_motion(
+            "jump",
+            elapsed_seconds=1.2,
+            progress=0.5,
+            width=512,
+            height=384,
+            frame_index=3,
+            cycle_progress=0.55,
+        )
+
+        self.assertLess(apex["y"], grounded["y"] - 80)
+        self.assertLess(apex["shadow_scale"], grounded["shadow_scale"])
+        self.assertLess(apex["shadow_opacity"], grounded["shadow_opacity"])
+
+    def test_jump_cycle_returns_to_ready_pose_before_next_action(self):
+        recovered_index = hf_video_provider._action_cycle_frame_index(
+            "jump",
+            elapsed_seconds=2.35,
+            frame_count=6,
+            cycle_seconds=2.4,
+            cycle_progress=0.95,
+        )
+
+        self.assertEqual(recovered_index, 0)
+
+    def test_magic_action_builds_and_releases_energy_without_root_slide(self):
+        ready = hf_video_provider._action_cycle_motion(
+            "magic",
+            elapsed_seconds=0.0,
+            progress=0.0,
+            width=512,
+            height=384,
+            frame_index=0,
+            cycle_progress=0.0,
+        )
+        casting = hf_video_provider._action_cycle_motion(
+            "magic",
+            elapsed_seconds=1.5,
+            progress=0.5,
+            width=512,
+            height=384,
+            frame_index=3,
+            cycle_progress=0.5,
+        )
+
+        self.assertEqual(ready["x"], 0)
+        self.assertEqual(casting["x"], 0)
+        self.assertGreater(casting["scale_x"], ready["scale_x"])
+
+    def test_action_sequence_root_positions_connect_at_center(self):
+        walk_bounds = hf_video_provider._action_travel_bounds("walk", 0, 2)
+        fight_bounds = hf_video_provider._action_travel_bounds("fight", 1, 2)
+
+        self.assertEqual(walk_bounds, (-0.22, 0.0))
+        self.assertEqual(fight_bounds, (0.0, 0.0))
+
+    def test_action_sequence_resolves_ordered_segment_progress(self):
+        first = hf_video_provider._resolve_action_segment(0, 72, 3)
+        middle = hf_video_provider._resolve_action_segment(30, 72, 3)
+        last = hf_video_provider._resolve_action_segment(71, 72, 3)
+
+        self.assertEqual(first, (0, 0.0))
+        self.assertEqual(middle[0], 1)
+        self.assertEqual(last, (2, 1.0))
 
 
 if __name__ == "__main__":

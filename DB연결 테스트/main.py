@@ -28,7 +28,7 @@ from account_moderation import (
 from background_assets import select_background_asset
 from character_assets import (
     build_character_action_hint,
-    select_character_action_cycle,
+    select_character_action_cycles,
     select_character_asset,
     select_premium_reference_asset,
 )
@@ -590,15 +590,16 @@ async def generate_and_store_backend_media(
             select_premium_reference_asset(character_profile)
             or selected_character_asset
         )
-    selected_action_cycle = (
-        select_character_action_cycle(
+    selected_action_cycles = (
+        select_character_action_cycles(
             character_profile,
             story_text,
             visual_context=visual_context,
         )
         if include_video
-        else None
+        else []
     )
+    selected_action_cycle = selected_action_cycles[0] if selected_action_cycles else None
     composite_error = None
     if selected_character_asset:
         try:
@@ -652,21 +653,37 @@ async def generate_and_store_backend_media(
     video_generated = None
     video_error = None
     video_task = None
-    action_cycle_bytes = None
-    action_cycle_error = None
-    if selected_action_cycle:
-        try:
-            action_cycle_bytes = await download_gridfs_file(
-                str(selected_action_cycle["image_file_id"])
+    action_cycle_segments = []
+    action_cycle_errors = []
+    if selected_action_cycles:
+        download_results = await asyncio.gather(
+            *(
+                download_gridfs_file(str(cycle["image_file_id"]))
+                for cycle in selected_action_cycles
+            ),
+            return_exceptions=True,
+        )
+        for cycle, result in zip(selected_action_cycles, download_results):
+            if isinstance(result, Exception):
+                error = f"{cycle.get('animation_group')}: {result}"
+                action_cycle_errors.append(error)
+                logger.warning(
+                    "Action cycle could not be loaded for media job %s; "
+                    "skipping the segment: %s",
+                    job_id,
+                    error,
+                )
+                continue
+            action_cycle_segments.append(
+                {
+                    "bytes": result,
+                    "name": cycle.get("animation_group"),
+                    "layout": cycle.get("animation_layout"),
+                    "frame_count": cycle.get("animation_frame_count"),
+                    "cycle_seconds": cycle.get("animation_cycle_seconds"),
+                }
             )
-        except Exception as exc:
-            action_cycle_error = str(exc)
-            logger.warning(
-                "Action cycle could not be loaded for media job %s; "
-                "using identity-safe fallback: %s",
-                job_id,
-                action_cycle_error,
-            )
+    action_cycle_error = "; ".join(action_cycle_errors) or None
     if include_video:
         video_task = asyncio.create_task(generate_hf_fairytale_video(
             image_bytes=generated["image_bytes"],
@@ -681,22 +698,7 @@ async def generate_and_store_backend_media(
             frame_rate=frame_rate,
             background_bytes=generated.get("_background_bytes"),
             character_layer_bytes=generated.get("_character_bytes"),
-            action_cycle_bytes=action_cycle_bytes,
-            action_cycle_name=(
-                selected_action_cycle.get("animation_group")
-                if selected_action_cycle
-                else None
-            ),
-            action_cycle_layout=(
-                selected_action_cycle.get("animation_layout")
-                if selected_action_cycle
-                else None
-            ),
-            action_cycle_frame_count=(
-                selected_action_cycle.get("animation_frame_count")
-                if selected_action_cycle
-                else None
-            ),
+            action_cycle_segments=action_cycle_segments,
             timeout_seconds=video_timeout,
         ))
 
@@ -791,12 +793,29 @@ async def generate_and_store_backend_media(
                 "animation_frame_count": selected_action_cycle.get(
                     "animation_frame_count"
                 ),
+                "animation_version": selected_action_cycle.get("animation_version"),
+                "animation_cycle_seconds": selected_action_cycle.get(
+                    "animation_cycle_seconds"
+                ),
                 "quality_tier": selected_action_cycle.get("quality_tier"),
                 "image_file_id": selected_action_cycle.get("image_file_id"),
             }
             if selected_action_cycle
             else None
         ),
+        "selected_action_cycles": [
+            {
+                "pose": cycle.get("pose"),
+                "animation_group": cycle.get("animation_group"),
+                "animation_layout": cycle.get("animation_layout"),
+                "animation_frame_count": cycle.get("animation_frame_count"),
+                "animation_version": cycle.get("animation_version"),
+                "animation_cycle_seconds": cycle.get("animation_cycle_seconds"),
+                "quality_tier": cycle.get("quality_tier"),
+                "image_file_id": cycle.get("image_file_id"),
+            }
+            for cycle in selected_action_cycles
+        ],
         "action_cycle_error": action_cycle_error,
         "image_provider": generated.get("inference_provider"),
         "image_provider_attempts": generated.get("attempted_providers", []),

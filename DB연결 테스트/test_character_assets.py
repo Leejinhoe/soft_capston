@@ -3,7 +3,9 @@ import unittest
 from character_assets import (
     build_character_action_hint,
     detect_character_action_group,
+    detect_character_action_groups,
     select_character_action_cycle,
+    select_character_action_cycles,
     select_character_asset,
     select_premium_reference_asset,
 )
@@ -130,6 +132,37 @@ class CharacterAssetSelectionTests(unittest.TestCase):
             "fight",
         )
 
+    def test_detects_new_run_jump_and_magic_actions(self):
+        self.assertEqual(
+            detect_character_action_group("The hero runs across the bridge."),
+            "run",
+        )
+        self.assertEqual(
+            detect_character_action_group(
+                "\uc6a9\uc0ac\uac00 \ub192\uc774 \uc810\ud504\ud588\ub2e4."
+            ),
+            "jump",
+        )
+        self.assertEqual(
+            detect_character_action_group(
+                "\uc6a9\uc0ac\uac00 \ub9c8\ubc95 \uc8fc\ubb38\uc744 \uc678\uc6e0\ub2e4."
+            ),
+            "magic",
+        )
+
+    def test_castle_does_not_trigger_magic_casting(self):
+        self.assertEqual(
+            detect_character_action_group("The hero walks toward the castle."),
+            "walk",
+        )
+
+    def test_detects_multiple_actions_in_story_order(self):
+        actions = detect_character_action_groups(
+            "The hero walks to the gate, jumps over a rock, then casts magic."
+        )
+
+        self.assertEqual(actions, ["walk", "jump", "magic"])
+
     def test_selects_matching_premium_action_cycle(self):
         profile = {
             "assets": [
@@ -142,6 +175,13 @@ class CharacterAssetSelectionTests(unittest.TestCase):
                     "quality_tier": "premium_action_cycle",
                     "animation_group": "fight",
                     "image_file_id": "fight-cycle",
+                    "animation_version": 1,
+                },
+                {
+                    "quality_tier": "premium_action_cycle",
+                    "animation_group": "fight",
+                    "image_file_id": "fight-cycle-v2",
+                    "animation_version": 2,
                 },
             ]
         }
@@ -156,7 +196,29 @@ class CharacterAssetSelectionTests(unittest.TestCase):
         )
 
         self.assertEqual(walking["image_file_id"], "walk-cycle")
-        self.assertEqual(fighting["image_file_id"], "fight-cycle")
+        self.assertEqual(fighting["image_file_id"], "fight-cycle-v2")
+
+    def test_selects_ordered_action_cycle_sequence(self):
+        profile = {
+            "assets": [
+                {
+                    "quality_tier": "premium_action_cycle",
+                    "animation_group": action,
+                    "image_file_id": f"{action}-cycle",
+                }
+                for action in ("walk", "jump", "magic")
+            ]
+        }
+
+        selected = select_character_action_cycles(
+            profile,
+            "The hero walks, jumps, and casts magic.",
+        )
+
+        self.assertEqual(
+            [asset["animation_group"] for asset in selected],
+            ["walk", "jump", "magic"],
+        )
 
 
 if __name__ == "__main__":

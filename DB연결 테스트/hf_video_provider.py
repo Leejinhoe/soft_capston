@@ -2,6 +2,7 @@ import asyncio
 import io
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -13,7 +14,7 @@ LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip(
 LOCAL_VIDEO_MODEL = (
     os.getenv("LOCAL_VIDEO_MODEL")
     or os.getenv("VIDEO_MODEL")
-    or "storybook-profile-root-action-v5"
+    or "storybook-profile-action-sequence-v6"
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "12"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
@@ -33,7 +34,7 @@ def get_hf_video_config() -> Dict[str, Any]:
         "video_supported": True,
         "video_provider": LOCAL_VIDEO_PROVIDER,
         "video_model": LOCAL_VIDEO_MODEL,
-        "video_task": "profile-driven-root-action-animation",
+        "video_task": "profile-driven-multi-action-animation",
         "video_requires_gpu": False,
         "video_requires_external_api": False,
         "video_default_frame_rate": LOCAL_VIDEO_FRAME_RATE,
@@ -92,6 +93,12 @@ def _ease_in_out(progress: float) -> float:
     return 0.5 - 0.5 * math.cos(math.pi * progress)
 
 
+def _contains_action_keyword(text: str, keyword: str) -> bool:
+    if keyword.isascii():
+        return bool(re.search(rf"\b{re.escape(keyword)}\b", text))
+    return keyword in text
+
+
 def select_motion_preset(story_text: str) -> str:
     normalized = " ".join(story_text.lower().split())
     action_groups = (
@@ -120,6 +127,7 @@ def select_motion_preset(story_text: str) -> str:
             "run",
             (
                 "run",
+                "runs",
                 "running",
                 "race",
                 "sprint",
@@ -128,12 +136,37 @@ def select_motion_preset(story_text: str) -> str:
                 "\ub6f0",
             ),
         ),
-        ("jump", ("jump", "leap", "hop", "\uc810\ud504", "\ub6f0\uc5b4")),
+        (
+            "magic",
+            (
+                "magic",
+                "spell",
+                "cast",
+                "casts",
+                "\ub9c8\ubc95",
+                "\uc8fc\ubb38",
+            ),
+        ),
+        (
+            "jump",
+            ("jump", "jumps", "leap", "hop", "\uc810\ud504", "\ub6f0\uc5b4"),
+        ),
         (
             "fly",
             ("fly", "flies", "flying", "float", "soar", "\ub0a0\uc544", "\ube44\ud589"),
         ),
-        ("walk", ("walk", "walking", "stroll", "\uac77", "\uac78\uc5b4", "\uc0b0\ucc45")),
+        (
+            "walk",
+            (
+                "walk",
+                "walks",
+                "walking",
+                "stroll",
+                "\uac77",
+                "\uac78\uc5b4",
+                "\uc0b0\ucc45",
+            ),
+        ),
         ("wave", ("wave", "waving", "greet", "\uc778\uc0ac", "\uc190\uc744 \ud754\ub4e4")),
         (
             "talk",
@@ -141,7 +174,7 @@ def select_motion_preset(story_text: str) -> str:
         ),
     )
     for preset, keywords in action_groups:
-        if any(keyword in normalized for keyword in keywords):
+        if any(_contains_action_keyword(normalized, keyword) for keyword in keywords):
             return preset
     keyword_groups = (
         ("run", ("run", "running", "race", "sprint", "달리", "뛰어가", "도망")),
@@ -152,7 +185,7 @@ def select_motion_preset(story_text: str) -> str:
         ("talk", ("talk", "speak", "whisper", "sing", "말하", "이야기", "노래")),
     )
     for preset, keywords in keyword_groups:
-        if any(keyword in normalized for keyword in keywords):
+        if any(_contains_action_keyword(normalized, keyword) for keyword in keywords):
             return preset
     return "idle"
 
@@ -173,6 +206,7 @@ def _character_motion(
         "walk": 1.5,
         "run": 2.4,
         "fight": 1.1,
+        "magic": 0.8,
         "jump": 0.75,
         "fly": 0.55,
         "wave": 1.2,
@@ -210,6 +244,14 @@ def _character_motion(
             angle=sway * 0.7 * strength,
             scale_x=1.0 + pulse * 0.003 * strength,
             scale_y=1.0 + pulse * 0.006 * strength,
+        )
+    elif preset == "magic":
+        values.update(
+            x=0.0,
+            y=-abs(pulse) * height * 0.008 * strength,
+            angle=sway * 0.45 * strength,
+            scale_x=1.0 + pulse * 0.004 * strength,
+            scale_y=1.0 + pulse * 0.008 * strength,
         )
     elif preset == "jump":
         lift = max(0.0, math.sin(phase)) * height * 0.14 * strength
@@ -347,14 +389,17 @@ def _prepare_action_cycle_frames(
 
     target_height = round(height * 0.70)
     max_width = round(width * 0.82)
+    common_scale = min(
+        target_height / max(frame.height for frame in frames),
+        max_width / max(frame.width for frame in frames),
+    )
     resized_frames = []
     for frame in frames:
-        scale = min(target_height / frame.height, max_width / frame.width)
         resized_frames.append(
             frame.resize(
                 (
-                    max(1, round(frame.width * scale)),
-                    max(1, round(frame.height * scale)),
+                    max(1, round(frame.width * common_scale)),
+                    max(1, round(frame.height * common_scale)),
                 ),
                 getattr(Image, "Resampling", Image).LANCZOS,
             )
@@ -389,26 +434,44 @@ def _action_cycle_frame_index(
     action_name: Optional[str],
     elapsed_seconds: float,
     frame_count: int,
+    cycle_seconds: Optional[float] = None,
+    cycle_progress: Optional[float] = None,
 ) -> int:
     if frame_count <= 1:
         return 0
     elapsed = max(0.0, elapsed_seconds)
-    if action_name == "fight":
-        local_frame = (elapsed % 3.0) * 12.0
-        if local_frame <= 5:
-            pose_index = 3
-        elif local_frame <= 11:
-            pose_index = 1
-        elif local_frame <= 19:
-            pose_index = 2
-        elif local_frame <= 24:
-            pose_index = 0
-        elif local_frame <= 29:
-            pose_index = 1
-        else:
-            pose_index = 3
-        return min(pose_index, frame_count - 1)
-    return int(elapsed * 4.0) % frame_count
+    default_seconds = {
+        "walk": 1.0,
+        "run": 0.8,
+        "fight": 3.0,
+        "jump": 2.4,
+        "magic": 3.0,
+    }.get(action_name or "", 1.0)
+    duration = max(0.25, float(cycle_seconds or default_seconds))
+    if cycle_progress is not None and action_name not in {"walk", "run"}:
+        phase = min(0.999999, max(0.0, cycle_progress))
+    else:
+        phase = (elapsed % duration) / duration
+    if action_name == "jump" and frame_count >= 6 and phase >= 0.9:
+        return 0
+
+    weight_presets = {
+        "walk": (2, 2, 2, 2, 2, 2),
+        "run": (2, 1, 1, 2, 1, 1),
+        "fight": (5, 5, 7, 4, 5, 6),
+        "jump": (5, 6, 4, 6, 5, 6),
+        "magic": (6, 6, 6, 5, 5, 7),
+    }
+    weights = weight_presets.get(action_name or "")
+    if not weights or len(weights) != frame_count:
+        weights = tuple(1 for _ in range(frame_count))
+    weighted_position = phase * sum(weights)
+    cumulative = 0
+    for index, weight in enumerate(weights):
+        cumulative += weight
+        if weighted_position < cumulative:
+            return index
+    return frame_count - 1
 
 
 def _smootherstep(value: float) -> float:
@@ -431,7 +494,7 @@ def _interpolate_action_keyframes(
         keyframes[1:],
     ):
         if start_frame <= frame <= end_frame:
-            span = max(1.0, end_frame - start_frame)
+            span = max(1e-9, end_frame - start_frame)
             progress = _smootherstep((frame - start_frame) / span)
             return start_value + (end_value - start_value) * progress
     return keyframes[-1][1]
@@ -445,9 +508,26 @@ def _action_cycle_motion(
     width: int,
     height: int,
     frame_index: int,
+    cycle_seconds: Optional[float] = None,
+    cycle_progress: Optional[float] = None,
+    travel_start: float = -0.22,
+    travel_end: float = 0.22,
 ) -> Dict[str, float]:
+    default_seconds = {
+        "walk": 1.0,
+        "run": 0.8,
+        "fight": 3.0,
+        "jump": 2.4,
+        "magic": 3.0,
+    }.get(action_name or "", 1.0)
+    duration = max(0.25, float(cycle_seconds or default_seconds))
+    if cycle_progress is not None and action_name not in {"walk", "run"}:
+        phase = min(1.0, max(0.0, cycle_progress))
+    else:
+        phase = (max(0.0, elapsed_seconds) % duration) / duration
+
     if action_name == "fight":
-        local_frame = (max(0.0, elapsed_seconds) % 3.0) * 12.0
+        local_frame = phase * 36.0
         root_x = _interpolate_action_keyframes(
             local_frame,
             [
@@ -494,12 +574,56 @@ def _action_cycle_motion(
             "shadow_opacity": 92.0,
         }
 
-    pose_bounce = (0.0, -3.5, -0.5, -2.5)
-    step_phase = (max(0.0, elapsed_seconds) * 4.0) % 1.0
-    root_x = width * (-0.22 + 0.44 * _smootherstep(progress))
+    if action_name == "jump":
+        root_y_ratio = _interpolate_action_keyframes(
+            phase,
+            [
+                (0.0, 0.0),
+                (0.18, 0.0),
+                (0.38, -0.13),
+                (0.55, -0.23),
+                (0.78, -0.12),
+                (1.0, 0.0),
+            ],
+        )
+        lift = abs(root_y_ratio)
+        return {
+            "x": 0.0,
+            "y": root_y_ratio * height,
+            "angle": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "shadow_scale": max(0.52, 1.0 - lift * 2.0),
+            "shadow_opacity": max(38.0, 92.0 - lift * 210.0),
+        }
+
+    if action_name == "magic":
+        energy = math.sin(math.pi * phase)
+        return {
+            "x": 0.0,
+            "y": -energy * height * 0.008,
+            "angle": 0.0,
+            "scale_x": 1.0 + energy * 0.012,
+            "scale_y": 1.0 + energy * 0.012,
+            "shadow_scale": 1.0 - energy * 0.025,
+            "shadow_opacity": 92.0 - energy * 5.0,
+        }
+
+    pose_bounce = (
+        (0.0, -3.5, -0.5, -2.5)
+        if action_name == "walk"
+        else (0.0, -5.0, -9.0, -1.0, -5.0, -9.0)
+    )
+    step_rate = 4.0 if action_name == "walk" else 7.5
+    step_phase = (max(0.0, elapsed_seconds) * step_rate) % 1.0
+    travel_progress = _smootherstep(progress)
+    root_x = width * (
+        travel_start + (travel_end - travel_start) * travel_progress
+    )
     root_y = (
         pose_bounce[frame_index % len(pose_bounce)]
-        - 0.7 * math.sin(step_phase * math.pi)
+        - (0.7 if action_name == "walk" else 1.3)
+        * math.sin(step_phase * math.pi)
     ) * height / 384.0
     return {
         "x": root_x,
@@ -507,10 +631,87 @@ def _action_cycle_motion(
         "angle": 0.0,
         "scale_x": 1.0,
         "scale_y": 1.0,
-        "shadow_scale": 0.96
-        + 0.04 * math.cos(math.tau * max(0.0, elapsed_seconds)),
+        "shadow_scale": 0.94
+        + 0.06 * math.cos(math.tau * max(0.0, elapsed_seconds) * step_rate / 4.0),
         "shadow_opacity": 92.0,
     }
+
+
+def _prepare_action_segments(
+    raw_segments: List[Dict[str, Any]],
+    Image,
+    *,
+    width: int,
+    height: int,
+) -> List[Dict[str, Any]]:
+    prepared = []
+    for segment in raw_segments:
+        action_bytes = segment.get("bytes")
+        if not isinstance(action_bytes, bytes) or not action_bytes:
+            continue
+        try:
+            frames, position = _prepare_action_cycle_frames(
+                action_bytes,
+                Image,
+                width=width,
+                height=height,
+                layout=segment.get("layout"),
+                frame_count=segment.get("frame_count"),
+            )
+        except Exception:
+            continue
+        if not frames or position is None:
+            continue
+        try:
+            cycle_seconds = float(segment.get("cycle_seconds") or 0.0)
+        except (TypeError, ValueError):
+            cycle_seconds = 0.0
+        prepared.append(
+            {
+                "name": str(segment.get("name") or "walk"),
+                "frames": frames,
+                "position": position,
+                "cycle_seconds": cycle_seconds or None,
+            }
+        )
+    return prepared
+
+
+def _resolve_action_segment(
+    frame_index: int,
+    total_frames: int,
+    segment_count: int,
+) -> Tuple[int, float]:
+    if segment_count <= 1:
+        return 0, frame_index / max(total_frames - 1, 1)
+    segment_index = min(
+        segment_count - 1,
+        frame_index * segment_count // max(total_frames, 1),
+    )
+    segment_start = round(total_frames * segment_index / segment_count)
+    segment_end = round(total_frames * (segment_index + 1) / segment_count)
+    local_progress = (frame_index - segment_start) / max(
+        segment_end - segment_start - 1,
+        1,
+    )
+    return segment_index, min(1.0, max(0.0, local_progress))
+
+
+def _action_travel_bounds(
+    action_name: Optional[str],
+    segment_index: int,
+    segment_count: int,
+) -> Tuple[float, float]:
+    if action_name not in {"walk", "run"}:
+        return 0.0, 0.0
+    distance = 0.18 if action_name == "run" else 0.22
+    if segment_count <= 1:
+        return -distance, distance
+    if segment_index == 0:
+        return -distance, 0.0
+    if segment_index == segment_count - 1:
+        return 0.0, distance
+    return 0.0, 0.0
 
 
 def _render_layered_frame(
@@ -594,6 +795,7 @@ def _generate_local_video_bytes(
     action_cycle_name: Optional[str] = None,
     action_cycle_layout: Optional[str] = None,
     action_cycle_frame_count: Optional[int] = None,
+    action_cycle_segments: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[bytes, str]:
     imageio, np, Image, ImageEnhance, ImageOps = _load_video_dependencies()
     width = _even_dimension(width)
@@ -624,21 +826,26 @@ def _generate_local_video_bytes(
                 "Generated image bytes could not be opened for video rendering."
             ) from exc
     motion_preset = select_motion_preset(story_text)
-    action_frames = []
-    action_position = None
-    if layered_scene is not None and action_cycle_bytes:
-        try:
-            action_frames, action_position = _prepare_action_cycle_frames(
-                action_cycle_bytes,
-                Image,
-                width=render_width,
-                height=render_height,
-                layout=action_cycle_layout,
-                frame_count=action_cycle_frame_count,
-            )
-        except Exception:
-            action_frames = []
-            action_position = None
+    raw_action_segments = list(action_cycle_segments or [])
+    if not raw_action_segments and action_cycle_bytes:
+        raw_action_segments.append(
+            {
+                "bytes": action_cycle_bytes,
+                "name": action_cycle_name,
+                "layout": action_cycle_layout,
+                "frame_count": action_cycle_frame_count,
+            }
+        )
+    prepared_action_segments = (
+        _prepare_action_segments(
+            raw_action_segments,
+            Image,
+            width=render_width,
+            height=render_height,
+        )
+        if layered_scene is not None
+        else []
+    )
 
     with tempfile.TemporaryDirectory(prefix="fairytale_video_") as temp_dir:
         output_path = Path(temp_dir) / "scene.mp4"
@@ -657,22 +864,50 @@ def _generate_local_video_bytes(
                 action_motion = None
                 if layered_scene is not None:
                     background, character, position = layered_scene
-                    if action_frames and action_position is not None:
-                        elapsed_seconds = index / frame_rate
-                        action_index = _action_cycle_frame_index(
-                            action_cycle_name,
-                            elapsed_seconds,
-                            len(action_frames),
+                    if prepared_action_segments:
+                        segment_index, local_progress = _resolve_action_segment(
+                            index,
+                            total_frames,
+                            len(prepared_action_segments),
                         )
-                        character = action_frames[action_index]
-                        position = action_position
+                        segment = prepared_action_segments[segment_index]
+                        action_name = segment["name"]
+                        segment_duration = (
+                            total_frames
+                            / frame_rate
+                            / len(prepared_action_segments)
+                        )
+                        local_elapsed_seconds = local_progress * segment_duration
+                        cycle_progress = (
+                            local_progress
+                            if len(prepared_action_segments) > 1
+                            else None
+                        )
+                        action_index = _action_cycle_frame_index(
+                            action_name,
+                            local_elapsed_seconds,
+                            len(segment["frames"]),
+                            cycle_seconds=segment["cycle_seconds"],
+                            cycle_progress=cycle_progress,
+                        )
+                        character = segment["frames"][action_index]
+                        position = segment["position"]
+                        travel_start, travel_end = _action_travel_bounds(
+                            action_name,
+                            segment_index,
+                            len(prepared_action_segments),
+                        )
                         action_motion = _action_cycle_motion(
-                            action_cycle_name,
-                            elapsed_seconds=elapsed_seconds,
-                            progress=progress,
+                            action_name,
+                            elapsed_seconds=local_elapsed_seconds,
+                            progress=local_progress,
                             width=render_width,
                             height=render_height,
                             frame_index=action_index,
+                            cycle_seconds=segment["cycle_seconds"],
+                            cycle_progress=cycle_progress,
+                            travel_start=travel_start,
+                            travel_end=travel_end,
                         )
                     frame = _render_layered_frame(
                         background=background,
@@ -712,7 +947,9 @@ def _generate_local_video_bytes(
         video_bytes = output_path.read_bytes()
         if not video_bytes:
             raise HfMediaError("Local video renderer returned an empty MP4 file.")
-        if action_frames:
+        if len(prepared_action_segments) > 1:
+            animation_mode = "profile_action_sequence"
+        elif prepared_action_segments:
             animation_mode = "profile_action_cycle"
         elif layered_scene is not None:
             animation_mode = "identity_safe_character_parallax"
@@ -739,6 +976,7 @@ async def generate_hf_fairytale_video(
     action_cycle_name: Optional[str] = None,
     action_cycle_layout: Optional[str] = None,
     action_cycle_frame_count: Optional[int] = None,
+    action_cycle_segments: Optional[List[Dict[str, Any]]] = None,
     timeout_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     if not image_bytes:
@@ -776,6 +1014,7 @@ async def generate_hf_fairytale_video(
                 action_cycle_name=action_cycle_name,
                 action_cycle_layout=action_cycle_layout,
                 action_cycle_frame_count=action_cycle_frame_count,
+                action_cycle_segments=action_cycle_segments,
             ),
             timeout=normalized_timeout,
         )
@@ -785,6 +1024,13 @@ async def generate_hf_fairytale_video(
         ) from exc
     motion_preset = select_motion_preset(story_text)
     normalized_rate = min(max(int(normalized_frame_rate), 6), 30)
+    action_cycle_names = [
+        str(segment.get("name"))
+        for segment in (action_cycle_segments or [])
+        if segment.get("name")
+    ]
+    if not action_cycle_names and action_cycle_name:
+        action_cycle_names = [action_cycle_name]
 
     return {
         "video_bytes": video_bytes,
@@ -808,19 +1054,48 @@ async def generate_hf_fairytale_video(
             "character_motion": animation_mode in {
                 "identity_safe_character_parallax",
                 "profile_action_cycle",
+                "profile_action_sequence",
             },
             "character_identity_locked": (
                 animation_mode
-                in {"identity_safe_character_parallax", "profile_action_cycle"}
+                in {
+                    "identity_safe_character_parallax",
+                    "profile_action_cycle",
+                    "profile_action_sequence",
+                }
             ),
             "action_cycle_name": (
-                action_cycle_name
-                if animation_mode == "profile_action_cycle"
+                action_cycle_names[0]
+                if animation_mode
+                in {"profile_action_cycle", "profile_action_sequence"}
+                and action_cycle_names
                 else None
             ),
+            "action_cycle_names": (
+                action_cycle_names
+                if animation_mode
+                in {"profile_action_cycle", "profile_action_sequence"}
+                else []
+            ),
+            "action_segment_count": (
+                len(action_cycle_names)
+                if animation_mode
+                in {"profile_action_cycle", "profile_action_sequence"}
+                else 0
+            ),
             "action_cycle_frame_count": (
-                action_cycle_frame_count
-                if animation_mode == "profile_action_cycle"
+                (
+                    action_cycle_segments[0].get("frame_count")
+                    if action_cycle_segments
+                    else action_cycle_frame_count
+                )
+                if animation_mode
+                in {"profile_action_cycle", "profile_action_sequence"}
+                else None
+            ),
+            "transition_mode": (
+                "ready-recovery-root-aligned"
+                if animation_mode == "profile_action_sequence"
                 else None
             ),
             "seed": seed,

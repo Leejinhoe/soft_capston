@@ -1,4 +1,5 @@
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict, List, Optional
 
 
 POSE_ACTION_KEYWORDS = {
@@ -68,49 +69,115 @@ ACTION_GROUP_KEYWORDS = (
         ),
     ),
     (
-        "walk",
+        "run",
         (
-            "walk",
-            "walking",
-            "stroll",
-            "journey",
             "run",
+            "runs",
             "running",
             "sprint",
             "dash",
-            "\uac77",
-            "\uac78\uc5b4",
-            "\uc0b0\ucc45",
-            "\uc5ec\ud589",
             "\ub2ec\ub9ac",
             "\ub6f0",
         ),
     ),
+    (
+        "jump",
+        (
+            "jump",
+            "jumps",
+            "jumping",
+            "leap",
+            "hop",
+            "\uc810\ud504",
+            "\ub6f0\uc5b4",
+            "\ub3c4\uc57d",
+        ),
+    ),
+    (
+        "magic",
+        (
+            "magic",
+            "spell",
+            "cast",
+            "casts",
+            "casting",
+            "\ub9c8\ubc95",
+            "\uc8fc\ubb38",
+        ),
+    ),
+    (
+        "walk",
+        (
+            "walk",
+            "walks",
+            "walking",
+            "stroll",
+            "journey",
+            "\uac77",
+            "\uac78\uc5b4",
+            "\uc0b0\ucc45",
+            "\uc5ec\ud589",
+        ),
+    ),
 )
+
+ACTION_CONTEXT_ALIASES = {
+    "fight": {"fight", "fighting", "battle", "combat", "attack", "defending"},
+    "run": {"run", "running", "sprint", "dash"},
+    "jump": {"jump", "jumping", "leap", "hop"},
+    "magic": {"magic", "spell", "casting_magic", "cast"},
+    "walk": {"walk", "walking", "journey", "travel"},
+}
+
+
+def detect_character_action_groups(
+    story_text: str,
+    visual_context: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    normalized_story = " ".join(story_text.lower().split())
+    matches = []
+    for action_group, keywords in ACTION_GROUP_KEYWORDS:
+        positions = []
+        for keyword in keywords:
+            if not keyword:
+                continue
+            if keyword.isascii():
+                match = re.search(
+                    rf"\b{re.escape(keyword)}\b",
+                    normalized_story,
+                )
+                position = match.start() if match else -1
+            else:
+                position = normalized_story.find(keyword)
+            if position >= 0:
+                positions.append(position)
+        if positions:
+            matches.append((min(positions), action_group))
+
+    context_actions = {
+        str(action).strip().lower().replace("-", "_")
+        for action in (visual_context or {}).get("action_tags", [])
+        if str(action).strip()
+    }
+    context_position = len(normalized_story) + 1
+    for action_group, aliases in ACTION_CONTEXT_ALIASES.items():
+        if context_actions.intersection(aliases):
+            matches.append((context_position, action_group))
+            context_position += 1
+
+    ordered_groups = []
+    for _, action_group in sorted(matches, key=lambda item: item[0]):
+        if action_group not in ordered_groups:
+            ordered_groups.append(action_group)
+    return ordered_groups
 
 
 def detect_character_action_group(
     story_text: str,
     visual_context: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
-    normalized_story = " ".join(story_text.lower().split())
-    context_actions = {
-        str(action).strip().lower().replace("-", "_")
-        for action in (visual_context or {}).get("action_tags", [])
-        if str(action).strip()
-    }
-    if context_actions.intersection(
-        {"fight", "fighting", "battle", "combat", "attack", "defending"}
-    ):
-        return "fight"
-    if context_actions.intersection(
-        {"walk", "walking", "run", "running", "journey", "travel"}
-    ):
-        return "walk"
-    for action_group, keywords in ACTION_GROUP_KEYWORDS:
-        if any(keyword in normalized_story for keyword in keywords):
-            return action_group
-    return None
+    action_groups = detect_character_action_groups(story_text, visual_context)
+    return action_groups[0] if action_groups else None
 
 
 def select_premium_reference_asset(
@@ -137,24 +204,48 @@ def select_character_action_cycle(
     story_text: str,
     visual_context: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
+    action_cycles = select_character_action_cycles(
+        profile,
+        story_text,
+        visual_context,
+    )
+    return action_cycles[0] if action_cycles else None
+
+
+def select_character_action_cycles(
+    profile: Optional[Dict[str, Any]],
+    story_text: str,
+    visual_context: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     if not profile:
-        return None
-    action_group = detect_character_action_group(story_text, visual_context)
-    if not action_group:
-        return None
+        return []
+    action_groups = detect_character_action_groups(story_text, visual_context)
+    if not action_groups:
+        return []
     assets = profile.get("assets")
     if not isinstance(assets, list):
-        return None
-    return next(
-        (
+        return []
+
+    selected = []
+    for action_group in action_groups:
+        candidates = [
             asset
             for asset in assets
             if asset.get("quality_tier") == "premium_action_cycle"
             and asset.get("animation_group") == action_group
             and asset.get("image_file_id")
-        ),
-        None,
-    )
+        ]
+        if candidates:
+            selected.append(
+                max(
+                    candidates,
+                    key=lambda asset: (
+                        int(asset.get("animation_version") or 1),
+                        int(asset.get("animation_frame_count") or 0),
+                    ),
+                )
+            )
+    return selected
 
 
 def select_character_asset(

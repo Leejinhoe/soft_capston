@@ -92,11 +92,19 @@ class CharacterCatalogTests(unittest.TestCase):
                 if profile["character_key"] == "male_01":
                     self.assertEqual(
                         {asset["animation_group"] for asset in action_cycles},
-                        {"walk", "fight"},
+                        {"walk", "fight", "run", "jump", "magic"},
                     )
-                    self.assertTrue(
-                        all(asset["animation_frame_count"] == 4 for asset in action_cycles)
+                    preferred_fight = max(
+                        (
+                            asset
+                            for asset in action_cycles
+                            if asset["animation_group"] == "fight"
+                        ),
+                        key=lambda asset: asset["animation_version"],
                     )
+                    self.assertEqual(preferred_fight["animation_version"], 2)
+                    self.assertEqual(preferred_fight["animation_frame_count"], 6)
+                    self.assertEqual(preferred_fight["animation_layout"], "3x2")
                 else:
                     self.assertEqual(action_cycles, [])
                 fast_action_filenames = [

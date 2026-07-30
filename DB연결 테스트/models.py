@@ -56,6 +56,12 @@ class CharacterAssetSchema(BaseModel):
     animation_group: Optional[str] = Field(default=None, max_length=40)
     animation_layout: Optional[str] = Field(default=None, max_length=20)
     animation_frame_count: Optional[int] = Field(default=None, ge=2, le=16)
+    animation_version: Optional[int] = Field(default=None, ge=1, le=100)
+    animation_cycle_seconds: Optional[float] = Field(
+        default=None,
+        ge=0.25,
+        le=15.0,
+    )
     tags: List[str] = Field(default_factory=list)
     scene_keywords: List[str] = Field(default_factory=list)
 
