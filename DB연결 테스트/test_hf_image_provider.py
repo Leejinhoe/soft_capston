@@ -35,6 +35,20 @@ class FakeClient:
 
 
 class HuggingFaceImageProviderTests(unittest.IsolatedAsyncioTestCase):
+    def test_prompt_includes_stable_character_context(self):
+        prompt = hf_image_provider.build_fairytale_image_prompt(
+            story_text="The child enters a moonlit library.",
+            genre="fantasy",
+            age="7",
+            character_description="A child with short brown hair and a red cloak",
+            character_style_prompt="soft watercolor with rounded shapes",
+            character_action_hint="waving pose, joyful expression",
+        )
+
+        self.assertIn("short brown hair and a red cloak", prompt)
+        self.assertIn("soft watercolor with rounded shapes", prompt)
+        self.assertIn("waving pose, joyful expression", prompt)
+
     async def test_transient_error_uses_next_provider(self):
         calls = []
 

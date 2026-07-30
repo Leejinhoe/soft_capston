@@ -14,6 +14,7 @@ import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'psych_page.dart';
 import 'services/db_service.dart';
+import 'widgets/story_cast_widget.dart';
 
 enum _NarrationTarget { currentChapter, fullStory }
 
@@ -82,8 +83,9 @@ class _StoryPageState extends State<StoryPage> {
   Future<void> _initTts() async {
     try {
       await _narrationPlayer.setReleaseMode(ReleaseMode.stop);
-      _ttsCompletionSubscription =
-          _narrationPlayer.onPlayerComplete.listen((_) {
+      _ttsCompletionSubscription = _narrationPlayer.onPlayerComplete.listen((
+        _,
+      ) {
         if (!mounted) return;
         setState(() {
           _ttsSpeaking = false;
@@ -143,11 +145,7 @@ class _StoryPageState extends State<StoryPage> {
     header.setUint16(20, 1, Endian.little);
     header.setUint16(22, channels, Endian.little);
     header.setUint32(24, sampleRate, Endian.little);
-    header.setUint32(
-      28,
-      sampleRate * channels * bytesPerSample,
-      Endian.little,
-    );
+    header.setUint32(28, sampleRate * channels * bytesPerSample, Endian.little);
     header.setUint16(32, channels * bytesPerSample, Endian.little);
     header.setUint16(34, bytesPerSample * 8, Endian.little);
     writeAscii(36, 'data');
@@ -338,6 +336,22 @@ class _StoryPageState extends State<StoryPage> {
         ),
       );
     }
+    if (story.chapters.isEmpty) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg,
+          foregroundColor: Colors.white,
+          title: Text(story.initialPrompt),
+        ),
+        body: const Center(
+          child: Text(
+            '아직 생성된 장면이 없습니다.',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -356,6 +370,10 @@ class _StoryPageState extends State<StoryPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildChapterInfo(story),
+                        if (story.effectiveStoryCast.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          StoryCastWidget(members: story.effectiveStoryCast),
+                        ],
                         const SizedBox(height: 16),
                         _buildTtsPanel(story),
                         const SizedBox(height: 16),
@@ -705,9 +723,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                          currentChapterText,
-                          _NarrationTarget.currentChapter,
-                        ),
+                            currentChapterText,
+                            _NarrationTarget.currentChapter,
+                          ),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('현재 장'),
                   style: ElevatedButton.styleFrom(
@@ -721,9 +739,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                          story.fullStoryText,
-                          _NarrationTarget.fullStory,
-                        ),
+                            story.fullStoryText,
+                            _NarrationTarget.fullStory,
+                          ),
                   icon: const Icon(Icons.menu_book_rounded, size: 18),
                   label: const Text('전체'),
                   style: OutlinedButton.styleFrom(
@@ -905,9 +923,8 @@ class _StoryPageState extends State<StoryPage> {
           ...emotions.asMap().entries.map((entry) {
             final color = colors[entry.key % colors.length];
             final item = entry.value;
-            final label = item.labelDisplay.isNotEmpty
-                ? item.labelDisplay
-                : item.label;
+            final label =
+                item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
             final percent = item.score.clamp(0.0, 1.0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
@@ -962,9 +979,8 @@ class _StoryPageState extends State<StoryPage> {
     void collect(EmotionAnalysis? analysis) {
       if (analysis == null) return;
       for (final item in analysis.topEmotions.take(5)) {
-        final key = item.labelDisplay.isNotEmpty
-            ? item.labelDisplay
-            : item.label;
+        final key =
+            item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
         totals[key] = (totals[key] ?? 0) + item.score;
         counts[key] = (counts[key] ?? 0) + 1;
         indexes[key] = item.labelIndex;
@@ -989,7 +1005,8 @@ class _StoryPageState extends State<StoryPage> {
         labelDisplay: displays[entry.key] ?? entry.key,
         score: double.parse(score.toStringAsFixed(3)),
       );
-    }).toList()..sort((a, b) => b.score.compareTo(a.score));
+    }).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
 
     return result.take(5).toList();
   }

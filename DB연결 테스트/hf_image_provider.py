@@ -50,15 +50,27 @@ def build_fairytale_image_prompt(
     story_text: str,
     genre: Optional[str] = None,
     age: Optional[str] = None,
+    character_description: Optional[str] = None,
+    character_style_prompt: Optional[str] = None,
+    character_action_hint: Optional[str] = None,
 ) -> str:
     scene = " ".join(story_text.split())[:700]
     genre_text = f"{genre} fairytale" if genre else "fairytale"
     age_text = f"for {age} year old children" if age else "for children"
+    character_text = ""
+    if character_description:
+        character_text = f", recurring main character: {' '.join(character_description.split())[:500]}"
+    style_text = ""
+    if character_style_prompt:
+        style_text = f", fixed visual style: {' '.join(character_style_prompt.split())[:300]}"
+    action_text = ""
+    if character_action_hint:
+        action_text = f", character action: {' '.join(character_action_hint.split())[:160]}"
     return (
         "warm children's book illustration, soft cinematic lighting, "
         "gentle whimsical mood, clear main character, expressive face, "
         "storybook background, no text, no watermark, "
-        f"{genre_text}, {age_text}, scene: {scene}"
+        f"{genre_text}, {age_text}{character_text}{style_text}{action_text}, scene: {scene}"
     )
 
 
@@ -106,6 +118,9 @@ async def generate_hf_fairytale_image(
     story_text: str,
     genre: Optional[str] = None,
     age: Optional[str] = None,
+    character_description: Optional[str] = None,
+    character_style_prompt: Optional[str] = None,
+    character_action_hint: Optional[str] = None,
     width: int = 512,
     height: int = 512,
     steps: int = 1,
@@ -120,6 +135,9 @@ async def generate_hf_fairytale_image(
         story_text=story_text,
         genre=genre,
         age=age,
+        character_description=character_description,
+        character_style_prompt=character_style_prompt,
+        character_action_hint=character_action_hint,
     )
     parameters: Dict[str, Any] = {
         "width": int(width),

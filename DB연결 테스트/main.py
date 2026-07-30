@@ -1,27 +1,44 @@
 ﻿import asyncio
 import hashlib
+import base64
 import hmac
+import json
 import logging
+import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from bson import ObjectId
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from gridfs.errors import NoFile
 from pydantic import BaseModel
 from pymongo import ReturnDocument
 
+from account_moderation import (
+    DELETED_NICKNAME,
+    build_soft_delete_fields,
+    serialize_report,
+    serialize_warning,
+)
+from background_assets import select_background_asset
+from character_assets import build_character_action_hint, select_character_asset
+from character_seed import DEFAULT_CHARACTERS, seed_default_character_profiles
 from database import (
+    character_profiles_collection,
     community_posts_collection,
     init_database,
     media_files_bucket,
     media_jobs_collection,
+    reports_collection,
     stories_collection,
+    user_warnings_collection,
     users_collection,
+    visual_vocabulary_collection,
     vocabularies_collection,
 )
 from media_queue import (
@@ -33,6 +50,7 @@ from media_queue import (
     serialize_object_id,
     serialize_optional_datetime,
 )
+from media_compositor import compose_story_scene
 from hf_media_provider import (
     HfMediaError,
     generate_hf_fairytale_image,
@@ -40,16 +58,29 @@ from hf_media_provider import (
     get_hf_media_config,
 )
 from models import (
+    AccountWithdrawalSchema,
+    CharacterProfileUpsertSchema,
     CommunityCommentSchema,
     CommunityPostSchema,
+    CommunityReportSchema,
     LoginSchema,
     MediaGenerationSchema,
     MediaGenerationWithStorySchema,
+    ReportResolutionSchema,
     SceneSchema,
+    StoryCharactersSchema,
     StorySchema,
     UserSchema,
     VocabularySchema,
+    WarningCreateSchema,
+    WarningResolutionSchema,
 )
+from story_cast import (
+    build_story_cast,
+    normalize_story_characters,
+    select_story_cast_member,
+)
+from visual_vocabulary_seed import load_visual_context, sync_visual_vocabulary
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +96,44 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def protect_sensitive_routes(request: Request, call_next):
+    path = request.url.path
+    method = request.method.upper()
+    is_admin_route = path.startswith("/api/admin/")
+    user_match = re.fullmatch(r"/api/users/([^/]+)(?:/(?:profile|password))?", path)
+    is_user_write = bool(user_match and method in {"DELETE", "PUT", "PATCH"})
+    is_cast_write = bool(
+        method == "PUT"
+        and re.fullmatch(r"/api/stories/[0-9a-fA-F]{24}/characters", path)
+    )
+    if not (is_admin_route or is_user_write or is_cast_write):
+        return await call_next(request)
+
+    try:
+        auth = verify_access_token(request.headers.get("authorization"))
+    except Exception:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication is required."},
+        )
+
+    if is_admin_route and auth.get("account_id") != ADMIN_ACCOUNT_ID:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Administrator permission is required."},
+        )
+    if is_user_write and user_match:
+        requested_account_id = user_match.group(1)
+        if auth.get("account_id") != requested_account_id:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "You can only modify your own account."},
+            )
+    request.state.auth = auth
+    return await call_next(request)
 
 
 class UserUpdateSchema(BaseModel):
@@ -110,6 +179,16 @@ GENRE_EMOJIS = {
 PASSWORD_ALGORITHM = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 120_000
 ADMIN_ACCOUNT_ID = "1111"
+AUTH_TOKEN_TTL_SECONDS = 24 * 60 * 60
+_auth_secret_source = (
+    os.getenv("APP_AUTH_SECRET")
+    or os.getenv("MONGO_DETAILS")
+    or os.getenv("MONGO_URI")
+    or secrets.token_urlsafe(48)
+)
+AUTH_TOKEN_SECRET = hashlib.sha256(
+    f"fairytale-auth-v1|{_auth_secret_source}".encode("utf-8")
+).digest()
 MEDIA_JOB_SYNC_INTERVAL_SECONDS = 5
 MEDIA_GENERATION_WORKER_INTERVAL_SECONDS = 2
 MEDIA_JOB_STALE_SECONDS = 15 * 60
@@ -145,6 +224,52 @@ def verify_password(password: str, saved_password: str) -> bool:
 
     # 湲곗〈 DB???됰Ц?쇰줈 ?ㅼ뼱媛?鍮꾨?踰덊샇??濡쒓렇?몄? ?덉슜?섍퀬, ?깃났 ???댁떆濡??낃렇?덉씠?쒗븳??
     return hmac.compare_digest(saved_password, password)
+
+
+def issue_access_token(user: Dict[str, Any]) -> str:
+    payload = {
+        "uid": str(user["_id"]),
+        "account_id": str(user.get("account_id") or ""),
+        "exp": int(time.time()) + AUTH_TOKEN_TTL_SECONDS,
+    }
+    payload_bytes = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(payload_bytes).rstrip(b"=")
+    signature = hmac.new(AUTH_TOKEN_SECRET, encoded, hashlib.sha256).digest()
+    return (
+        f"{encoded.decode('ascii')}."
+        f"{base64.urlsafe_b64encode(signature).rstrip(b'=').decode('ascii')}"
+    )
+
+
+def verify_access_token(authorization: Optional[str]) -> Dict[str, Any]:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise ValueError("Missing bearer token.")
+    token = authorization.split(" ", 1)[1].strip()
+    encoded, encoded_signature = token.split(".", 1)
+    expected = hmac.new(
+        AUTH_TOKEN_SECRET,
+        encoded.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    signature = base64.urlsafe_b64decode(
+        encoded_signature + "=" * (-len(encoded_signature) % 4)
+    )
+    if not hmac.compare_digest(expected, signature):
+        raise ValueError("Invalid token signature.")
+    payload_bytes = base64.urlsafe_b64decode(
+        encoded + "=" * (-len(encoded) % 4)
+    )
+    payload = json.loads(payload_bytes.decode("utf-8"))
+    if int(payload.get("exp") or 0) <= int(time.time()):
+        raise ValueError("Expired token.")
+    if not payload.get("uid") or not payload.get("account_id"):
+        raise ValueError("Incomplete token.")
+    return payload
 
 
 def owner_matches(document_user_id, requested_user_id: Optional[str]) -> bool:
@@ -203,6 +328,119 @@ def normalize_media_story_target(
         )
 
     return normalized_story_id, step_number
+
+
+def normalize_character_key(character_key: str) -> str:
+    normalized = character_key.strip().lower()
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+    if (
+        not normalized
+        or len(normalized) > 64
+        or normalized[0] not in set("abcdefghijklmnopqrstuvwxyz0123456789")
+        or any(character not in allowed for character in normalized)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="character_key must use lowercase letters, numbers, hyphens, or underscores.",
+        )
+    return normalized
+
+
+def normalize_story_character_overrides(value: Any) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, str] = {}
+    for raw_role, raw_character_key in value.items():
+        role = str(raw_role).strip().lower()
+        character_key = str(raw_character_key).strip()
+        if not role or not character_key:
+            continue
+        normalized[role[:40]] = normalize_character_key(character_key)
+    return normalized
+
+
+def serialize_character_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": serialize_object_id(profile.get("_id")),
+        "character_key": profile.get("character_key"),
+        "name": profile.get("name"),
+        "gender": profile.get("gender"),
+        "age_group": profile.get("age_group"),
+        "role_tags": profile.get("role_tags", []),
+        "description": profile.get("description"),
+        "style_prompt": profile.get("style_prompt"),
+        "genres": profile.get("genres", []),
+        "assets": profile.get("assets", []),
+        "active": bool(profile.get("active", True)),
+        "created_at": serialize_optional_datetime(profile.get("created_at")),
+        "updated_at": serialize_optional_datetime(profile.get("updated_at")),
+    }
+
+
+async def load_active_character_profile(
+    character_key: Optional[str],
+    genre: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    if character_key:
+        normalized = normalize_character_key(character_key)
+        return await character_profiles_collection.find_one(
+            {"character_key": normalized, "active": True}
+        )
+    if genre and genre.strip():
+        return await character_profiles_collection.find_one(
+            {"genres": genre.strip().lower(), "active": True},
+            sort=[("updated_at", -1)],
+        )
+    return None
+
+
+async def ensure_active_character_profile(character_key: Optional[str]) -> None:
+    if character_key and not await load_active_character_profile(character_key):
+        raise HTTPException(status_code=404, detail="Active character profile not found.")
+
+
+async def build_persistent_story_cast(
+    characters: Dict[str, str],
+    genre: Optional[str],
+    character_overrides: Optional[Dict[str, str]] = None,
+) -> list:
+    normalized = normalize_story_characters(characters)
+    if not normalized:
+        return []
+    overrides = normalize_story_character_overrides(character_overrides)
+    profiles = await character_profiles_collection.find(
+        {"active": True, "assets.0": {"$exists": True}}
+    ).to_list(length=100)
+    available_keys = {
+        str(profile.get("character_key") or "").strip().lower()
+        for profile in profiles
+    }
+    unavailable = sorted(set(overrides.values()).difference(available_keys))
+    if unavailable:
+        raise HTTPException(
+            status_code=409,
+            detail="Selected character profile is not available.",
+        )
+    return build_story_cast(
+        normalized,
+        profiles,
+        genre=genre,
+        character_overrides=overrides,
+    )
+
+
+async def load_story_cast_member(
+    story_id: Optional[str],
+    story_text: str,
+) -> Optional[Dict[str, Any]]:
+    if not story_id or not ObjectId.is_valid(story_id):
+        return None
+    story = await stories_collection.find_one(
+        {"_id": ObjectId(story_id)},
+        {"story_cast": 1},
+    )
+    return select_story_cast_member((story or {}).get("story_cast"), story_text)
 
 
 async def ensure_story_scene_exists(story_id: str, step_number: int):
@@ -270,6 +508,69 @@ async def upload_generated_media_file(
     }
 
 
+async def download_gridfs_file(file_id: str) -> bytes:
+    object_id = coerce_object_id(file_id)
+    if object_id is None:
+        raise ValueError(f"Invalid GridFS file id: {file_id}")
+    grid_out = await media_files_bucket.open_download_stream(object_id)
+    chunks = []
+    try:
+        while True:
+            chunk = await grid_out.readchunk()
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        close = getattr(grid_out, "close", None)
+        if callable(close):
+            close()
+    return b"".join(chunks)
+
+
+async def generate_composite_scene(
+    *,
+    selected_character_asset: Dict[str, Any],
+    genre: Optional[str],
+    story_text: str,
+    width: int,
+    height: int,
+    visual_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    image_file_id = selected_character_asset.get("image_file_id")
+    if not image_file_id:
+        raise ValueError("Selected character asset has no GridFS image_file_id.")
+    background_asset = select_background_asset(
+        genre,
+        story_text,
+        visual_context=visual_context,
+    )
+    if not background_asset:
+        raise FileNotFoundError(f"No local background is available for genre: {genre}")
+
+    character_bytes, background_bytes = await asyncio.gather(
+        download_gridfs_file(str(image_file_id)),
+        asyncio.to_thread(background_asset["path"].read_bytes),
+    )
+    image_bytes = await asyncio.to_thread(
+        compose_story_scene,
+        background_bytes,
+        character_bytes,
+        width=width,
+        height=height,
+    )
+    return {
+        "image_bytes": image_bytes,
+        "content_type": "image/png",
+        "provider": "local-composite",
+        "model": "storybook-asset-compositor-v1",
+        "inference_provider": "local",
+        "attempted_providers": [],
+        "image_mode": "local_composite",
+        "background_key": background_asset["key"],
+        "background_source": "bundled_asset",
+    }
+
+
 async def generate_and_store_backend_media(
     *,
     story_text: str,
@@ -277,6 +578,7 @@ async def generate_and_store_backend_media(
     step_number: Optional[int] = None,
     genre: Optional[str] = None,
     age: Optional[str] = None,
+    character_key: Optional[str] = None,
     include_video: bool = False,
     width: int = 512,
     height: int = 512,
@@ -290,16 +592,74 @@ async def generate_and_store_backend_media(
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     started_at = time.monotonic()
-    image_task = asyncio.create_task(generate_hf_fairytale_image(
-        story_text=story_text,
-        genre=genre,
-        age=age,
-        width=width,
-        height=height,
-        steps=flux_steps,
-        seed=seed,
-    ))
-    generated = await image_task
+    visual_context: Dict[str, Any] = {}
+    try:
+        visual_context = await load_visual_context(story_text)
+    except Exception:
+        logger.exception(
+            "Visual vocabulary matching failed for media job %s; using base selection.",
+            job_id,
+        )
+    story_cast_member = await load_story_cast_member(story_id, story_text)
+    if story_cast_member and story_cast_member.get("character_key"):
+        character_key = str(story_cast_member["character_key"])
+    character_profile = await load_active_character_profile(character_key, genre)
+    if character_key and not character_profile:
+        raise HfMediaError(f"Active character profile not found: {character_key}")
+    selected_character_asset = select_character_asset(
+        character_profile,
+        story_text,
+        visual_context=visual_context,
+    )
+    composite_error = None
+    if selected_character_asset:
+        try:
+            generated = await generate_composite_scene(
+                selected_character_asset=selected_character_asset,
+                genre=genre,
+                story_text=story_text,
+                width=width,
+                height=height,
+                visual_context=visual_context,
+            )
+        except Exception as exc:
+            composite_error = str(exc)
+            logger.warning(
+                "Local scene composition failed for media job %s; using HF fallback: %s",
+                job_id,
+                composite_error,
+            )
+            generated = await generate_hf_fairytale_image(
+                story_text=story_text,
+                genre=genre,
+                age=age,
+                character_description=(character_profile or {}).get("description"),
+                character_style_prompt=(character_profile or {}).get("style_prompt"),
+                character_action_hint=build_character_action_hint(
+                    selected_character_asset,
+                    visual_context=visual_context,
+                ),
+                width=width,
+                height=height,
+                steps=flux_steps,
+                seed=seed,
+            )
+            generated["image_mode"] = "hf_fallback"
+    else:
+        generated = await generate_hf_fairytale_image(
+            story_text=story_text,
+            genre=genre,
+            age=age,
+            character_action_hint=build_character_action_hint(
+                None,
+                visual_context=visual_context,
+            ),
+            width=width,
+            height=height,
+            steps=flux_steps,
+            seed=seed,
+        )
+        generated["image_mode"] = "hf_full_scene"
 
     video_generated = None
     video_error = None
@@ -374,8 +734,39 @@ async def generate_and_store_backend_media(
         video_status = "completed" if video_url else "failed"
     metadata = {
         "image_model": generated["model"],
+        "character_key": (character_profile or {}).get("character_key"),
+        "character_name": (character_profile or {}).get("name"),
+        "story_cast_role": (story_cast_member or {}).get("role"),
+        "story_character_name": (story_cast_member or {}).get("name"),
+        "story_character_description": (story_cast_member or {}).get(
+            "source_description"
+        ),
+        "character_identity_locked": bool(story_cast_member),
+        "character_asset_count": len((character_profile or {}).get("assets", [])),
+        "selected_character_asset": (
+            {
+                "pose": selected_character_asset.get("pose"),
+                "emotion": selected_character_asset.get("emotion"),
+                "image_file_id": selected_character_asset.get("image_file_id"),
+                "image_url": selected_character_asset.get("image_url"),
+            }
+            if selected_character_asset
+            else None
+        ),
         "image_provider": generated.get("inference_provider"),
         "image_provider_attempts": generated.get("attempted_providers", []),
+        "image_mode": generated.get("image_mode", "hf_full_scene"),
+        "background_key": generated.get("background_key"),
+        "background_source": generated.get("background_source"),
+        "composite_fallback_error": composite_error,
+        "visual_vocabulary": {
+            "matched_words": visual_context.get("matched_words", []),
+            "background_keys": visual_context.get("background_keys", []),
+            "action_tags": visual_context.get("action_tags", []),
+            "emotion_tags": visual_context.get("emotion_tags", []),
+            "effect_tags": visual_context.get("effect_tags", []),
+            "match_score": visual_context.get("match_score", 0),
+        },
         "video_model": video_generated["model"] if video_generated else None,
         "video_provider": video_generated["provider"] if video_generated else None,
         "provider": generated["provider"],
@@ -429,6 +820,7 @@ async def execute_media_generation(
     step_number: Optional[int] = None,
     genre: Optional[str] = None,
     age: Optional[str] = None,
+    character_key: Optional[str] = None,
     include_video: bool = False,
     width: int = 512,
     height: int = 512,
@@ -445,6 +837,7 @@ async def execute_media_generation(
         step_number=step_number,
         genre=genre,
         age=age,
+        character_key=character_key,
         include_video=include_video,
         width=width,
         height=height,
@@ -472,6 +865,7 @@ def build_media_job_document(
         "story_text": payload.story_text,
         "genre": payload.genre,
         "age": payload.age,
+        "character_key": payload.character_key,
         "include_video": payload.include_video,
         "width": payload.width,
         "height": payload.height,
@@ -489,6 +883,7 @@ def build_media_job_document(
         "story_text": payload.story_text,
         "genre": payload.genre,
         "age": payload.age,
+        "character_key": payload.character_key,
         "include_video": payload.include_video,
         "width": payload.width,
         "height": payload.height,
@@ -605,6 +1000,7 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
         step_number=step_number,
         genre=_media_job_request_value(job, "genre"),
         age=_media_job_request_value(job, "age"),
+        character_key=_media_job_request_value(job, "character_key"),
         include_video=bool(_media_job_request_value(job, "include_video", False)),
         width=int(_media_job_request_value(job, "width", 512)),
         height=int(_media_job_request_value(job, "height", 512)),
@@ -767,6 +1163,16 @@ async def media_job_sync_loop() -> None:
 async def startup_event():
     global media_job_sync_task, media_generation_worker_task
     await init_database()
+    try:
+        seeded_characters = await seed_default_character_profiles()
+        logger.info("Seeded %s default character profiles.", seeded_characters)
+    except Exception:
+        logger.exception("Default character profile seeding failed.")
+    try:
+        visual_sync = await sync_visual_vocabulary()
+        logger.info("Visual vocabulary sync completed: %s", visual_sync)
+    except Exception:
+        logger.exception("Visual vocabulary sync failed; base media selection remains active.")
     if media_job_sync_task is None or media_job_sync_task.done():
         media_job_sync_task = asyncio.create_task(media_job_sync_loop())
     if media_generation_worker_task is None or media_generation_worker_task.done():
@@ -798,6 +1204,96 @@ async def require_admin(account_id: Optional[str]):
         raise HTTPException(status_code=404, detail="愿由ъ옄 怨꾩젙??李얠쓣 ???놁뒿?덈떎.")
 
 
+async def soft_delete_user_account(
+    user: Dict[str, Any],
+    *,
+    reason: Optional[str],
+    deleted_by: str,
+) -> Dict[str, Any]:
+    user_id = str(user["_id"])
+    old_account_id = user.get("account_id")
+    now = datetime.utcnow()
+    anonymized_fields = build_soft_delete_fields(
+        user_id,
+        reason=reason,
+        deleted_by=deleted_by,
+        now=now,
+    )
+
+    story_result = await stories_collection.update_many(
+        {"user_id": user_id_filter(user_id)},
+        {
+            "$set": {
+                "author_nickname": DELETED_NICKNAME,
+                "owner_deleted": True,
+                "owner_deleted_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+    vocabulary_result = await vocabularies_collection.delete_many(
+        {"user_id": user_id_filter(user_id)}
+    )
+
+    anonymized_posts = 0
+    anonymized_comment_threads = 0
+    if old_account_id:
+        post_result = await community_posts_collection.update_many(
+            {"author_account_id": old_account_id},
+            {
+                "$set": {
+                    "author_name": DELETED_NICKNAME,
+                    "author_account_id": None,
+                    "author_deleted": True,
+                    "author_deleted_at": now,
+                }
+            },
+        )
+        anonymized_posts = post_result.modified_count
+        comment_result = await community_posts_collection.update_many(
+            {"comments.author_account_id": old_account_id},
+            {
+                "$set": {
+                    "comments.$[comment].author_name": DELETED_NICKNAME,
+                    "comments.$[comment].author_account_id": None,
+                    "comments.$[comment].author_deleted": True,
+                }
+            },
+            array_filters=[{"comment.author_account_id": old_account_id}],
+        )
+        anonymized_comment_threads = comment_result.modified_count
+        await community_posts_collection.update_many(
+            {"liked_by": old_account_id},
+            {
+                "$pull": {"liked_by": old_account_id},
+                "$inc": {"like_count": -1, "likes": -1},
+            },
+        )
+        await reports_collection.update_many(
+            {"reporter_account_id": old_account_id},
+            {
+                "$set": {
+                    "reporter_account_id": None,
+                    "reporter_deleted": True,
+                }
+            },
+        )
+
+    await users_collection.update_one(
+        {"_id": user["_id"]},
+        {"$set": anonymized_fields},
+    )
+    return {
+        "user_id": user_id,
+        "status": "deleted",
+        "anonymized_stories": story_result.modified_count,
+        "deleted_vocabularies": vocabulary_result.deleted_count,
+        "anonymized_posts": anonymized_posts,
+        "anonymized_comment_threads": anonymized_comment_threads,
+        "deleted_at": now,
+    }
+
+
 def serialize_admin_user(user: dict, story_count: int = 0, vocab_count: int = 0):
     return {
         "id": str(user["_id"]),
@@ -812,6 +1308,10 @@ def serialize_admin_user(user: dict, story_count: int = 0, vocab_count: int = 0)
         "last_login": serialize_optional_datetime(user.get("last_login")),
         "story_count": story_count,
         "vocab_count": vocab_count,
+        "account_status": user.get("account_status", "active"),
+        "warning_count": int(user.get("warning_count", 0) or 0),
+        "report_count": int(user.get("report_count", 0) or 0),
+        "deleted_at": serialize_optional_datetime(user.get("deleted_at")),
     }
 
 
@@ -844,7 +1344,7 @@ def serialize_admin_post(post: dict):
 
 @app.get("/")
 async def root():
-    return {"message": "?숉솕 ?앹꽦 API ?쒕쾭媛 ?뺤긽?곸쑝濡??ㅽ뻾 以묒엯?덈떎!"}
+    return {"message": "동화 생성 API 서버가 정상적으로 실행 중입니다."}
 
 
 @app.post("/api/users/register", response_description="Register user")
@@ -857,7 +1357,10 @@ async def register_user(user: UserSchema):
         "social_id": user.provider_id or user.account_id,
     }
     user_dict["last_login"] = None
-    user_dict["schema_version"] = 1
+    user_dict["account_status"] = "active"
+    user_dict["warning_count"] = 0
+    user_dict["report_count"] = 0
+    user_dict["schema_version"] = 2
 
     existing = await users_collection.find_one({"account_id": user.account_id})
     if existing:
@@ -877,21 +1380,27 @@ async def register_user(user: UserSchema):
                 {"_id": existing["_id"]},
                 {"$set": update_fields},
             )
+        auth_user = {**existing, **update_fields}
         return {
             "message": f"{user.nickname}?? 湲곗〈 怨꾩젙?쇰줈 濡쒓렇?몃릺?덉뒿?덈떎.",
             "account_id": user.account_id,
             "id": str(existing["_id"]),
             "status": "existing",
+            "access_token": issue_access_token(auth_user),
+            "token_type": "bearer",
         }
 
     result = await users_collection.insert_one(user_dict)
 
     if result.inserted_id:
+        created_user = {**user_dict, "_id": result.inserted_id}
         return {
             "message": f"{user.nickname}?? ?뚯썝媛?낆씠 ?깃났?곸쑝濡??꾨즺?섏뿀?듬땲??",
             "account_id": user.account_id,
             "id": str(result.inserted_id),
             "status": "created",
+            "access_token": issue_access_token(created_user),
+            "token_type": "bearer",
         }
 
     raise HTTPException(status_code=500, detail="?뚯썝媛???곗씠?곕쿋?댁뒪 ??μ뿉 ?ㅽ뙣?덉뒿?덈떎.")
@@ -902,6 +1411,8 @@ async def login_user(login_data: LoginSchema):
     user = await users_collection.find_one({"account_id": login_data.account_id})
     if not user:
         raise HTTPException(status_code=404, detail="媛?낅맂 怨꾩젙??李얠쓣 ???놁뒿?덈떎.")
+    if user.get("account_status") == "deleted":
+        raise HTTPException(status_code=410, detail="탈퇴한 계정입니다.")
 
     provider = user.get("provider", "local")
     if provider != "local":
@@ -936,7 +1447,41 @@ async def login_user(login_data: LoginSchema):
         "provider": provider,
         "phone": user.get("phone"),
         "address": user.get("address"),
+        "access_token": issue_access_token(user),
+        "token_type": "bearer",
     }
+
+
+@app.delete("/api/users/{account_id}", response_description="Withdraw user account")
+async def withdraw_user_account(
+    account_id: str,
+    withdrawal: AccountWithdrawalSchema,
+):
+    user = await users_collection.find_one({"account_id": account_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="가입된 계정을 찾을 수 없습니다.")
+    if user.get("account_id") == ADMIN_ACCOUNT_ID:
+        raise HTTPException(status_code=400, detail="관리자 계정은 탈퇴할 수 없습니다.")
+    if user.get("account_status") == "deleted":
+        return {
+            "message": "이미 탈퇴 처리된 계정입니다.",
+            "user_id": str(user["_id"]),
+            "status": "deleted",
+        }
+
+    if user.get("provider", "local") == "local":
+        if not withdrawal.password:
+            raise HTTPException(status_code=400, detail="비밀번호를 입력해야 합니다.")
+        saved_password = str(user.get("password") or "")
+        if not saved_password or not verify_password(withdrawal.password, saved_password):
+            raise HTTPException(status_code=401, detail="비밀번호가 일치하지 않습니다.")
+
+    result = await soft_delete_user_account(
+        user,
+        reason=withdrawal.reason,
+        deleted_by="self",
+    )
+    return {"message": "회원 탈퇴와 개인정보 익명화가 완료되었습니다.", **result}
 
 
 @app.put("/api/users/{account_id}/profile", response_description="?좎? 異붽? ?뺣낫 ?낅뜲?댄듃")
@@ -1082,6 +1627,9 @@ def serialize_story(story: dict, vocabularies: Optional[list] = None):
         "genre": story.get("genre", "?숉솕"),
         "age": story.get("target_age") or story.get("age", ""),
         "prompt": prompt_inputs.get("title", story.get("prompt", story.get("title", ""))),
+        "characters": story.get("characters", {}),
+        "character_overrides": story.get("character_overrides", {}),
+        "story_cast": story.get("story_cast", []),
         "created_at": serialize_datetime(story.get("created_at")),
         "scenes": [serialize_scene(scene) for scene in sorted_scenes],
         "vocab": [serialize_vocabulary(vocab) for vocab in vocabularies or []],
@@ -1121,6 +1669,15 @@ async def create_story(story: StorySchema):
 
     now = story.created_at or datetime.utcnow()
     user = await users_collection.find_one({"_id": ObjectId(story.user_id)})
+    characters = normalize_story_characters(story.characters)
+    character_overrides = normalize_story_character_overrides(
+        story.character_overrides
+    )
+    story_cast = await build_persistent_story_cast(
+        characters,
+        story.genre,
+        character_overrides,
+    )
     story_dict = {
         "user_id": story.user_id,
         "author_nickname": (user or {}).get("nickname", "?숉솕 移쒓뎄"),
@@ -1135,6 +1692,10 @@ async def create_story(story: StorySchema):
         "likes": 0,
         "comments": [],
         "community_post_id": None,
+        "characters": characters,
+        "character_overrides": character_overrides,
+        "story_cast": story_cast,
+        "character_identity_locked": bool(story_cast),
         "generation_status": "completed",
         "generation_meta": {
             "text_model": "fairytale-app",
@@ -1161,6 +1722,64 @@ async def create_story(story: StorySchema):
         }
 
     raise HTTPException(status_code=500, detail="?숉솕 ?몄뀡 ?앹꽦 ?곗씠?곕쿋?댁뒪 ?ㅻ쪟")
+
+
+@app.put(
+    "/api/stories/{story_id}/characters",
+    response_description="Save and lock story character identities",
+)
+async def save_story_characters(
+    story_id: str,
+    payload: StoryCharactersSchema,
+    request: Request,
+):
+    if not ObjectId.is_valid(story_id):
+        raise HTTPException(status_code=400, detail="Invalid story_id.")
+    story_object_id = ObjectId(story_id)
+    story = await stories_collection.find_one({"_id": story_object_id})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found.")
+    authenticated_user_id = str(request.state.auth.get("uid") or "")
+    if not owner_matches(story.get("user_id"), authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Only the story owner can update its cast.")
+
+    characters = normalize_story_characters(payload.characters)
+    if not characters:
+        raise HTTPException(status_code=400, detail="At least one character is required.")
+    character_overrides = (
+        normalize_story_character_overrides(payload.character_overrides)
+        if payload.character_overrides is not None
+        else normalize_story_character_overrides(story.get("character_overrides"))
+    )
+    story_cast = await build_persistent_story_cast(
+        characters,
+        story.get("genre"),
+        character_overrides,
+    )
+    if not story_cast:
+        raise HTTPException(
+            status_code=409,
+            detail="No active character image profiles are available.",
+        )
+
+    await stories_collection.update_one(
+        {"_id": story_object_id},
+        {
+            "$set": {
+                "characters": characters,
+                "character_overrides": character_overrides,
+                "story_cast": story_cast,
+                "character_identity_locked": True,
+                "updated_at": datetime.utcnow(),
+            }
+        },
+    )
+    return {
+        "story_id": story_id,
+        "characters": characters,
+        "story_cast": story_cast,
+        "character_identity_locked": True,
+    }
 
 
 @app.post("/api/stories/{story_id}/scenes", response_description="?숉솕 ?섏쐞 ?λ㈃ 異붽?")
@@ -1284,6 +1903,214 @@ async def stream_gridfs_file(file_id: str):
     return StreamingResponse(iterator(), media_type=content_type, headers=headers)
 
 
+@app.put("/api/media/characters/{character_key}")
+async def upsert_character_profile(
+    character_key: str,
+    payload: CharacterProfileUpsertSchema,
+):
+    normalized_key = normalize_character_key(character_key)
+    now = datetime.utcnow()
+    assets = []
+    for asset in payload.assets:
+        asset_data = asset.model_dump()
+        if not asset_data.get("image_file_id") and not asset_data.get("image_url"):
+            raise HTTPException(
+                status_code=400,
+                detail="Each character asset needs image_file_id or image_url.",
+            )
+        asset_data["tags"] = sorted(
+            {
+                tag.strip().lower()
+                for tag in asset_data.get("tags", [])
+                if tag.strip()
+            }
+        )
+        asset_data["scene_keywords"] = sorted(
+            {
+                keyword.strip().lower()
+                for keyword in asset_data.get("scene_keywords", [])
+                if keyword.strip()
+            }
+        )
+        assets.append(asset_data)
+
+    profile = await character_profiles_collection.find_one_and_update(
+        {"character_key": normalized_key},
+        {
+            "$set": {
+                "name": payload.name.strip(),
+                "description": payload.description.strip(),
+                "style_prompt": (
+                    payload.style_prompt.strip() if payload.style_prompt else None
+                ),
+                "genres": sorted(
+                    {genre.strip().lower() for genre in payload.genres if genre.strip()}
+                ),
+                "assets": assets,
+                "active": payload.active,
+                "updated_at": now,
+            },
+            "$setOnInsert": {
+                "character_key": normalized_key,
+                "created_at": now,
+            },
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return serialize_character_profile(profile)
+
+
+@app.get("/api/media/characters")
+async def list_character_profiles(active_only: bool = True, genre: Optional[str] = None):
+    query = {"active": True} if active_only else {}
+    if genre and genre.strip():
+        query["genres"] = genre.strip().lower()
+    profiles = await character_profiles_collection.find(query).sort(
+        "updated_at", -1
+    ).to_list(length=100)
+    return [serialize_character_profile(profile) for profile in profiles]
+
+
+@app.get("/api/media/characters/{character_key}")
+async def get_character_profile(character_key: str):
+    normalized_key = normalize_character_key(character_key)
+    profile = await character_profiles_collection.find_one(
+        {"character_key": normalized_key}
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Character profile not found.")
+    return serialize_character_profile(profile)
+
+
+@app.get("/api/media/readiness", response_description="Media preparation progress")
+async def media_readiness():
+    target_asset_count = 8
+    expected_characters = {
+        character["character_key"]: character for character in DEFAULT_CHARACTERS
+    }
+    profiles = await character_profiles_collection.find(
+        {"character_key": {"$in": list(expected_characters)}}
+    ).to_list(length=len(expected_characters))
+    profiles_by_key = {profile["character_key"]: profile for profile in profiles}
+
+    character_statuses = []
+    ready_profile_count = 0
+    ready_asset_count = 0
+    for character_key, expected in expected_characters.items():
+        profile = profiles_by_key.get(character_key, {})
+        asset_count = len(profile.get("assets", []))
+        ready = bool(profile.get("active")) and asset_count >= target_asset_count
+        ready_profile_count += int(ready)
+        ready_asset_count += min(asset_count, target_asset_count)
+        character_statuses.append(
+            {
+                "character_key": character_key,
+                "name": profile.get("name") or expected["name"],
+                "asset_count": asset_count,
+                "target_asset_count": target_asset_count,
+                "ready": ready,
+            }
+        )
+
+    target_profile_count = len(expected_characters)
+    target_total_assets = target_profile_count * target_asset_count
+    target_units = target_profile_count + target_total_assets
+    ready_units = ready_profile_count + ready_asset_count
+    progress_percent = round((ready_units / target_units) * 100) if target_units else 100
+
+    pending_count = await media_jobs_collection.count_documents({"status": "pending"})
+    running_count = await media_jobs_collection.count_documents({"status": "running"})
+    completed_count = await media_jobs_collection.count_documents({"status": "completed"})
+    failed_count = await media_jobs_collection.count_documents({"status": "failed"})
+    visual_total = await visual_vocabulary_collection.count_documents({})
+    visual_enabled = await visual_vocabulary_collection.count_documents({"enabled": True})
+    visual_usable = await visual_vocabulary_collection.count_documents(
+        {"enabled": True, "usable_for_image": True}
+    )
+    visual_ambiguous = await visual_vocabulary_collection.count_documents(
+        {"enabled": True, "ambiguous": True}
+    )
+
+    return {
+        "status": "ok",
+        "progress_percent": progress_percent,
+        "profiles": {
+            "ready": ready_profile_count,
+            "target": target_profile_count,
+        },
+        "assets": {
+            "ready": ready_asset_count,
+            "target": target_total_assets,
+        },
+        "worker": {
+            "running": bool(
+                media_generation_worker_task
+                and not media_generation_worker_task.done()
+            ),
+        },
+        "queue": {
+            "pending": pending_count,
+            "running": running_count,
+            "completed": completed_count,
+            "failed": failed_count,
+        },
+        "visual_vocabulary": {
+            "total": visual_total,
+            "enabled": visual_enabled,
+            "usable_for_image": visual_usable,
+            "ambiguous": visual_ambiguous,
+        },
+        "characters": character_statuses,
+    }
+
+
+@app.get(
+    "/api/media/visual-vocabulary/readiness",
+    response_description="Visual vocabulary derivation status",
+)
+async def visual_vocabulary_readiness():
+    total = await visual_vocabulary_collection.count_documents({})
+    enabled = await visual_vocabulary_collection.count_documents({"enabled": True})
+    usable = await visual_vocabulary_collection.count_documents(
+        {"enabled": True, "usable_for_image": True}
+    )
+    ambiguous = await visual_vocabulary_collection.count_documents(
+        {"enabled": True, "ambiguous": True}
+    )
+    ambiguous_usable = await visual_vocabulary_collection.count_documents(
+        {"enabled": True, "usable_for_image": True, "ambiguous": True}
+    )
+    non_visual = await visual_vocabulary_collection.count_documents(
+        {"enabled": True, "primary_role": "non_visual"}
+    )
+    role_pipeline = [
+        {
+            "$match": {
+                "enabled": True,
+                "usable_for_image": True,
+            }
+        },
+        {"$group": {"_id": "$primary_role", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+    ]
+    role_counts = {
+        item["_id"]: item["count"]
+        async for item in visual_vocabulary_collection.aggregate(role_pipeline)
+    }
+    return {
+        "status": "ok",
+        "total": total,
+        "enabled": enabled,
+        "usable_for_image": usable,
+        "not_yet_usable": max(0, enabled - usable),
+        "non_visual": non_visual,
+        "ambiguous": ambiguous,
+        "ambiguous_usable": ambiguous_usable,
+        "roles": role_counts,
+    }
+
+
 @app.get("/api/media/files/{file_id}", response_description="Serve stored media file")
 async def get_media_file(file_id: str):
     return await stream_gridfs_file(file_id)
@@ -1335,6 +2162,7 @@ async def create_media_job(payload: MediaGenerationWithStorySchema):
     )
     if story_id is not None and step_number is not None:
         await ensure_story_scene_exists(story_id, step_number)
+    await ensure_active_character_profile(payload.character_key)
 
     return await enqueue_media_job(
         payload,
@@ -1355,11 +2183,13 @@ async def create_scene_media_job(
         require_positive_step=True,
     )
     await ensure_story_scene_exists(story_id, step_number)
+    await ensure_active_character_profile(payload.character_key)
 
     job_payload = MediaGenerationWithStorySchema(
         story_text=payload.story_text,
         genre=payload.genre,
         age=payload.age,
+        character_key=payload.character_key,
         include_video=payload.include_video,
         width=payload.width,
         height=payload.height,
@@ -1395,6 +2225,7 @@ async def generate_media(payload: MediaGenerationWithStorySchema):
     )
     if story_id is not None and step_number is not None:
         await ensure_story_scene_exists(story_id, step_number)
+    await ensure_active_character_profile(payload.character_key)
 
     try:
         return await execute_media_generation(
@@ -1403,6 +2234,7 @@ async def generate_media(payload: MediaGenerationWithStorySchema):
             step_number=step_number,
             genre=payload.genre,
             age=payload.age,
+            character_key=payload.character_key,
             include_video=payload.include_video,
             width=payload.width,
             height=payload.height,
@@ -1434,6 +2266,7 @@ async def generate_and_store_scene_media(
         require_positive_step=True,
     )
     await ensure_story_scene_exists(story_id, step_number)
+    await ensure_active_character_profile(payload.character_key)
 
     try:
         media = await execute_media_generation(
@@ -1442,6 +2275,7 @@ async def generate_and_store_scene_media(
             step_number=step_number,
             genre=payload.genre,
             age=payload.age,
+            character_key=payload.character_key,
             include_video=payload.include_video,
             width=payload.width,
             height=payload.height,
@@ -1608,12 +2442,19 @@ async def delete_vocabulary(vocab_id: str, owner: OwnerActionSchema):
 
 
 def serialize_comment(comment: dict):
+    is_hidden = bool(comment.get("is_hidden", False))
     return {
         "id": str(comment.get("_id", "")),
         "author_name": comment.get("author_name", "?숉솕 移쒓뎄"),
         "author_account_id": comment.get("author_account_id"),
-        "content": comment.get("content", ""),
+        "content": (
+            "관리자에 의해 숨겨진 댓글입니다."
+            if is_hidden
+            else comment.get("content", "")
+        ),
         "created_at": serialize_datetime(comment.get("created_at")),
+        "moderation_status": comment.get("moderation_status", "visible"),
+        "report_count": int(comment.get("report_count", 0) or 0),
     }
 
 
@@ -1643,7 +2484,9 @@ def serialize_post(post: dict):
 
 @app.get("/api/community/posts", response_description="而ㅻ??덊떚 寃뚯떆湲 紐⑸줉")
 async def list_community_posts(sort: str = "latest"):
-    posts = await community_posts_collection.find().to_list(length=200)
+    posts = await community_posts_collection.find(
+        {"is_hidden": {"$ne": True}}
+    ).to_list(length=200)
     if sort == "popular":
         posts.sort(
             key=lambda item: (
@@ -1695,10 +2538,12 @@ async def get_community_post(post_id: str):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? 寃뚯떆湲 ID?낅땲??")
 
     await community_posts_collection.update_one(
-        {"_id": ObjectId(post_id)},
+        {"_id": ObjectId(post_id), "is_hidden": {"$ne": True}},
         {"$inc": {"view_count": 1}},
     )
-    post = await community_posts_collection.find_one({"_id": ObjectId(post_id)})
+    post = await community_posts_collection.find_one(
+        {"_id": ObjectId(post_id), "is_hidden": {"$ne": True}}
+    )
     if not post:
         raise HTTPException(status_code=404, detail="寃뚯떆湲??李얠쓣 ???놁뒿?덈떎.")
     return serialize_post(post)
@@ -1753,6 +2598,9 @@ async def add_community_comment(post_id: str, comment: CommunityCommentSchema):
     comment_dict = comment.model_dump()
     comment_dict["_id"] = ObjectId()
     comment_dict["schema_version"] = 2
+    comment_dict["moderation_status"] = "visible"
+    comment_dict["is_hidden"] = False
+    comment_dict["report_count"] = 0
 
     result = await community_posts_collection.update_one(
         {"_id": ObjectId(post_id)},
@@ -1831,6 +2679,299 @@ async def delete_community_comment(
     return serialize_post(updated)
 
 
+async def resolve_report_target(payload: CommunityReportSchema) -> Dict[str, Any]:
+    if not ObjectId.is_valid(payload.target_id):
+        raise HTTPException(status_code=400, detail="신고 대상 ID가 올바르지 않습니다.")
+    target_id = ObjectId(payload.target_id)
+    if payload.target_type == "post":
+        post = await community_posts_collection.find_one({"_id": target_id}, {"_id": 1})
+        if not post:
+            raise HTTPException(status_code=404, detail="신고할 게시물을 찾을 수 없습니다.")
+        return {"target_id": target_id, "post_id": target_id}
+    if payload.target_type == "comment":
+        if not payload.post_id or not ObjectId.is_valid(payload.post_id):
+            raise HTTPException(status_code=400, detail="댓글 신고에는 게시물 ID가 필요합니다.")
+        post_id = ObjectId(payload.post_id)
+        post = await community_posts_collection.find_one(
+            {"_id": post_id, "comments._id": target_id},
+            {"_id": 1},
+        )
+        if not post:
+            raise HTTPException(status_code=404, detail="신고할 댓글을 찾을 수 없습니다.")
+        return {"target_id": target_id, "post_id": post_id}
+
+    user = await users_collection.find_one({"_id": target_id}, {"_id": 1})
+    if not user:
+        raise HTTPException(status_code=404, detail="신고할 사용자를 찾을 수 없습니다.")
+    return {"target_id": target_id, "post_id": None}
+
+
+@app.post("/api/community/reports", response_description="Create community report")
+async def create_community_report(payload: CommunityReportSchema):
+    target = await resolve_report_target(payload)
+    reporter_account_id = (
+        payload.reporter_account_id.strip()
+        if payload.reporter_account_id
+        else None
+    )
+    if reporter_account_id:
+        reporter = await users_collection.find_one(
+            {"account_id": reporter_account_id, "account_status": {"$ne": "deleted"}},
+            {"_id": 1},
+        )
+        if not reporter:
+            raise HTTPException(status_code=404, detail="신고자 계정을 찾을 수 없습니다.")
+        duplicate = await reports_collection.find_one(
+            {
+                "reporter_account_id": reporter_account_id,
+                "target_type": payload.target_type,
+                "target_id": target["target_id"],
+                "status": "pending",
+            }
+        )
+        if duplicate:
+            return {
+                "message": "이미 접수된 신고입니다.",
+                "report": serialize_report(duplicate),
+                "created": False,
+            }
+
+    now = datetime.utcnow()
+    report_document = {
+        "reporter_account_id": reporter_account_id,
+        "target_type": payload.target_type,
+        "target_id": target["target_id"],
+        "post_id": target["post_id"],
+        "reason": payload.reason.strip(),
+        "details": payload.details.strip() if payload.details else None,
+        "status": "pending",
+        "action_taken": None,
+        "resolution_note": None,
+        "created_at": now,
+        "resolved_at": None,
+        "resolved_by": None,
+        "schema_version": 1,
+    }
+    result = await reports_collection.insert_one(report_document)
+    report_document["_id"] = result.inserted_id
+
+    if payload.target_type == "post":
+        await community_posts_collection.update_one(
+            {"_id": target["target_id"]},
+            {"$inc": {"report_count": 1}},
+        )
+    elif payload.target_type == "comment":
+        await community_posts_collection.update_one(
+            {
+                "_id": target["post_id"],
+                "comments._id": target["target_id"],
+            },
+            {"$inc": {"comments.$.report_count": 1}},
+        )
+    else:
+        await users_collection.update_one(
+            {"_id": target["target_id"]},
+            {"$inc": {"report_count": 1}},
+        )
+
+    return {
+        "message": "신고가 접수되었습니다.",
+        "report": serialize_report(report_document),
+        "created": True,
+    }
+
+
+@app.post(
+    "/api/admin/users/{user_id}/warnings",
+    response_description="Create user warning",
+)
+async def create_user_warning(
+    user_id: str,
+    warning: WarningCreateSchema,
+    account_id: str,
+):
+    await require_admin(account_id)
+    if not ObjectId.is_valid(user_id):
+        raise HTTPException(status_code=400, detail="사용자 ID가 올바르지 않습니다.")
+    user_object_id = ObjectId(user_id)
+    user = await users_collection.find_one({"_id": user_object_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    if user.get("account_status") == "deleted":
+        raise HTTPException(status_code=409, detail="탈퇴한 사용자에게 경고할 수 없습니다.")
+
+    now = datetime.utcnow()
+    document = {
+        "user_id": user_object_id,
+        "reason": warning.reason.strip(),
+        "severity": warning.severity,
+        "status": "active",
+        "created_by": account_id,
+        "created_at": now,
+        "expires_at": warning.expires_at,
+        "resolved_at": None,
+        "schema_version": 1,
+    }
+    result = await user_warnings_collection.insert_one(document)
+    document["_id"] = result.inserted_id
+    await users_collection.update_one(
+        {"_id": user_object_id},
+        {
+            "$inc": {"warning_count": 1},
+            "$set": {
+                "last_warning_at": now,
+                "account_status": "warned",
+            },
+        },
+    )
+    return {
+        "message": "경고가 기록되었습니다.",
+        "warning": serialize_warning(document),
+    }
+
+
+@app.get("/api/admin/reports", response_description="List reports")
+async def list_admin_reports(
+    account_id: str,
+    status: Optional[str] = None,
+):
+    await require_admin(account_id)
+    query = {"status": status} if status else {}
+    reports = await reports_collection.find(query).sort(
+        "created_at",
+        -1,
+    ).to_list(length=500)
+    return {"reports": [serialize_report(report) for report in reports]}
+
+
+@app.get("/api/admin/warnings", response_description="List warnings")
+async def list_admin_warnings(
+    account_id: str,
+    user_id: Optional[str] = None,
+):
+    await require_admin(account_id)
+    query: Dict[str, Any] = {}
+    if user_id:
+        if not ObjectId.is_valid(user_id):
+            raise HTTPException(status_code=400, detail="사용자 ID가 올바르지 않습니다.")
+        query["user_id"] = ObjectId(user_id)
+    warnings = await user_warnings_collection.find(query).sort(
+        "created_at",
+        -1,
+    ).to_list(length=500)
+    return {"warnings": [serialize_warning(warning) for warning in warnings]}
+
+
+@app.patch(
+    "/api/admin/warnings/{warning_id}",
+    response_description="Resolve warning",
+)
+async def resolve_admin_warning(
+    warning_id: str,
+    resolution: WarningResolutionSchema,
+    account_id: str,
+):
+    await require_admin(account_id)
+    if not ObjectId.is_valid(warning_id):
+        raise HTTPException(status_code=400, detail="경고 ID가 올바르지 않습니다.")
+    now = datetime.utcnow()
+    warning = await user_warnings_collection.find_one_and_update(
+        {"_id": ObjectId(warning_id)},
+        {
+            "$set": {
+                "status": resolution.status,
+                "resolution_note": (
+                    resolution.resolution_note.strip()
+                    if resolution.resolution_note
+                    else None
+                ),
+                "resolved_at": now,
+                "resolved_by": account_id,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if not warning:
+        raise HTTPException(status_code=404, detail="경고를 찾을 수 없습니다.")
+
+    active_count = await user_warnings_collection.count_documents(
+        {"user_id": warning["user_id"], "status": "active"}
+    )
+    if active_count == 0:
+        await users_collection.update_one(
+            {
+                "_id": warning["user_id"],
+                "account_status": "warned",
+            },
+            {"$set": {"account_status": "active"}},
+        )
+    return {
+        "message": "경고 처리가 저장되었습니다.",
+        "warning": serialize_warning(warning),
+    }
+
+
+@app.patch("/api/admin/reports/{report_id}", response_description="Resolve report")
+async def resolve_admin_report(
+    report_id: str,
+    resolution: ReportResolutionSchema,
+    account_id: str,
+):
+    await require_admin(account_id)
+    if not ObjectId.is_valid(report_id):
+        raise HTTPException(status_code=400, detail="신고 ID가 올바르지 않습니다.")
+    now = datetime.utcnow()
+    report = await reports_collection.find_one_and_update(
+        {"_id": ObjectId(report_id)},
+        {
+            "$set": {
+                "status": resolution.status,
+                "action_taken": resolution.action_taken,
+                "resolution_note": (
+                    resolution.resolution_note.strip()
+                    if resolution.resolution_note
+                    else None
+                ),
+                "resolved_at": now,
+                "resolved_by": account_id,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="신고를 찾을 수 없습니다.")
+
+    if resolution.action_taken == "hide_content":
+        if report.get("target_type") == "post":
+            await community_posts_collection.update_one(
+                {"_id": report["target_id"]},
+                {
+                    "$set": {
+                        "is_hidden": True,
+                        "moderation_status": "hidden",
+                    }
+                },
+            )
+        elif report.get("target_type") == "comment" and report.get("post_id"):
+            await community_posts_collection.update_one(
+                {
+                    "_id": report["post_id"],
+                    "comments._id": report["target_id"],
+                },
+                {
+                    "$set": {
+                        "comments.$.is_hidden": True,
+                        "comments.$.moderation_status": "hidden",
+                    }
+                },
+            )
+
+    return {
+        "message": "신고 처리가 저장되었습니다.",
+        "report": serialize_report(report),
+    }
+
+
 @app.get("/api/admin/dashboard", response_description="Admin dashboard data")
 async def get_admin_dashboard(account_id: str):
     await require_admin(account_id)
@@ -1871,6 +3012,10 @@ async def get_admin_dashboard(account_id: str):
 
     comment_count = sum(len(post.get("comments", [])) for post in posts)
     hidden_post_count = sum(1 for post in posts if post.get("is_hidden", False))
+    pending_report_count = await reports_collection.count_documents({"status": "pending"})
+    active_warning_count = await user_warnings_collection.count_documents(
+        {"status": "active"}
+    )
 
     return {
         "stats": {
@@ -1883,6 +3028,11 @@ async def get_admin_dashboard(account_id: str):
             "community_post_count": len(posts),
             "comment_count": comment_count,
             "hidden_post_count": hidden_post_count,
+            "pending_report_count": pending_report_count,
+            "active_warning_count": active_warning_count,
+            "deleted_user_count": sum(
+                1 for user in users if user.get("account_status") == "deleted"
+            ),
         },
         "users": [
             serialize_admin_user(
@@ -1911,19 +3061,19 @@ async def admin_delete_user(user_id: str, account_id: str):
     if user.get("account_id") == ADMIN_ACCOUNT_ID:
         raise HTTPException(status_code=400, detail="愿由ъ옄 怨꾩젙? ??젣?????놁뒿?덈떎.")
 
-    await users_collection.delete_one({"_id": user_object_id})
-    await stories_collection.delete_many({"user_id": user_id_filter(user_id)})
-    await vocabularies_collection.delete_many({"user_id": user_id_filter(user_id)})
-    if user.get("account_id"):
-        await community_posts_collection.delete_many(
-            {"author_account_id": user.get("account_id")},
-        )
-        await community_posts_collection.update_many(
-            {},
-            {"$pull": {"comments": {"author_account_id": user.get("account_id")}}},
-        )
+    if user.get("account_status") == "deleted":
+        return {
+            "message": "이미 탈퇴 처리된 사용자입니다.",
+            "user_id": user_id,
+            "status": "deleted",
+        }
 
-    return {"message": "?뚯썝 諛??곌껐 ?곗씠?곌? ??젣?섏뿀?듬땲??", "user_id": user_id}
+    result = await soft_delete_user_account(
+        user,
+        reason="관리자 처리",
+        deleted_by=account_id,
+    )
+    return {"message": "회원 개인정보 익명화와 탈퇴 처리가 완료되었습니다.", **result}
 
 
 @app.delete("/api/admin/stories/{story_id}", response_description="愿由ъ옄 ?숉솕 ??젣")

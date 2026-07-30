@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'main.dart';
 import 'models/app_state.dart';
 import 'story_page.dart';
+import 'widgets/character_picker.dart';
 
 class CreatePage extends StatefulWidget {
   final String? preselectedGenre;
@@ -14,6 +15,7 @@ class CreatePage extends StatefulWidget {
 
 class _CreatePageState extends State<CreatePage> {
   final _promptCtrl = TextEditingController();
+  String? _selectedHeroCharacterKey;
   String _selectedGenre = '판타지';
   String _selectedAge = '초등_저학년';
 
@@ -67,11 +69,23 @@ class _CreatePageState extends State<CreatePage> {
       return;
     }
 
+    final selectedCharacterKey = _selectedHeroCharacterKey;
+    if (selectedCharacterKey == null || selectedCharacterKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('주인공 캐릭터를 선택해주세요.'),
+          backgroundColor: AppColors.p600,
+        ),
+      );
+      return;
+    }
+
     final state = context.read<AppState>();
     final ok = await state.startStory(
       genre: _selectedGenre,
       age: _selectedAge,
       prompt: prompt,
+      selectedHeroCharacterKey: selectedCharacterKey,
     );
 
     if (!mounted) return;
@@ -96,11 +110,23 @@ class _CreatePageState extends State<CreatePage> {
         ? '반짝이는 숲속에서 작은 비밀을 발견하는 이야기'
         : _promptCtrl.text.trim();
 
+    final selectedCharacterKey = _selectedHeroCharacterKey;
+    if (selectedCharacterKey == null || selectedCharacterKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('주인공 캐릭터를 선택해주세요.'),
+          backgroundColor: AppColors.p600,
+        ),
+      );
+      return;
+    }
+
     final state = context.read<AppState>();
     final ok = await state.startTemporaryStory(
       genre: _selectedGenre,
       age: _selectedAge,
       prompt: prompt,
+      selectedHeroCharacterKey: selectedCharacterKey,
     );
 
     if (!mounted) return;
@@ -146,6 +172,17 @@ class _CreatePageState extends State<CreatePage> {
               _sectionLabel('장르 선택'),
               const SizedBox(height: 16),
               _buildGenreSelector(),
+              const SizedBox(height: 34),
+              _sectionLabel('주인공 캐릭터'),
+              const SizedBox(height: 12),
+              CharacterPicker(
+                selectedCharacterKey: _selectedHeroCharacterKey,
+                onSelected: (profile) {
+                  setState(() {
+                    _selectedHeroCharacterKey = profile.characterKey;
+                  });
+                },
+              ),
               const SizedBox(height: 34),
               _sectionLabel('주인공 설정'),
               const SizedBox(height: 12),

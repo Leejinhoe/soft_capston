@@ -4,16 +4,16 @@ import 'package:provider/provider.dart';
 import 'main.dart';
 import 'models/admin_model.dart';
 import 'models/app_state.dart';
+import 'models/media_readiness.dart';
+import 'models/moderation_model.dart';
 import 'models/story_model.dart';
 import 'services/db_service.dart';
+import 'widgets/media_readiness_widget.dart';
 
 class AdminPage extends StatefulWidget {
   final String adminAccountId;
 
-  const AdminPage({
-    super.key,
-    required this.adminAccountId,
-  });
+  const AdminPage({super.key, required this.adminAccountId});
 
   @override
   State<AdminPage> createState() => _AdminPageState();
@@ -21,12 +21,17 @@ class AdminPage extends StatefulWidget {
 
 class _AdminPageState extends State<AdminPage> {
   AdminDashboard? _dashboard;
+  MediaReadiness? _mediaReadiness;
+  List<ModerationReport> _reports = const [];
+  List<UserWarning> _warnings = const [];
   bool _isLoading = true;
+  bool _isMediaLoading = true;
   String? _error;
+  String? _mediaError;
   int _selectedTab = 0;
   String _query = '';
 
-  final _tabs = const ['개요', '회원', '동화', '게시판', '단어장'];
+  final _tabs = const ['개요', '회원', '동화', '게시판', '신고', '경고', '단어장'];
 
   @override
   void initState() {
@@ -41,16 +46,45 @@ class _AdminPageState extends State<AdminPage> {
     });
 
     try {
-      final dashboard = await DbService.fetchAdminDashboard(
-        accountId: widget.adminAccountId,
-      );
+      final results = await Future.wait<Object?>([
+        DbService.fetchAdminDashboard(accountId: widget.adminAccountId),
+        _fetchMediaReadinessSafely(),
+        DbService.fetchAdminReports(adminAccountId: widget.adminAccountId),
+        DbService.fetchAdminWarnings(adminAccountId: widget.adminAccountId),
+      ]);
+      final dashboard = results.first as AdminDashboard;
       if (!mounted) return;
-      setState(() => _dashboard = dashboard);
+      setState(() {
+        _dashboard = dashboard;
+        _reports = results[2] as List<ModerationReport>;
+        _warnings = results[3] as List<UserWarning>;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchMediaReadinessSafely() async {
+    if (mounted) {
+      setState(() {
+        _isMediaLoading = true;
+        _mediaError = null;
+      });
+    }
+    try {
+      final readiness = await DbService.fetchMediaReadiness();
+      if (!mounted) return;
+      setState(() => _mediaReadiness = readiness);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _mediaError = e.toString().replaceAll('Exception: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => _isMediaLoading = false);
     }
   }
 
@@ -85,9 +119,9 @@ class _AdminPageState extends State<AdminPage> {
       await action();
       await _loadDashboard();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('관리 작업이 완료되었습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('관리 작업이 완료되었습니다.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -121,10 +155,7 @@ class _AdminPageState extends State<AdminPage> {
                   child: Center(child: CircularProgressIndicator()),
                 )
               else if (_error != null)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _buildError(),
-                )
+                SliverFillRemaining(hasScrollBody: false, child: _buildError())
               else if (dashboard == null)
                 const SliverFillRemaining(
                   hasScrollBody: false,
@@ -260,8 +291,10 @@ class _AdminPageState extends State<AdminPage> {
             decoration: InputDecoration(
               hintText: '회원, 동화 제목, 게시글, 단어 검색',
               hintStyle: const TextStyle(color: Colors.white38),
-              prefixIcon:
-                  const Icon(Icons.search_rounded, color: Colors.white54),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: Colors.white54,
+              ),
               filled: true,
               fillColor: AppColors.card,
               border: OutlineInputBorder(
@@ -331,6 +364,8 @@ class _AdminPageState extends State<AdminPage> {
       1 => _buildUsers(dashboard.users),
       2 => _buildStories(dashboard.stories),
       3 => _buildPosts(dashboard.communityPosts),
+      4 => _buildReports(),
+      5 => _buildWarnings(dashboard.users),
       _ => _buildVocabularies(dashboard.vocabularies),
     };
   }
@@ -353,14 +388,30 @@ class _AdminPageState extends State<AdminPage> {
               children: [
                 _buildStatCard('회원', stats.userCount, Icons.people_rounded),
                 _buildStatCard(
-                    '동화', stats.storyCount, Icons.auto_stories_rounded),
+                  '동화',
+                  stats.storyCount,
+                  Icons.auto_stories_rounded,
+                ),
                 _buildStatCard(
-                    '게시글', stats.communityPostCount, Icons.forum_rounded),
+                  '게시글',
+                  stats.communityPostCount,
+                  Icons.forum_rounded,
+                ),
                 _buildStatCard(
-                    '단어', stats.vocabularyCount, Icons.menu_book_rounded),
+                  '단어',
+                  stats.vocabularyCount,
+                  Icons.menu_book_rounded,
+                ),
               ],
             );
           },
+        ),
+        const SizedBox(height: 14),
+        MediaReadinessWidget(
+          readiness: _mediaReadiness,
+          isLoading: _isMediaLoading,
+          error: _mediaError,
+          onRefresh: _fetchMediaReadinessSafely,
         ),
         const SizedBox(height: 14),
         _buildAdminPanel(
@@ -396,9 +447,13 @@ class _AdminPageState extends State<AdminPage> {
             children: [
               _buildChecklistTile('신규 회원 확인', '최근 가입자 정보와 로그인 방식을 확인하세요.'),
               _buildChecklistTile(
-                  '게시판 관리', '댓글 수, 숨김 여부, 신고 수를 확인하고 게시글을 정리하세요.'),
+                '게시판 관리',
+                '댓글 수, 숨김 여부, 신고 수를 확인하고 게시글을 정리하세요.',
+              ),
               _buildChecklistTile(
-                  '학습 데이터 확인', '단어장이 과도하게 쌓이거나 잘못 저장된 단어가 없는지 확인하세요.'),
+                '학습 데이터 확인',
+                '단어장이 과도하게 쌓이거나 잘못 저장된 단어가 없는지 확인하세요.',
+              ),
             ],
           ),
         ),
@@ -434,7 +489,11 @@ class _AdminPageState extends State<AdminPage> {
   }
 
   Widget _buildProgressRow(
-      String label, double value, String trailing, Color color) {
+    String label,
+    double value,
+    String trailing,
+    Color color,
+  ) {
     final clamped = value.clamp(0, 1).toDouble();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -470,8 +529,10 @@ class _AdminPageState extends State<AdminPage> {
       leading: const Icon(Icons.check_circle_rounded, color: AppColors.teal),
       title: Text(
         title,
-        style:
-            const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+        ),
       ),
       subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54)),
     );
@@ -493,10 +554,7 @@ class _AdminPageState extends State<AdminPage> {
     return _buildAdminPanel(
       title: '회원 관리',
       subtitle: '총 ${filtered.length}명 표시 중',
-      child: _buildListOrEmpty(
-        filtered,
-        (user) => _buildUserCard(user),
-      ),
+      child: _buildListOrEmpty(filtered, (user) => _buildUserCard(user)),
     );
   }
 
@@ -519,17 +577,22 @@ class _AdminPageState extends State<AdminPage> {
           icon: const Icon(Icons.info_outline_rounded),
         ),
         IconButton(
+          tooltip: isAdmin ? '관리자 계정에는 경고할 수 없음' : '경고 등록',
+          onPressed: isAdmin ? null : () => _showWarningDialog(user),
+          icon: const Icon(Icons.warning_amber_rounded),
+        ),
+        IconButton(
           tooltip: isAdmin ? '관리자 계정은 삭제할 수 없음' : '회원 삭제',
           onPressed: isAdmin
               ? null
               : () => _runAdminAction(
-                    title: '회원 삭제',
-                    message: '${user.nickname} 회원과 연결된 동화/단어장/게시글을 삭제할까요?',
-                    action: () => DbService.deleteAdminUser(
-                      adminAccountId: widget.adminAccountId,
-                      userId: user.id,
-                    ),
+                  title: '회원 삭제',
+                  message: '${user.nickname} 회원과 연결된 동화/단어장/게시글을 삭제할까요?',
+                  action: () => DbService.deleteAdminUser(
+                    adminAccountId: widget.adminAccountId,
+                    userId: user.id,
                   ),
+                ),
           icon: const Icon(Icons.delete_outline_rounded),
         ),
       ],
@@ -550,10 +613,7 @@ class _AdminPageState extends State<AdminPage> {
     return _buildAdminPanel(
       title: '동화 관리',
       subtitle: '생성된 동화 ${filtered.length}개',
-      child: _buildListOrEmpty(
-        filtered,
-        (story) => _buildStoryCard(story),
-      ),
+      child: _buildListOrEmpty(filtered, (story) => _buildStoryCard(story)),
     );
   }
 
@@ -600,10 +660,7 @@ class _AdminPageState extends State<AdminPage> {
     return _buildAdminPanel(
       title: '게시판 관리',
       subtitle: '게시글 ${filtered.length}개',
-      child: _buildListOrEmpty(
-        filtered,
-        (post) => _buildPostCard(post),
-      ),
+      child: _buildListOrEmpty(filtered, (post) => _buildPostCard(post)),
     );
   }
 
@@ -654,6 +711,266 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
+  Widget _buildReports() {
+    final filtered = _reports.where((report) {
+      final haystack = [
+        report.reporterAccountId,
+        report.targetType,
+        report.targetId,
+        report.reason,
+        report.details,
+        report.status,
+      ].whereType<String>().join(' ').toLowerCase();
+      return haystack.contains(_query.toLowerCase());
+    }).toList();
+
+    return _buildAdminPanel(
+      title: '신고 관리',
+      subtitle: '접수된 신고 ${filtered.length}건',
+      child: _buildListOrEmpty(
+        filtered,
+        (report) => _buildItemCard(
+          leading: Icons.flag_rounded,
+          title: report.reason,
+          subtitle:
+              '${_targetTypeLabel(report.targetType)} · ${report.details ?? '상세 내용 없음'}',
+          badges: [
+            _reportStatusLabel(report.status),
+            '신고자 ${report.reporterAccountId ?? '익명'}',
+            _formatDate(report.createdAt),
+          ],
+          actions: report.isPending
+              ? [
+                  IconButton(
+                    tooltip: '검토 완료',
+                    onPressed: () => _runAdminAction(
+                      title: '신고 처리',
+                      message: '이 신고를 검토 완료로 처리할까요?',
+                      action: () async {
+                        await DbService.resolveAdminReport(
+                          adminAccountId: widget.adminAccountId,
+                          reportId: report.id,
+                          status: 'resolved',
+                          resolutionNote: '관리자 검토 완료',
+                        );
+                      },
+                    ),
+                    icon: const Icon(Icons.check_circle_outline_rounded),
+                  ),
+                  if (report.targetType == 'post' ||
+                      report.targetType == 'comment')
+                    IconButton(
+                      tooltip: '콘텐츠 숨김 후 처리',
+                      onPressed: () => _runAdminAction(
+                        title: '콘텐츠 숨김',
+                        message: '신고된 콘텐츠를 숨기고 신고를 처리할까요?',
+                        action: () async {
+                          await DbService.resolveAdminReport(
+                            adminAccountId: widget.adminAccountId,
+                            reportId: report.id,
+                            status: 'resolved',
+                            actionTaken: 'hide_content',
+                            resolutionNote: '신고 콘텐츠 숨김',
+                          );
+                        },
+                      ),
+                      icon: const Icon(Icons.visibility_off_rounded),
+                    ),
+                  IconButton(
+                    tooltip: '신고 기각',
+                    onPressed: () => _runAdminAction(
+                      title: '신고 기각',
+                      message: '이 신고를 기각할까요?',
+                      action: () async {
+                        await DbService.resolveAdminReport(
+                          adminAccountId: widget.adminAccountId,
+                          reportId: report.id,
+                          status: 'dismissed',
+                          resolutionNote: '관리자 검토 후 기각',
+                        );
+                      },
+                    ),
+                    icon: const Icon(Icons.block_rounded),
+                  ),
+                ]
+              : const [],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWarnings(List<AdminUser> users) {
+    final userById = {for (final user in users) user.id: user};
+    final filtered = _warnings.where((warning) {
+      final user = userById[warning.userId];
+      final haystack = [
+        warning.reason,
+        warning.severity,
+        warning.status,
+        user?.nickname,
+        user?.accountId,
+      ].whereType<String>().join(' ').toLowerCase();
+      return haystack.contains(_query.toLowerCase());
+    }).toList();
+
+    return _buildAdminPanel(
+      title: '경고 관리',
+      subtitle: '등록된 경고 ${filtered.length}건',
+      child: _buildListOrEmpty(filtered, (warning) {
+        final user = userById[warning.userId];
+        return _buildItemCard(
+          leading: Icons.warning_amber_rounded,
+          title: warning.reason,
+          subtitle:
+              '${user?.nickname ?? warning.userId} · ${_severityLabel(warning.severity)}',
+          badges: [
+            warning.isActive ? '활성' : '처리됨',
+            '등록 ${_formatDate(warning.createdAt)}',
+            if (warning.expiresAt != null)
+              '만료 ${_formatDate(warning.expiresAt)}',
+          ],
+          actions: warning.isActive
+              ? [
+                  IconButton(
+                    tooltip: '경고 해제',
+                    onPressed: () => _runAdminAction(
+                      title: '경고 해제',
+                      message: '이 경고를 해결 상태로 변경할까요?',
+                      action: () async {
+                        await DbService.resolveAdminWarning(
+                          adminAccountId: widget.adminAccountId,
+                          warningId: warning.id,
+                          status: 'resolved',
+                          resolutionNote: '관리자 확인 후 해제',
+                        );
+                      },
+                    ),
+                    icon: const Icon(Icons.check_circle_outline_rounded),
+                  ),
+                  IconButton(
+                    tooltip: '경고 취소',
+                    onPressed: () => _runAdminAction(
+                      title: '경고 취소',
+                      message: '잘못 등록된 경고로 처리할까요?',
+                      action: () async {
+                        await DbService.resolveAdminWarning(
+                          adminAccountId: widget.adminAccountId,
+                          warningId: warning.id,
+                          status: 'dismissed',
+                          resolutionNote: '관리자 취소',
+                        );
+                      },
+                    ),
+                    icon: const Icon(Icons.undo_rounded),
+                  ),
+                ]
+              : const [],
+        );
+      }),
+    );
+  }
+
+  Future<void> _showWarningDialog(AdminUser user) async {
+    final reasonController = TextEditingController();
+    var severity = 'notice';
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: Text('${user.nickname}님 경고'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: reasonController,
+                maxLength: 500,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: '경고 사유'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: severity,
+                decoration: const InputDecoration(labelText: '경고 단계'),
+                items: const [
+                  DropdownMenuItem(value: 'notice', child: Text('안내')),
+                  DropdownMenuItem(value: 'caution', child: Text('주의')),
+                  DropdownMenuItem(value: 'final', child: Text('최종 경고')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => severity = value);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.length < 2) return;
+                Navigator.pop(dialogContext, {
+                  'reason': reason,
+                  'severity': severity,
+                });
+              },
+              child: const Text('등록'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reasonController.dispose();
+    if (result == null) return;
+
+    try {
+      await DbService.createAdminWarning(
+        adminAccountId: widget.adminAccountId,
+        userId: user.id,
+        reason: result['reason']!,
+        severity: result['severity']!,
+      );
+      await _loadDashboard();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('경고를 등록했습니다.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    }
+  }
+
+  String _targetTypeLabel(String value) => switch (value) {
+    'post' => '게시물',
+    'comment' => '댓글',
+    'user' => '사용자',
+    _ => value,
+  };
+
+  String _reportStatusLabel(String value) => switch (value) {
+    'pending' => '대기',
+    'reviewed' => '검토됨',
+    'resolved' => '처리됨',
+    'dismissed' => '기각',
+    _ => value,
+  };
+
+  String _severityLabel(String value) => switch (value) {
+    'notice' => '안내',
+    'caution' => '주의',
+    'final' => '최종 경고',
+    _ => value,
+  };
+
   Widget _buildVocabularies(List<VocabWord> words) {
     final filtered = words.where((word) {
       final haystack = [
@@ -668,10 +985,7 @@ class _AdminPageState extends State<AdminPage> {
     return _buildAdminPanel(
       title: '단어장 관리',
       subtitle: '저장된 단어 ${filtered.length}개',
-      child: _buildListOrEmpty(
-        filtered,
-        (word) => _buildVocabCard(word),
-      ),
+      child: _buildListOrEmpty(filtered, (word) => _buildVocabCard(word)),
     );
   }
 
@@ -690,13 +1004,13 @@ class _AdminPageState extends State<AdminPage> {
           onPressed: word.id == null
               ? null
               : () => _runAdminAction(
-                    title: '단어 삭제',
-                    message: '"${word.hard}" 단어를 삭제할까요?',
-                    action: () => DbService.deleteAdminVocabulary(
-                      adminAccountId: widget.adminAccountId,
-                      vocabId: word.id!,
-                    ),
+                  title: '단어 삭제',
+                  message: '"${word.hard}" 단어를 삭제할까요?',
+                  action: () => DbService.deleteAdminVocabulary(
+                    adminAccountId: widget.adminAccountId,
+                    vocabId: word.id!,
                   ),
+                ),
           icon: const Icon(Icons.delete_outline_rounded),
         ),
       ],
@@ -873,8 +1187,10 @@ class _AdminPageState extends State<AdminPage> {
             ),
           ),
           const SizedBox(height: 2),
-          Text(label,
-              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
         ],
       ),
     );
@@ -979,16 +1295,18 @@ class _AdminPageState extends State<AdminPage> {
     final dashboard = _dashboard;
     final userStories =
         dashboard?.stories.where((story) => story.userId == user.id).toList() ??
-            <AdminStory>[];
+        <AdminStory>[];
     final accountId = user.accountId.trim();
-    final userPosts = dashboard?.communityPosts.where((post) {
+    final userPosts =
+        dashboard?.communityPosts.where((post) {
           if (accountId.isNotEmpty && post.authorAccountId == accountId) {
             return true;
           }
           return post.authorName == user.nickname;
         }).toList() ??
         <AdminCommunityPost>[];
-    final userWords = dashboard?.vocabularies
+    final userWords =
+        dashboard?.vocabularies
             .where((word) => word.userId == user.id)
             .toList() ??
         <VocabWord>[];

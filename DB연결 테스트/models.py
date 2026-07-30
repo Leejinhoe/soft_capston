@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +29,15 @@ class StorySchema(BaseModel):
     genre: str
     age: str
     prompt: str
+    characters: Dict[str, str] = Field(default_factory=dict)
+    character_overrides: Dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class StoryCharactersSchema(BaseModel):
+    characters: Dict[str, str] = Field(default_factory=dict)
+    character_overrides: Optional[Dict[str, str]] = None
+    user_id: Optional[str] = None
 
 
 class SceneSchema(BaseModel):
@@ -41,10 +49,34 @@ class SceneSchema(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class CharacterAssetSchema(BaseModel):
+    pose: str = Field(default="default", min_length=1, max_length=40)
+    emotion: str = Field(default="neutral", min_length=1, max_length=40)
+    image_file_id: Optional[str] = None
+    image_url: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    scene_keywords: List[str] = Field(default_factory=list)
+
+
+class CharacterProfileUpsertSchema(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=1000)
+    style_prompt: Optional[str] = Field(default=None, max_length=500)
+    genres: List[str] = Field(default_factory=list, max_length=20)
+    assets: List[CharacterAssetSchema] = Field(default_factory=list, max_length=40)
+    active: bool = True
+
+
 class MediaGenerationSchema(BaseModel):
     story_text: str
     genre: Optional[str] = None
     age: Optional[str] = None
+    character_key: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+    )
     include_video: bool = False
     width: int = Field(default=512, ge=256, le=1536)
     height: int = Field(default=512, ge=256, le=1536)
@@ -89,3 +121,37 @@ class CommunityPostSchema(BaseModel):
     full_text: str
     story_emoji: str = "?"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WarningCreateSchema(BaseModel):
+    reason: str = Field(min_length=2, max_length=500)
+    severity: str = Field(
+        default="notice",
+        pattern=r"^(notice|caution|final)$",
+    )
+    expires_at: Optional[datetime] = None
+
+
+class WarningResolutionSchema(BaseModel):
+    status: str = Field(pattern=r"^(resolved|dismissed)$")
+    resolution_note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class CommunityReportSchema(BaseModel):
+    reporter_account_id: Optional[str] = Field(default=None, max_length=120)
+    target_type: str = Field(pattern=r"^(post|comment|user)$")
+    target_id: str = Field(min_length=1, max_length=64)
+    post_id: Optional[str] = Field(default=None, max_length=64)
+    reason: str = Field(min_length=2, max_length=200)
+    details: Optional[str] = Field(default=None, max_length=1000)
+
+
+class ReportResolutionSchema(BaseModel):
+    status: str = Field(pattern=r"^(reviewed|resolved|dismissed)$")
+    action_taken: Optional[str] = Field(default=None, max_length=100)
+    resolution_note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class AccountWithdrawalSchema(BaseModel):
+    password: Optional[str] = Field(default=None, max_length=200)
+    reason: Optional[str] = Field(default=None, max_length=500)
