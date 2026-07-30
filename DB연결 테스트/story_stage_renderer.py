@@ -118,12 +118,13 @@ def story_stage_state(
     beam_strength = charge * release
     impact_strength = math.exp(-((progress - 0.62) / 0.1) ** 2)
     success_strength = _smoothstep((progress - 0.6) / 0.18)
+    seal_glow = min(
+        1.0,
+        idle_pulse + charge * 0.55 + impact_strength * 0.55,
+    )
     return {
         "prop_opacity": max(0.0, 1.0 - success_strength),
-        "seal_glow": min(
-            1.0,
-            idle_pulse + charge * 0.55 + impact_strength * 0.55,
-        ),
+        "seal_glow": seal_glow * (1.0 - success_strength),
         "beam_strength": beam_strength,
         "impact_strength": impact_strength,
         "success_strength": success_strength,
@@ -162,6 +163,25 @@ def compose_story_stage_background(
     target_x, target_y = stage["target"]
     success_strength = state["success_strength"]
     if success_strength > 0.0:
+        cleared_ground = Image.new("RGBA", composed.size, (0, 0, 0, 0))
+        cleared_draw = ImageDraw.Draw(cleared_ground)
+        clearing_width = round(composed.width * 0.18)
+        clearing_height = round(composed.height * 0.075)
+        ground_y = round(composed.height * 0.84)
+        cleared_draw.ellipse(
+            (
+                target_x - clearing_width,
+                ground_y - clearing_height,
+                target_x + clearing_width,
+                ground_y + clearing_height,
+            ),
+            fill=(255, 226, 134, round(88 * success_strength)),
+        )
+        cleared_ground = cleared_ground.filter(
+            ImageFilter.GaussianBlur(max(5, round(clearing_height * 0.5)))
+        )
+        composed.alpha_composite(cleared_ground)
+
         opened_path = Image.new("RGBA", composed.size, (0, 0, 0, 0))
         path_draw = ImageDraw.Draw(opened_path)
         castle_point = (
@@ -180,10 +200,10 @@ def compose_story_stage_background(
             (round(composed.width * 0.68), round(composed.height * 0.38)),
             castle_point,
         )
-        path_width = max(7, round(composed.width * 0.026))
+        path_width = max(9, round(composed.width * 0.038))
         path_draw.line(
             trail_points,
-            fill=(255, 219, 105, round(86 * success_strength)),
+            fill=(255, 219, 105, round(132 * success_strength)),
             width=path_width,
             joint="curve",
         )
@@ -196,22 +216,12 @@ def compose_story_stage_background(
                     point[0] + radius,
                     point[1] + radius,
                 ),
-                fill=(255, 239, 168, round(145 * success_strength)),
+                fill=(255, 239, 168, round(178 * success_strength)),
             )
         opened_path = opened_path.filter(
             ImageFilter.GaussianBlur(max(4, round(path_width * 0.7)))
         )
         composed.alpha_composite(opened_path)
-        path_core = Image.new("RGBA", composed.size, (0, 0, 0, 0))
-        core_draw = ImageDraw.Draw(path_core)
-        core_draw.line(
-            trail_points,
-            fill=(255, 245, 190, round(72 * success_strength)),
-            width=max(2, round(path_width * 0.28)),
-            joint="curve",
-        )
-        composed.alpha_composite(path_core)
-
     glow_radius = max(12, round(composed.width * 0.045))
     glow = _glow_sprite(
         Image,
@@ -235,6 +245,37 @@ def compose_story_stage_background(
             )
         )
     composed.alpha_composite(prop, stage["position"])
+    dissolve_strength = success_strength * (1.0 - success_strength)
+    if dissolve_strength > 0.02:
+        fragments = Image.new("RGBA", composed.size, (0, 0, 0, 0))
+        fragment_draw = ImageDraw.Draw(fragments)
+        for index in range(9):
+            angle = math.tau * index / 9.0
+            distance = composed.width * (
+                0.025 + 0.07 * success_strength
+            )
+            fragment_x = target_x + round(math.cos(angle) * distance)
+            fragment_y = (
+                round(composed.height * 0.82)
+                + round(math.sin(angle) * distance * 0.38)
+                - round(composed.height * 0.06 * success_strength)
+            )
+            fragment_size = max(2, round(composed.width * 0.006))
+            fragment_draw.polygon(
+                (
+                    (fragment_x, fragment_y - fragment_size),
+                    (fragment_x + fragment_size, fragment_y),
+                    (fragment_x, fragment_y + fragment_size),
+                    (fragment_x - fragment_size, fragment_y),
+                ),
+                fill=(
+                    178,
+                    123,
+                    67,
+                    round(255 * min(1.0, dissolve_strength * 4.0)),
+                ),
+            )
+        composed.alpha_composite(fragments)
 
     seal_visibility = max(0.0, 1.0 - success_strength)
     if seal_visibility > 0.01:
@@ -440,23 +481,15 @@ def composite_story_action_effects(
         result.alpha_composite(burst)
 
     success_strength = state["success_strength"]
-    if success_strength > 0.2:
+    success_effect = success_strength * (
+        1.0 - _smoothstep((action_progress - 0.82) / 0.10)
+    )
+    if success_effect > 0.2:
         success = Image.new("RGBA", result.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(success)
         radius = max(
             14,
-            round(result.width * (0.045 + success_strength * 0.075)),
-        )
-        glow_alpha = round(90 * success_strength)
-        draw.ellipse(
-            (
-                target[0] - radius,
-                target[1] - radius,
-                target[0] + radius,
-                target[1] + radius,
-            ),
-            outline=(255, 221, 92, glow_alpha),
-            width=max(3, round(radius * 0.1)),
+            round(result.width * (0.032 + success_effect * 0.045)),
         )
         for index in range(10):
             angle = math.tau * index / 10.0
@@ -473,7 +506,7 @@ def composite_story_action_effects(
                     spark_x + spark_radius * 2,
                     spark_y,
                 ),
-                fill=(255, 239, 150, round(190 * success_strength)),
+                fill=(255, 239, 150, round(190 * success_effect)),
                 width=max(1, spark_radius),
             )
             draw.line(
@@ -483,7 +516,7 @@ def composite_story_action_effects(
                     spark_x,
                     spark_y + spark_radius * 2,
                 ),
-                fill=(255, 248, 195, round(210 * success_strength)),
+                fill=(255, 248, 195, round(210 * success_effect)),
                 width=max(1, spark_radius),
             )
         glow = success.filter(

@@ -113,9 +113,9 @@ class CharacterCatalogTests(unittest.TestCase):
                         ),
                         key=lambda asset: asset["animation_version"],
                     )
-                    self.assertEqual(preferred_walk["animation_version"], 2)
-                    self.assertEqual(preferred_walk["animation_frame_count"], 2)
-                    self.assertEqual(preferred_walk["animation_layout"], "2x1")
+                    self.assertEqual(preferred_walk["animation_version"], 3)
+                    self.assertEqual(preferred_walk["animation_frame_count"], 6)
+                    self.assertEqual(preferred_walk["animation_layout"], "3x2")
                 else:
                     self.assertEqual(action_cycles, [])
                 fast_action_filenames = [

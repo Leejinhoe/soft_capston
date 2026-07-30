@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from cinematic_animatic import (
     ANIMATION_MODE as CINEMATIC_ANIMATION_MODE,
+    apply_cinematic_camera,
     apply_cinematic_cut_effect,
+    apply_cinematic_foreground,
     resolve_cinematic_shot,
     supports_cinematic_animatic,
 )
@@ -27,7 +29,7 @@ LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip(
 LOCAL_VIDEO_MODEL = (
     os.getenv("LOCAL_VIDEO_MODEL")
     or os.getenv("VIDEO_MODEL")
-    or "storybook-cinematic-animatic-v1"
+    or "storybook-cinematic-animatic-v2"
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "24"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
@@ -1167,6 +1169,7 @@ def _render_layered_frame(
     story_stage: Optional[Dict[str, Any]] = None,
     ImageDraw=None,
     ImageFilter=None,
+    cinematic_state: Optional[Dict[str, Any]] = None,
 ):
     staged_background = compose_story_stage_background(
         background,
@@ -1213,6 +1216,45 @@ def _render_layered_frame(
         scale=motion["shadow_scale"],
     )
     scene_frame.alpha_composite(shadow)
+    trail_strength = min(
+        0.35,
+        max(
+            0.0,
+            float(
+                (cinematic_state or {}).get(
+                    "motion_trail_strength",
+                    0.0,
+                )
+                or 0.0
+            ),
+        ),
+    )
+    if trail_strength > 0.0:
+        trail_x = round(
+            float((cinematic_state or {}).get("trail_x_ratio", 0.0) or 0.0)
+            * width
+        )
+        trail_y = round(
+            float((cinematic_state or {}).get("trail_y_ratio", 0.0) or 0.0)
+            * height
+        )
+        for distance, alpha_scale in ((2, 0.34), (1, 0.56)):
+            ghost = animated.copy()
+            ghost_alpha = ghost.getchannel("A").point(
+                lambda alpha, factor=trail_strength * alpha_scale: round(
+                    alpha * factor
+                )
+            )
+            ghost.putalpha(ghost_alpha)
+            if ImageFilter is not None:
+                ghost = ghost.filter(ImageFilter.GaussianBlur(0.7))
+            scene_frame.alpha_composite(
+                ghost,
+                (
+                    character_x + trail_x * distance,
+                    character_y + trail_y * distance,
+                ),
+            )
     scene_frame.alpha_composite(animated, (character_x, character_y))
     scene_frame = composite_story_action_effects(
         scene_frame,
@@ -1235,6 +1277,20 @@ def _render_layered_frame(
         ImageDraw=ImageDraw,
         ImageFilter=ImageFilter,
     )
+    if cinematic_state is not None:
+        frame = apply_cinematic_camera(
+            scene_frame.convert("RGB"),
+            cinematic_state,
+            Image,
+            ImageEnhance,
+        )
+        return apply_cinematic_foreground(
+            frame,
+            cinematic_state,
+            Image,
+            ImageDraw,
+            ImageFilter,
+        )
     return _render_frame(
         source_image=scene_frame.convert("RGB"),
         Image=Image,
@@ -1584,6 +1640,7 @@ def _generate_local_video_bytes(
                         action_name=frame_action_name,
                         action_progress=frame_action_progress,
                         story_stage=story_stage,
+                        cinematic_state=cinematic_state,
                     )
                     if cinematic_state is not None:
                         frame = apply_cinematic_cut_effect(
