@@ -14,9 +14,9 @@ LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip(
 LOCAL_VIDEO_MODEL = (
     os.getenv("LOCAL_VIDEO_MODEL")
     or os.getenv("VIDEO_MODEL")
-    or "storybook-profile-action-sequence-v6"
+    or "storybook-profile-action-sequence-v8-24fps"
 ).strip()
-LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "12"))
+LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "24"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
 LOCAL_VIDEO_MAX_DURATION_SECONDS = min(
     15.0,
@@ -26,6 +26,9 @@ LOCAL_VIDEO_TIMEOUT_SECONDS = min(
     15.0,
     max(5.0, float(os.getenv("LOCAL_VIDEO_TIMEOUT_SECONDS", "15.0"))),
 )
+ACTION_RENDER_FRAME_TARGET = 24
+ACTION_SEGMENT_TRANSITION_SECONDS = 0.25
+ACTION_SEGMENT_TRANSITION_SAMPLES = 8
 
 
 def get_hf_video_config() -> Dict[str, Any]:
@@ -62,15 +65,17 @@ def build_fairytale_video_prompt(
 
 def _load_video_dependencies():
     try:
+        import cv2
         import imageio.v2 as imageio
         import numpy as np
         from PIL import Image, ImageEnhance, ImageOps
     except ImportError as exc:
         raise HfMediaError(
-            "Local video generation needs pillow, numpy, imageio, and imageio-ffmpeg. "
+            "Local video generation needs pillow, numpy, OpenCV, imageio, "
+            "and imageio-ffmpeg. "
             "Run `pip install -r requirements.txt` in the backend folder."
         ) from exc
-    return imageio, np, Image, ImageEnhance, ImageOps
+    return imageio, np, Image, ImageEnhance, ImageOps, cv2
 
 
 def _even_dimension(value: int, minimum: int = 256) -> int:
@@ -437,8 +442,26 @@ def _action_cycle_frame_index(
     cycle_seconds: Optional[float] = None,
     cycle_progress: Optional[float] = None,
 ) -> int:
+    frame_index, _, _ = _action_cycle_frame_sample(
+        action_name,
+        elapsed_seconds,
+        frame_count,
+        cycle_seconds=cycle_seconds,
+        cycle_progress=cycle_progress,
+    )
+    return frame_index
+
+
+def _action_cycle_frame_sample(
+    action_name: Optional[str],
+    elapsed_seconds: float,
+    frame_count: int,
+    cycle_seconds: Optional[float] = None,
+    cycle_progress: Optional[float] = None,
+    frame_rate: int = LOCAL_VIDEO_FRAME_RATE,
+) -> Tuple[int, int, float]:
     if frame_count <= 1:
-        return 0
+        return 0, 0, 0.0
     elapsed = max(0.0, elapsed_seconds)
     default_seconds = {
         "walk": 1.0,
@@ -452,26 +475,161 @@ def _action_cycle_frame_index(
         phase = min(0.999999, max(0.0, cycle_progress))
     else:
         phase = (elapsed % duration) / duration
-    if action_name == "jump" and frame_count >= 6 and phase >= 0.9:
-        return 0
-
     weight_presets = {
         "walk": (2, 2, 2, 2, 2, 2),
         "run": (2, 1, 1, 2, 1, 1),
-        "fight": (5, 5, 7, 4, 5, 6),
-        "jump": (5, 6, 4, 6, 5, 6),
-        "magic": (6, 6, 6, 5, 5, 7),
+        "fight": (3, 5, 7, 4, 5, 6),
+        "jump": (3, 6, 4, 6, 5, 6),
+        "magic": (2, 6, 6, 5, 5, 7),
     }
     weights = weight_presets.get(action_name or "")
     if not weights or len(weights) != frame_count:
         weights = tuple(1 for _ in range(frame_count))
-    weighted_position = phase * sum(weights)
-    cumulative = 0
+    total_weight = sum(weights)
+    weighted_position = phase * total_weight
+    cumulative = 0.0
     for index, weight in enumerate(weights):
+        frame_start = cumulative
         cumulative += weight
-        if weighted_position < cumulative:
-            return index
-    return frame_count - 1
+        if weighted_position >= cumulative:
+            continue
+
+        local_progress = (weighted_position - frame_start) / max(weight, 1e-9)
+        should_loop = cycle_progress is None or action_name == "jump"
+        next_index = (
+            (index + 1) % frame_count
+            if index < frame_count - 1 or should_loop
+            else index
+        )
+        if next_index == index:
+            return index, index, 0.0
+        return index, next_index, local_progress
+    return frame_count - 1, frame_count - 1, 0.0
+
+
+def _build_optical_transition_pair(
+    first,
+    second,
+    sample_count: int,
+    Image,
+    np,
+    cv2,
+    *,
+    include_endpoint: bool,
+):
+    first_array = np.asarray(first, dtype=np.uint8)
+    second_array = np.asarray(second, dtype=np.uint8)
+
+    def flow_gray(frame):
+        alpha = frame[:, :, 3:4].astype(np.float32) / 255.0
+        composite = (
+            frame[:, :, :3].astype(np.float32) * alpha
+            + 127.0 * (1.0 - alpha)
+        )
+        return cv2.cvtColor(
+            composite.astype(np.uint8),
+            cv2.COLOR_RGB2GRAY,
+        )
+
+    optical_flow = cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_MEDIUM)
+    forward = optical_flow.calc(
+        flow_gray(first_array),
+        flow_gray(second_array),
+        None,
+    )
+    backward = optical_flow.calc(
+        flow_gray(second_array),
+        flow_gray(first_array),
+        None,
+    )
+    frame_height, frame_width = first_array.shape[:2]
+    grid_x, grid_y = np.meshgrid(
+        np.arange(frame_width, dtype=np.float32),
+        np.arange(frame_height, dtype=np.float32),
+    )
+
+    pair_frames = []
+    divisor = max(1, sample_count - 1 if include_endpoint else sample_count)
+    for sample_index in range(sample_count):
+        amount = sample_index / divisor
+        if sample_index == 0:
+            pair_frames.append(first)
+            continue
+        if include_endpoint and sample_index == sample_count - 1:
+            pair_frames.append(second)
+            continue
+        if amount < 0.5:
+            source = first_array
+            flow = forward
+            warp_amount = amount
+        else:
+            source = second_array
+            flow = backward
+            warp_amount = 1.0 - amount
+        warped = cv2.remap(
+            source,
+            grid_x - flow[:, :, 0] * warp_amount,
+            grid_y - flow[:, :, 1] * warp_amount,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0, 0),
+        )
+        pair_frames.append(Image.fromarray(warped, "RGBA"))
+    return pair_frames
+
+
+def _build_action_transition_frames(frames, Image, np, cv2):
+    if len(frames) < 2:
+        return [], 1
+
+    samples_per_key = max(
+        2,
+        math.ceil(ACTION_RENDER_FRAME_TARGET / len(frames)),
+    )
+    transitions = [
+        _build_optical_transition_pair(
+            frame,
+            frames[(index + 1) % len(frames)],
+            samples_per_key,
+            Image,
+            np,
+            cv2,
+            include_endpoint=False,
+        )
+        for index, frame in enumerate(frames)
+    ]
+    return transitions, samples_per_key
+
+
+def _pad_action_frame_pair(
+    first,
+    first_position: Tuple[int, int],
+    second,
+    second_position: Tuple[int, int],
+    Image,
+):
+    left = min(first_position[0], second_position[0])
+    top = min(first_position[1], second_position[1])
+    right = max(
+        first_position[0] + first.width,
+        second_position[0] + second.width,
+    )
+    bottom = max(
+        first_position[1] + first.height,
+        second_position[1] + second.height,
+    )
+    size = (right - left, bottom - top)
+    first_canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+    second_canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+    first_canvas.alpha_composite(
+        first,
+        (first_position[0] - left, first_position[1] - top),
+    )
+    second_canvas.alpha_composite(
+        second,
+        (second_position[0] - left, second_position[1] - top),
+    )
+    return first_canvas, second_canvas, (left, top)
 
 
 def _smootherstep(value: float) -> float:
@@ -609,30 +767,24 @@ def _action_cycle_motion(
             "shadow_opacity": 92.0 - energy * 5.0,
         }
 
-    pose_bounce = (
-        (0.0, -3.5, -0.5, -2.5)
-        if action_name == "walk"
-        else (0.0, -5.0, -9.0, -1.0, -5.0, -9.0)
-    )
-    step_rate = 4.0 if action_name == "walk" else 7.5
-    step_phase = (max(0.0, elapsed_seconds) * step_rate) % 1.0
     travel_progress = _smootherstep(progress)
     root_x = width * (
         travel_start + (travel_end - travel_start) * travel_progress
     )
+    footfall = abs(math.sin(math.tau * phase))
     root_y = (
-        pose_bounce[frame_index % len(pose_bounce)]
-        - (0.7 if action_name == "walk" else 1.3)
-        * math.sin(step_phase * math.pi)
-    ) * height / 384.0
+        -(4.0 if action_name == "walk" else 8.0)
+        * footfall
+        * height
+        / 384.0
+    )
     return {
         "x": root_x,
         "y": root_y,
         "angle": 0.0,
         "scale_x": 1.0,
         "scale_y": 1.0,
-        "shadow_scale": 0.94
-        + 0.06 * math.cos(math.tau * max(0.0, elapsed_seconds) * step_rate / 4.0),
+        "shadow_scale": 1.0 - 0.06 * footfall,
         "shadow_opacity": 92.0,
     }
 
@@ -640,6 +792,8 @@ def _action_cycle_motion(
 def _prepare_action_segments(
     raw_segments: List[Dict[str, Any]],
     Image,
+    np,
+    cv2,
     *,
     width: int,
     height: int,
@@ -662,6 +816,12 @@ def _prepare_action_segments(
             continue
         if not frames or position is None:
             continue
+        transition_frames, samples_per_key = _build_action_transition_frames(
+            frames,
+            Image,
+            np,
+            cv2,
+        )
         try:
             cycle_seconds = float(segment.get("cycle_seconds") or 0.0)
         except (TypeError, ValueError):
@@ -670,10 +830,38 @@ def _prepare_action_segments(
             {
                 "name": str(segment.get("name") or "walk"),
                 "frames": frames,
+                "transition_frames": transition_frames,
+                "samples_per_key": samples_per_key,
+                "render_frame_count": len(frames) * samples_per_key,
                 "position": position,
                 "cycle_seconds": cycle_seconds or None,
             }
         )
+    for index in range(1, len(prepared)):
+        previous = prepared[index - 1]
+        current = prepared[index]
+        previous_end_index = (
+            0
+            if previous["name"] in {"walk", "run", "jump"}
+            else len(previous["frames"]) - 1
+        )
+        first, second, transition_position = _pad_action_frame_pair(
+            previous["frames"][previous_end_index],
+            previous["position"],
+            current["frames"][0],
+            current["position"],
+            Image,
+        )
+        current["entry_transition_frames"] = _build_optical_transition_pair(
+            first,
+            second,
+            ACTION_SEGMENT_TRANSITION_SAMPLES,
+            Image,
+            np,
+            cv2,
+            include_endpoint=True,
+        )
+        current["entry_transition_position"] = transition_position
     return prepared
 
 
@@ -797,7 +985,7 @@ def _generate_local_video_bytes(
     action_cycle_frame_count: Optional[int] = None,
     action_cycle_segments: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[bytes, str]:
-    imageio, np, Image, ImageEnhance, ImageOps = _load_video_dependencies()
+    imageio, np, Image, ImageEnhance, ImageOps, cv2 = _load_video_dependencies()
     width = _even_dimension(width)
     height = _even_dimension(height)
     frame_rate = min(max(int(frame_rate), 6), 30)
@@ -840,6 +1028,8 @@ def _generate_local_video_bytes(
         _prepare_action_segments(
             raw_action_segments,
             Image,
+            np,
+            cv2,
             width=render_width,
             height=render_height,
         )
@@ -883,15 +1073,57 @@ def _generate_local_video_bytes(
                             if len(prepared_action_segments) > 1
                             else None
                         )
-                        action_index = _action_cycle_frame_index(
+                        (
+                            action_index,
+                            next_action_index,
+                            action_pose_progress,
+                        ) = _action_cycle_frame_sample(
                             action_name,
                             local_elapsed_seconds,
                             len(segment["frames"]),
                             cycle_seconds=segment["cycle_seconds"],
                             cycle_progress=cycle_progress,
+                            frame_rate=frame_rate,
                         )
                         character = segment["frames"][action_index]
+                        if next_action_index != action_index:
+                            transition_index = min(
+                                segment["samples_per_key"] - 1,
+                                int(
+                                    action_pose_progress
+                                    * segment["samples_per_key"]
+                                ),
+                            )
+                            character = segment["transition_frames"][
+                                action_index
+                            ][transition_index]
                         position = segment["position"]
+                        entry_frames = segment.get("entry_transition_frames") or []
+                        entry_output_frames = max(
+                            2,
+                            round(
+                                ACTION_SEGMENT_TRANSITION_SECONDS
+                                * frame_rate
+                            ),
+                        )
+                        segment_frame_count = max(
+                            1,
+                            round(total_frames / len(prepared_action_segments)),
+                        )
+                        local_frame_index = round(
+                            local_progress * max(segment_frame_count - 1, 1)
+                        )
+                        if entry_frames and local_frame_index < entry_output_frames:
+                            entry_index = min(
+                                len(entry_frames) - 1,
+                                round(
+                                    local_frame_index
+                                    / max(entry_output_frames - 1, 1)
+                                    * (len(entry_frames) - 1)
+                                ),
+                            )
+                            character = entry_frames[entry_index]
+                            position = segment["entry_transition_position"]
                         travel_start, travel_end = _action_travel_bounds(
                             action_name,
                             segment_index,
@@ -966,7 +1198,7 @@ async def generate_hf_fairytale_video(
     age: Optional[str] = None,
     width: int = 512,
     height: int = 384,
-    num_frames: int = 48,
+    num_frames: int = 96,
     steps: int = 12,
     seed: Optional[int] = None,
     frame_rate: Optional[int] = None,
@@ -1094,8 +1326,42 @@ async def generate_hf_fairytale_video(
                 else None
             ),
             "transition_mode": (
-                "ready-recovery-root-aligned"
+                "ready-recovery-root-aligned-optical-entry"
                 if animation_mode == "profile_action_sequence"
+                else None
+            ),
+            "frame_interpolation": (
+                "character-layer-optical-flow"
+                if animation_mode
+                in {"profile_action_cycle", "profile_action_sequence"}
+                else None
+            ),
+            "inbetween_frames_per_transition": (
+                (
+                    math.ceil(
+                        ACTION_RENDER_FRAME_TARGET
+                        / max(
+                            1,
+                            int(
+                                (
+                                    action_cycle_segments[0].get("frame_count")
+                                    if action_cycle_segments
+                                    else action_cycle_frame_count
+                                )
+                                or 1
+                            ),
+                        )
+                    )
+                    - 1
+                )
+                if animation_mode
+                in {"profile_action_cycle", "profile_action_sequence"}
+                else 0
+            ),
+            "action_cycle_render_frame_count": (
+                ACTION_RENDER_FRAME_TARGET
+                if animation_mode
+                in {"profile_action_cycle", "profile_action_sequence"}
                 else None
             ),
             "seed": seed,

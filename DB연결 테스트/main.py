@@ -558,7 +558,7 @@ async def generate_and_store_backend_media(
     flux_steps: int = 1,
     video_width: int = 512,
     video_height: int = 384,
-    num_frames: int = 48,
+    num_frames: int = 96,
     video_steps: int = 12,
     frame_rate: Optional[int] = None,
     video_timeout: Optional[int] = 15,
@@ -891,7 +891,7 @@ async def execute_media_generation(
     flux_steps: int = 1,
     video_width: int = 512,
     video_height: int = 384,
-    num_frames: int = 48,
+    num_frames: int = 96,
     video_steps: int = 12,
     frame_rate: Optional[int] = None,
     video_timeout: Optional[int] = 15,
@@ -1073,7 +1073,7 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
         flux_steps=int(_media_job_request_value(job, "flux_steps", 1)),
         video_width=int(_media_job_request_value(job, "video_width", 512)),
         video_height=int(_media_job_request_value(job, "video_height", 384)),
-        num_frames=int(_media_job_request_value(job, "num_frames", 48)),
+        num_frames=int(_media_job_request_value(job, "num_frames", 96)),
         video_steps=int(_media_job_request_value(job, "video_steps", 12)),
         frame_rate=(
             int(_media_job_request_value(job, "frame_rate"))

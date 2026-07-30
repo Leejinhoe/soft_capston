@@ -96,10 +96,17 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertLess(airborne["shadow_opacity"], grounded["shadow_opacity"])
 
     def test_video_length_is_capped_at_fifteen_seconds(self):
-        frame_rate = 12
+        frame_rate = 24
         frames = hf_video_provider._normalize_frame_count(999, frame_rate)
 
         self.assertEqual(frames, 15 * frame_rate)
+
+    def test_default_video_rate_is_twenty_four_fps(self):
+        self.assertEqual(hf_video_provider.LOCAL_VIDEO_FRAME_RATE, 24)
+        self.assertEqual(
+            hf_video_provider._normalize_frame_count(48, 24),
+            96,
+        )
 
     def test_quality_steps_increase_internal_render_scale(self):
         self.assertEqual(hf_video_provider._quality_render_scale(0), 1.0)
@@ -244,6 +251,84 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertGreater(len(set(walk_indexes)), 1)
         self.assertGreater(len(set(fight_indexes)), 1)
 
+    def test_action_cycle_samples_each_pose_continuously_at_twenty_four_fps(self):
+        samples = [
+            hf_video_provider._action_cycle_frame_sample(
+                "walk",
+                frame / 24,
+                4,
+                frame_rate=24,
+            )
+            for frame in range(24)
+        ]
+
+        inbetween = [sample for sample in samples if 0.0 < sample[2] < 1.0]
+        self.assertGreaterEqual(len(inbetween), 12)
+        self.assertTrue(
+            all(current != following for current, following, _ in inbetween)
+        )
+
+    def test_action_transition_cache_expands_six_key_poses_to_twenty_four(self):
+        import cv2
+        import numpy as np
+
+        frames = []
+        for index in range(6):
+            frame = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+            for x in range(5 + index, 15 + index):
+                for y in range(8, 32):
+                    frame.putpixel((x, y), (220, 60, 80, 255))
+            frames.append(frame)
+
+        transitions, samples_per_key = (
+            hf_video_provider._build_action_transition_frames(
+                frames,
+                Image,
+                np,
+                cv2,
+            )
+        )
+
+        self.assertEqual(samples_per_key, 4)
+        self.assertEqual(len(transitions) * samples_per_key, 24)
+        self.assertTrue(
+            all(
+                frame.size == (40, 40)
+                for transition in transitions
+                for frame in transition
+            )
+        )
+
+    def test_action_segment_transition_keeps_both_endpoints_aligned(self):
+        import cv2
+        import numpy as np
+
+        first = Image.new("RGBA", (20, 30), (220, 60, 80, 255))
+        second = Image.new("RGBA", (30, 20), (60, 120, 220, 255))
+        padded_first, padded_second, position = (
+            hf_video_provider._pad_action_frame_pair(
+                first,
+                (10, 5),
+                second,
+                (5, 15),
+                Image,
+            )
+        )
+        transition = hf_video_provider._build_optical_transition_pair(
+            padded_first,
+            padded_second,
+            8,
+            Image,
+            np,
+            cv2,
+            include_endpoint=True,
+        )
+
+        self.assertEqual(position, (5, 5))
+        self.assertEqual(len(transition), 8)
+        self.assertEqual(transition[0].tobytes(), padded_first.tobytes())
+        self.assertEqual(transition[-1].tobytes(), padded_second.tobytes())
+
     def test_walk_action_cycle_travels_across_the_scene(self):
         start = hf_video_provider._action_cycle_motion(
             "walk",
@@ -265,6 +350,31 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertLess(start["x"], 0)
         self.assertGreater(end["x"], 0)
         self.assertGreater(end["x"] - start["x"], 200)
+
+    def test_run_action_vertical_motion_is_continuous_between_key_poses(self):
+        before = hf_video_provider._action_cycle_motion(
+            "run",
+            elapsed_seconds=0.19,
+            progress=0.25,
+            width=512,
+            height=384,
+            frame_index=1,
+        )
+        after = hf_video_provider._action_cycle_motion(
+            "run",
+            elapsed_seconds=0.191,
+            progress=0.251,
+            width=512,
+            height=384,
+            frame_index=2,
+        )
+
+        self.assertAlmostEqual(before["y"], after["y"], delta=0.25)
+        self.assertAlmostEqual(
+            before["shadow_scale"],
+            after["shadow_scale"],
+            delta=0.01,
+        )
 
     def test_fight_action_cycle_lunges_and_returns_to_guard(self):
         guard = hf_video_provider._action_cycle_motion(
@@ -320,15 +430,19 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertLess(apex["shadow_opacity"], grounded["shadow_opacity"])
 
     def test_jump_cycle_returns_to_ready_pose_before_next_action(self):
-        recovered_index = hf_video_provider._action_cycle_frame_index(
-            "jump",
-            elapsed_seconds=2.35,
-            frame_count=6,
-            cycle_seconds=2.4,
-            cycle_progress=0.95,
+        current_index, next_index, progress = (
+            hf_video_provider._action_cycle_frame_sample(
+                "jump",
+                elapsed_seconds=2.35,
+                frame_count=6,
+                cycle_seconds=2.4,
+                cycle_progress=0.95,
+            )
         )
 
-        self.assertEqual(recovered_index, 0)
+        self.assertEqual(current_index, 5)
+        self.assertEqual(next_index, 0)
+        self.assertGreater(progress, 0.5)
 
     def test_magic_action_builds_and_releases_energy_without_root_slide(self):
         ready = hf_video_provider._action_cycle_motion(
