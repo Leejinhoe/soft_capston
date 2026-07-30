@@ -65,25 +65,30 @@ def prepare_story_stage(
 
     with Image.open(OBSTACLE_PATH) as source:
         prop = source.convert("RGBA")
-    target_width = max(1, round(width * 0.31))
+    target_width = max(1, round(width * 0.22))
     scale = target_width / prop.width
     prop = prop.resize(
         (target_width, max(1, round(prop.height * scale))),
         getattr(Image, "Resampling", Image).LANCZOS,
     )
     position = (
-        round(width * 0.40),
-        round(height * 0.87) - prop.height,
+        round(width * 0.46),
+        round(height * 0.74) - prop.height,
     )
     target = (
         position[0] + round(prop.width * 0.5),
         position[1] - round(prop.height * 0.08),
+    )
+    destination = (
+        round(width * 0.62),
+        round(height * 0.22),
     )
     return {
         "id": STAGE_ID,
         "prop": prop,
         "position": position,
         "target": target,
+        "destination": destination,
         "action_names": list(action_names),
     }
 
@@ -184,9 +189,9 @@ def compose_story_stage_background(
 
         opened_path = Image.new("RGBA", composed.size, (0, 0, 0, 0))
         path_draw = ImageDraw.Draw(opened_path)
-        castle_point = (
-            round(composed.width * 0.67),
-            round(composed.height * 0.2),
+        castle_point = stage.get(
+            "destination",
+            (round(composed.width * 0.67), round(composed.height * 0.2)),
         )
         path_start = (
             target_x,
@@ -372,11 +377,16 @@ def composite_story_action_effects(
         return camera_frame
 
     state = story_stage_state(action_name, action_progress)
+    effect_target = (
+        stage.get("destination", stage["target"])
+        if action_name == "magic"
+        else stage["target"]
+    )
     target = (
-        stage["target"]
+        effect_target
         if camera_progress is None
         else map_scene_point_to_camera(
-            stage["target"],
+            effect_target,
             width=camera_frame.width,
             height=camera_frame.height,
             progress=camera_progress,

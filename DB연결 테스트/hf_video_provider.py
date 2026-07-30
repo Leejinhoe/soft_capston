@@ -44,6 +44,7 @@ LOCAL_VIDEO_TIMEOUT_SECONDS = min(
 ACTION_RENDER_FRAME_TARGET = 24
 ACTION_SEGMENT_TRANSITION_SECONDS = 0.25
 ACTION_SEGMENT_TRANSITION_SAMPLES = 8
+CINEMATIC_POSE_TRANSITION_FRAMES = 2
 
 
 def get_hf_video_config() -> Dict[str, Any]:
@@ -1385,7 +1386,7 @@ def _generate_local_video_bytes(
             cv2,
             width=render_width,
             height=render_height,
-            build_transitions=not cinematic_candidate,
+            build_transitions=True,
         )
         if layered_scene is not None
         else []
@@ -1486,6 +1487,78 @@ def _generate_local_video_bytes(
                         )
                         character = segment["frames"][pose_index]
                         position = segment["position"]
+                        entry_transition_frames = (
+                            segment.get("entry_transition_frames") or []
+                        )
+                        entry_transition_index = None
+                        for look_back in range(
+                            1,
+                            min(
+                                len(entry_transition_frames) + 1,
+                                index + 1,
+                            ),
+                        ):
+                            previous_state = resolve_cinematic_shot(
+                                index - look_back,
+                                total_frames,
+                                frame_rate,
+                                cinematic_frame_counts,
+                            )
+                            if (
+                                previous_state["action_name"]
+                                != cinematic_state["action_name"]
+                            ):
+                                entry_transition_index = look_back - 1
+                                break
+                        if entry_transition_index is not None:
+                            character = entry_transition_frames[
+                                entry_transition_index
+                            ]
+                            position = segment.get(
+                                "entry_transition_position",
+                                position,
+                            )
+                        else:
+                            transition_frames = (
+                                segment.get("transition_frames") or []
+                            )
+                            if transition_frames:
+                                for look_ahead in range(
+                                    CINEMATIC_POSE_TRANSITION_FRAMES,
+                                    0,
+                                    -1,
+                                ):
+                                    future_index = min(
+                                        total_frames - 1,
+                                        index + look_ahead,
+                                    )
+                                    future_state = resolve_cinematic_shot(
+                                        future_index,
+                                        total_frames,
+                                        frame_rate,
+                                        cinematic_frame_counts,
+                                    )
+                                    future_pose_index = int(
+                                        future_state["pose_index"]
+                                    )
+                                    expected_next_pose = (
+                                        pose_index + 1
+                                    ) % len(segment["frames"])
+                                    if (
+                                        future_state["action_name"]
+                                        != cinematic_state["action_name"]
+                                        or future_pose_index != expected_next_pose
+                                    ):
+                                        continue
+                                    samples = transition_frames[pose_index]
+                                    transition_index = min(
+                                        len(samples) - 1,
+                                        CINEMATIC_POSE_TRANSITION_FRAMES
+                                        - look_ahead
+                                        + 1,
+                                    )
+                                    character = samples[transition_index]
+                                    break
                         frame_action_name = cinematic_state["action_name"]
                         frame_action_progress = cinematic_state[
                             "action_progress"
@@ -1820,7 +1893,7 @@ async def generate_hf_fairytale_video(
                 else None
             ),
             "transition_mode": (
-                "editorial-hard-cuts-fixed-poses"
+                "castle-directed-optical-pose-inbetweens"
                 if animation_mode == CINEMATIC_ANIMATION_MODE
                 else (
                     "grounded-landing-recovery-root-aligned-entry"
@@ -1829,7 +1902,7 @@ async def generate_hf_fairytale_video(
                 )
             ),
             "frame_interpolation": (
-                "none-fixed-key-poses"
+                "character-layer-optical-flow"
                 if animation_mode == CINEMATIC_ANIMATION_MODE
                 else (
                     "character-layer-optical-flow"
@@ -1838,7 +1911,7 @@ async def generate_hf_fairytale_video(
                 )
             ),
             "inbetween_frames_per_transition": (
-                0
+                CINEMATIC_POSE_TRANSITION_FRAMES
                 if animation_mode == CINEMATIC_ANIMATION_MODE
                 else (
                     math.ceil(
@@ -1880,7 +1953,7 @@ async def generate_hf_fairytale_video(
                 else None
             ),
             "narrative_arc": (
-                "approach-obstacle-jump-unlock"
+                "castle-bound-approach-jump-unlock"
                 if supports_story_stage(action_cycle_names, story_text)
                 else None
             ),

@@ -116,7 +116,10 @@ class CinematicAnimaticTests(unittest.TestCase):
 
         self.assertLess(apex["y_ratio"], takeoff["y_ratio"])
         self.assertLess(apex["y_ratio"], landing["y_ratio"])
-        self.assertAlmostEqual(landing["y_ratio"], 0.0, delta=0.02)
+        landing_ground = cinematic_animatic._journey_world_state(
+            landing["phase"]
+        )["y_ratio"]
+        self.assertAlmostEqual(landing["y_ratio"], landing_ground, delta=0.02)
         self.assertGreater(landing["x_ratio"], takeoff["x_ratio"])
 
     def test_takeoff_starts_near_crouch_ground_position(self):
@@ -194,6 +197,28 @@ class CinematicAnimaticTests(unittest.TestCase):
 
         self.assertEqual(jump_poses, set(range(9)))
         self.assertEqual(magic_poses, set(range(9)))
+
+    def test_hero_route_recedes_toward_the_story_destination(self):
+        states = [
+            cinematic_animatic.resolve_cinematic_shot(
+                frame_index,
+                216,
+                24,
+                self.frame_counts,
+            )
+            for frame_index in range(216)
+        ]
+        start = states[0]
+        finish = states[-1]
+
+        self.assertGreater(finish["x_ratio"], start["x_ratio"])
+        self.assertLess(finish["y_ratio"], start["y_ratio"])
+        self.assertLess(finish["scale_x"], start["scale_x"])
+        self.assertLess(finish["scale_y"], start["scale_y"])
+
+        for previous, current in zip(states, states[1:]):
+            self.assertLess(abs(current["x_ratio"] - previous["x_ratio"]), 0.04)
+            self.assertLess(abs(current["y_ratio"] - previous["y_ratio"]), 0.05)
 
     def test_cut_effect_preserves_frame_dimensions(self):
         frame = Image.new("RGB", (320, 240), (40, 60, 80))

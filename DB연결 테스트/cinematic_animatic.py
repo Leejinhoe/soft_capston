@@ -1,8 +1,7 @@
-"""Pure timeline helpers for an intentional storybook cinematic animatic.
+"""Timeline helpers for an intentional storybook cinematic animatic.
 
-This module does not interpolate character poses. Each shot chooses a fixed
-pose index while root motion, jump height, and simple cut effects remain
-continuous over time.
+Each shot chooses a deterministic key pose and a continuous world-space
+journey. The video renderer can add optical in-betweens between these poses.
 """
 
 from __future__ import annotations
@@ -180,7 +179,9 @@ def _jump_pose(
 ) -> int:
     if frame_count >= 9:
         if shot_id == "crouch":
-            if local_progress < 0.24:
+            if local_progress < 0.14:
+                return _pose_index(frame_count, 0)
+            if local_progress < 0.32:
                 return _pose_index(frame_count, 1)
             if local_progress < 0.58:
                 return _pose_index(frame_count, 2)
@@ -256,6 +257,40 @@ def _jump_world_state(jump_progress: float) -> Dict[str, float]:
     }
 
 
+def _journey_world_state(phase: float) -> Dict[str, float]:
+    """Place the hero along a diagonal path that recedes toward the castle."""
+
+    keyframes = (
+        (0.00, -0.27, -0.025, 0.84),
+        (0.21, -0.105, -0.145, 0.69),
+        (0.26, -0.075, -0.170, 0.67),
+        (0.32, -0.050, -0.190, 0.65),
+        (0.38, -0.015, -0.220, 0.61),
+        (0.50, 0.040, -0.300, 0.54),
+        (0.57, 0.070, -0.275, 0.56),
+        (0.63, 0.090, -0.300, 0.53),
+        (0.74, 0.110, -0.340, 0.48),
+        (0.85, 0.125, -0.375, 0.43),
+        (1.00, 0.150, -0.420, 0.37),
+    )
+    normalized_phase = _clamp(phase)
+    for start, end in zip(keyframes, keyframes[1:]):
+        if normalized_phase <= end[0]:
+            span = max(end[0] - start[0], 1e-9)
+            progress = _smoothstep((normalized_phase - start[0]) / span)
+            return {
+                "x_ratio": _lerp(start[1], end[1], progress),
+                "y_ratio": _lerp(start[2], end[2], progress),
+                "scale": _lerp(start[3], end[3], progress),
+            }
+    _, x_ratio, y_ratio, scale = keyframes[-1]
+    return {
+        "x_ratio": x_ratio,
+        "y_ratio": y_ratio,
+        "scale": scale,
+    }
+
+
 def _camera_state(
     shot_id: str,
     local_progress: float,
@@ -267,17 +302,17 @@ def _camera_state(
     )
     progress = _smoothstep(camera_progress)
     camera_by_shot = {
-        "approach": (1.02, 1.07, 0.46, 0.52, 0.51, 0.51),
-        "notice": (1.08, 1.13, 0.51, 0.53, 0.50, 0.48),
-        "crouch": (1.08, 1.10, 0.53, 0.55, 0.54, 0.56),
-        "takeoff": (1.08, 1.03, 0.55, 0.59, 0.55, 0.51),
-        "flight": (1.03, 1.00, 0.58, 0.61, 0.51, 0.48),
-        "apex": (1.00, 1.00, 0.61, 0.62, 0.47, 0.47),
-        "landing": (1.02, 1.04, 0.62, 0.63, 0.53, 0.55),
-        "recovery": (1.04, 1.06, 0.62, 0.61, 0.54, 0.52),
-        "charge": (1.06, 1.09, 0.61, 0.60, 0.51, 0.50),
-        "release": (1.10, 1.08, 0.60, 0.59, 0.50, 0.50),
-        "resolution": (1.06, 1.02, 0.59, 0.58, 0.50, 0.50),
+        "approach": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "notice": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "crouch": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "takeoff": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "flight": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "apex": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "landing": (1.00, 1.01, 0.58, 0.58, 0.48, 0.48),
+        "recovery": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "charge": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
+        "release": (1.00, 1.01, 0.58, 0.58, 0.48, 0.48),
+        "resolution": (1.00, 1.00, 0.58, 0.58, 0.48, 0.48),
     }
     (
         zoom_start,
@@ -374,6 +409,7 @@ def resolve_cinematic_shot(
         frame_count = counts.get(approach_action, counts["walk"])
         gait_cycles = 2.5 if approach_action == "run" else 2.0
         walk_wave = math.sin(math.tau * local_progress * gait_cycles)
+        journey = _journey_world_state(phase)
         approach_progress = (
             _lerp(0.04, 0.82, local_progress)
             if shot_id == "approach"
@@ -385,33 +421,19 @@ def resolve_cinematic_shot(
             "pose_index": (
                 _approach_pose(approach_action, local_progress, frame_count)
                 if shot_id == "approach"
-                else _pose_index(frame_count, min(frame_count - 1, 1))
+                else _pose_index(frame_count, 0)
             ),
-            "x_ratio": (
-                _lerp(
-                    -0.28,
-                    -0.04,
-                    _stepped_approach_progress(
-                        local_progress,
-                        approach_action,
-                        frame_count,
-                    ),
-                )
-                if shot_id == "approach"
-                else -0.04
-            ),
-            "y_ratio": (
-                -0.010 * walk_wave
-                if shot_id == "approach"
-                else 0.006 * _smoothstep(local_progress)
-            ),
-            "scale_x": 1.0,
-            "scale_y": 1.0 + (0.008 * walk_wave if shot_id == "approach" else -0.02 * _smoothstep(local_progress)),
-            "shadow_scale": 1.0,
+            "x_ratio": journey["x_ratio"] + 0.006 * walk_wave,
+            "y_ratio": journey["y_ratio"] - 0.009 * abs(walk_wave),
+            "scale_x": journey["scale"],
+            "scale_y": journey["scale"]
+            * (1.0 + (0.008 * walk_wave if shot_id == "approach" else -0.02 * _smoothstep(local_progress))),
+            "shadow_scale": journey["scale"],
             "shadow_opacity": 0.25,
         }
     elif shot["action_group"] == "jump":
         frame_count = counts.get("jump", _DEFAULT_FRAME_COUNTS["jump"])
+        journey = _journey_world_state(phase)
         if shot_id == "crouch":
             jump_progress = _lerp(0.00, 0.14, local_progress)
             world = {
@@ -463,33 +485,34 @@ def resolve_cinematic_shot(
                 frame_count,
                 local_progress,
             ),
-            "x_ratio": world["x_ratio"],
-            "y_ratio": world["y_ratio"],
-            "scale_x": scale_x,
-            "scale_y": scale_y,
-            "shadow_scale": world["shadow_scale"],
+            "x_ratio": journey["x_ratio"],
+            "y_ratio": journey["y_ratio"] + world["y_ratio"] * 0.58,
+            "scale_x": journey["scale"] * scale_x,
+            "scale_y": journey["scale"] * scale_y,
+            "shadow_scale": journey["scale"] * world["shadow_scale"],
             "shadow_opacity": world["shadow_opacity"],
         }
     else:
         frame_count = counts.get("magic", _DEFAULT_FRAME_COUNTS["magic"])
+        journey = _journey_world_state(phase)
         if shot_id == "charge":
             magic_progress = _lerp(0.05, 0.22, local_progress)
-            x_ratio = 0.27
-            y_ratio = -0.006 * math.sin(math.pi * local_progress)
-            scale_x = 1.0
-            scale_y = _lerp(0.99, 1.02, _smoothstep(local_progress))
+            x_ratio = journey["x_ratio"]
+            y_ratio = journey["y_ratio"] - 0.006 * math.sin(math.pi * local_progress)
+            scale_x = journey["scale"]
+            scale_y = journey["scale"] * _lerp(0.99, 1.02, _smoothstep(local_progress))
         elif shot_id == "release":
             magic_progress = _lerp(0.22, 0.75, local_progress)
-            x_ratio = 0.27
-            y_ratio = -0.01 * math.sin(math.pi * local_progress)
-            scale_x = _lerp(0.98, 1.0, _smoothstep(local_progress))
-            scale_y = _lerp(1.02, 1.0, _smoothstep(local_progress))
+            x_ratio = journey["x_ratio"]
+            y_ratio = journey["y_ratio"] - 0.01 * math.sin(math.pi * local_progress)
+            scale_x = journey["scale"] * _lerp(0.98, 1.0, _smoothstep(local_progress))
+            scale_y = journey["scale"] * _lerp(1.02, 1.0, _smoothstep(local_progress))
         else:
             magic_progress = _lerp(0.75, 1.0, local_progress)
-            x_ratio = _lerp(0.27, 0.25, _smoothstep(local_progress))
-            y_ratio = 0.0
-            scale_x = 1.0
-            scale_y = 1.0
+            x_ratio = journey["x_ratio"]
+            y_ratio = journey["y_ratio"]
+            scale_x = journey["scale"]
+            scale_y = journey["scale"]
         state = {
             "action_name": "magic",
             "action_progress": magic_progress,

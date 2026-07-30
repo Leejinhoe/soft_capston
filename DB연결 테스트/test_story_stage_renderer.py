@@ -49,6 +49,8 @@ class StoryStageRendererTests(unittest.TestCase):
         self.assertLess(stage["target"][0], 512)
         self.assertLess(stage["target"][1], 384)
         self.assertLess(stage["target"][1], stage["position"][1])
+        self.assertLess(stage["destination"][1], stage["target"][1])
+        self.assertGreater(stage["destination"][0], stage["target"][0])
 
     def test_seal_brightens_when_hero_reaches_obstacle(self):
         approaching = story_stage_renderer.story_stage_state("walk", 0.5)
