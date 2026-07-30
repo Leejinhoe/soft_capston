@@ -192,6 +192,7 @@ def build_story_cast(
     profiles: Iterable[Dict[str, Any]],
     *,
     genre: Optional[str] = None,
+    character_overrides: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     normalized = normalize_story_characters(characters)
     available = [
@@ -204,6 +205,13 @@ def build_story_cast(
     ]
     if not normalized or not available:
         return []
+
+    overrides = {
+        str(role).strip().lower(): str(character_key).strip().lower()
+        for role, character_key in (character_overrides or {}).items()
+        if str(role).strip() and str(character_key).strip()
+    }
+    profiles_by_key = {_profile_key(profile): profile for profile in available}
 
     roles = [role for role in ROLE_PRIORITY if role in normalized]
     roles.extend(
@@ -218,18 +226,22 @@ def build_story_cast(
 
     for role in roles:
         description = normalized[role]
-        candidates = [
-            profile for profile in available if _profile_key(profile) in unused_keys
-        ] or available
-        profile = min(
-            candidates,
-            key=lambda item: _profile_rank(
-                item,
-                role=role,
-                description=description,
-                genre=genre,
-            ),
-        )
+        override_key = overrides.get(role)
+        profile = profiles_by_key.get(override_key)
+        is_user_selected = profile is not None
+        if profile is None:
+            candidates = [
+                profile for profile in available if _profile_key(profile) in unused_keys
+            ] or available
+            profile = min(
+                candidates,
+                key=lambda item: _profile_rank(
+                    item,
+                    role=role,
+                    description=description,
+                    genre=genre,
+                ),
+            )
         character_key = _profile_key(profile)
         unused_keys.discard(character_key)
         cast.append(
@@ -245,6 +257,7 @@ def build_story_cast(
                 "fixed_description": profile.get("description"),
                 "style_prompt": profile.get("style_prompt"),
                 "face_asset": _default_face_asset(profile),
+                "selection_source": "user" if is_user_selected else "automatic",
             }
         )
     return cast

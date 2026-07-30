@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,7 +17,8 @@ String _envOrDefined(String key, String defined, [String fallback = '']) {
   final fromDefine = defined.trim();
   if (fromDefine.isNotEmpty) return fromDefine;
 
-  final fromDotenv = dotenv.env[key]?.trim() ?? '';
+  final fromDotenv =
+      dotenv.isInitialized ? dotenv.env[key]?.trim() ?? '' : '';
   if (fromDotenv.isNotEmpty) return fromDotenv;
 
   return fallback;
@@ -24,9 +26,11 @@ String _envOrDefined(String key, String defined, [String fallback = '']) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await dotenv.load(fileName: '.env');
-  } catch (_) {}
+  if (!kIsWeb) {
+    try {
+      await dotenv.load(fileName: '.env');
+    } catch (_) {}
+  }
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

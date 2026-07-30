@@ -329,6 +329,7 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
             set(saved_fields),
             {
                 "characters",
+                "character_overrides",
                 "story_cast",
                 "character_identity_locked",
                 "updated_at",
@@ -336,6 +337,7 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(saved_fields["character_identity_locked"])
         self.assertEqual(saved_fields["characters"], response["characters"])
+        self.assertEqual(saved_fields["character_overrides"], {})
         self.assertEqual(saved_fields["story_cast"], response["story_cast"])
         self.assertIsInstance(saved_fields["updated_at"], datetime)
         self.assertTrue(self.stories.story["character_identity_locked"])
@@ -351,6 +353,37 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(
             antagonist_member["character_key"],
             first_scene_member["character_key"],
+        )
+
+    async def test_main_save_honors_selected_hero_profile(self):
+        payload = main.StoryCharactersSchema(
+            characters=self.characters,
+            character_overrides={"hero": "face_target_01"},
+            user_id=self.owner_id,
+        )
+
+        with (
+            patch.object(main, "stories_collection", self.stories),
+            patch.object(
+                main,
+                "character_profiles_collection",
+                self.profiles,
+            ),
+        ):
+            response = await main.save_story_characters(
+                self.story_id,
+                payload,
+                self._request(),
+            )
+
+        hero = next(
+            member for member in response["story_cast"] if member["role"] == "hero"
+        )
+        self.assertEqual(hero["character_key"], "face_target_01")
+        self.assertEqual(hero["selection_source"], "user")
+        self.assertEqual(
+            self.stories.story["character_overrides"],
+            {"hero": "face_target_01"},
         )
 
     async def test_main_save_rejects_invalid_object_id_without_db_call(self):

@@ -346,11 +346,28 @@ def normalize_character_key(character_key: str) -> str:
     return normalized
 
 
+def normalize_story_character_overrides(value: Any) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, str] = {}
+    for raw_role, raw_character_key in value.items():
+        role = str(raw_role).strip().lower()
+        character_key = str(raw_character_key).strip()
+        if not role or not character_key:
+            continue
+        normalized[role[:40]] = normalize_character_key(character_key)
+    return normalized
+
+
 def serialize_character_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": serialize_object_id(profile.get("_id")),
         "character_key": profile.get("character_key"),
         "name": profile.get("name"),
+        "gender": profile.get("gender"),
+        "age_group": profile.get("age_group"),
+        "role_tags": profile.get("role_tags", []),
         "description": profile.get("description"),
         "style_prompt": profile.get("style_prompt"),
         "genres": profile.get("genres", []),
@@ -386,14 +403,31 @@ async def ensure_active_character_profile(character_key: Optional[str]) -> None:
 async def build_persistent_story_cast(
     characters: Dict[str, str],
     genre: Optional[str],
+    character_overrides: Optional[Dict[str, str]] = None,
 ) -> list:
     normalized = normalize_story_characters(characters)
     if not normalized:
         return []
+    overrides = normalize_story_character_overrides(character_overrides)
     profiles = await character_profiles_collection.find(
         {"active": True, "assets.0": {"$exists": True}}
     ).to_list(length=100)
-    return build_story_cast(normalized, profiles, genre=genre)
+    available_keys = {
+        str(profile.get("character_key") or "").strip().lower()
+        for profile in profiles
+    }
+    unavailable = sorted(set(overrides.values()).difference(available_keys))
+    if unavailable:
+        raise HTTPException(
+            status_code=409,
+            detail="Selected character profile is not available.",
+        )
+    return build_story_cast(
+        normalized,
+        profiles,
+        genre=genre,
+        character_overrides=overrides,
+    )
 
 
 async def load_story_cast_member(
@@ -1310,7 +1344,7 @@ def serialize_admin_post(post: dict):
 
 @app.get("/")
 async def root():
-    return {"message": "?숉솕 ?앹꽦 API ?쒕쾭媛 ?뺤긽?곸쑝濡??ㅽ뻾 以묒엯?덈떎!"}
+    return {"message": "동화 생성 API 서버가 정상적으로 실행 중입니다."}
 
 
 @app.post("/api/users/register", response_description="Register user")
@@ -1594,6 +1628,7 @@ def serialize_story(story: dict, vocabularies: Optional[list] = None):
         "age": story.get("target_age") or story.get("age", ""),
         "prompt": prompt_inputs.get("title", story.get("prompt", story.get("title", ""))),
         "characters": story.get("characters", {}),
+        "character_overrides": story.get("character_overrides", {}),
         "story_cast": story.get("story_cast", []),
         "created_at": serialize_datetime(story.get("created_at")),
         "scenes": [serialize_scene(scene) for scene in sorted_scenes],
@@ -1635,7 +1670,14 @@ async def create_story(story: StorySchema):
     now = story.created_at or datetime.utcnow()
     user = await users_collection.find_one({"_id": ObjectId(story.user_id)})
     characters = normalize_story_characters(story.characters)
-    story_cast = await build_persistent_story_cast(characters, story.genre)
+    character_overrides = normalize_story_character_overrides(
+        story.character_overrides
+    )
+    story_cast = await build_persistent_story_cast(
+        characters,
+        story.genre,
+        character_overrides,
+    )
     story_dict = {
         "user_id": story.user_id,
         "author_nickname": (user or {}).get("nickname", "?숉솕 移쒓뎄"),
@@ -1651,7 +1693,9 @@ async def create_story(story: StorySchema):
         "comments": [],
         "community_post_id": None,
         "characters": characters,
+        "character_overrides": character_overrides,
         "story_cast": story_cast,
+        "character_identity_locked": bool(story_cast),
         "generation_status": "completed",
         "generation_meta": {
             "text_model": "fairytale-app",
@@ -1702,7 +1746,16 @@ async def save_story_characters(
     characters = normalize_story_characters(payload.characters)
     if not characters:
         raise HTTPException(status_code=400, detail="At least one character is required.")
-    story_cast = await build_persistent_story_cast(characters, story.get("genre"))
+    character_overrides = (
+        normalize_story_character_overrides(payload.character_overrides)
+        if payload.character_overrides is not None
+        else normalize_story_character_overrides(story.get("character_overrides"))
+    )
+    story_cast = await build_persistent_story_cast(
+        characters,
+        story.get("genre"),
+        character_overrides,
+    )
     if not story_cast:
         raise HTTPException(
             status_code=409,
@@ -1714,6 +1767,7 @@ async def save_story_characters(
         {
             "$set": {
                 "characters": characters,
+                "character_overrides": character_overrides,
                 "story_cast": story_cast,
                 "character_identity_locked": True,
                 "updated_at": datetime.utcnow(),

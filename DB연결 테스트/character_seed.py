@@ -95,97 +95,97 @@ def _profile(
 
 DEFAULT_CHARACTERS: List[Dict[str, Any]] = [
     _profile(
-        "male_01", "Minho", "male", "child",
+        "male_01", "민호", "male", "child",
         ["fantasy", "adventure"], ["hero", "warrior"],
         "Korean boy around age 8 with a round face, short black hair, bright brown eyes, "
         "a cobalt tunic, red scarf, leather belt, and small silver sword.",
     ),
     _profile(
-        "male_02", "Jun", "male", "teen",
+        "male_02", "준", "male", "teen",
         ["adventure", "mystery"], ["hero", "explorer", "companion"],
         "Korean teenage boy with tousled dark hair, amber eyes, an ochre field jacket, "
         "navy trousers, canvas satchel, brass compass, and sturdy brown boots.",
     ),
     _profile(
-        "male_03", "Taesan", "male", "adult",
+        "male_03", "태산", "male", "adult",
         ["fantasy", "nature"], ["guardian", "guide", "warrior"],
         "Korean adult man with a broad kind face, tied-back black hair, a moss-green cloak, "
         "bronze shoulder guard, dark tunic, and carved wooden staff.",
     ),
     _profile(
-        "male_04", "Doyun", "male", "elder",
+        "male_04", "도윤", "male", "elder",
         ["folktale", "adventure"], ["guide", "mentor", "woodcutter"],
         "Elderly Korean man with silver hair, short white beard, gentle wrinkles, "
         "a brown wool cap, forest-green vest, patched trousers, and an old rolled map.",
     ),
     _profile(
-        "male_05", "Bori", "male", "child",
+        "male_05", "보리", "male", "child",
         ["nature", "friendship"], ["companion", "helper"],
         "Korean boy around age 7 with fluffy dark-brown hair, freckles, a leaf-green capelet, "
         "cream overalls, orange boots, and an acorn-shaped pouch.",
     ),
     _profile(
-        "male_06", "Raven", "male", "young_adult",
+        "male_06", "레이븐", "male", "young_adult",
         ["dark_fantasy", "mystery"], ["antagonist", "rival", "king"],
         "Young Korean man with a sharp pale face, long ink-black hair, gray eyes, "
         "a black-violet royal coat, silver crown, high boots, and a dark crystal ring.",
     ),
     _profile(
-        "male_07", "Ian", "male", "child",
+        "male_07", "이안", "male", "child",
         ["royal", "friendship"], ["target", "prince", "companion"],
         "Korean boy around age 9 with neatly parted chestnut hair, warm brown eyes, "
         "an ivory prince jacket, sky-blue sash, gold trim, and white ankle boots.",
     ),
     _profile(
-        "male_08", "Haneul", "male", "adult",
+        "male_08", "하늘", "male", "adult",
         ["fantasy", "mystery"], ["mage", "guide", "healer"],
         "Korean adult man with a slender face, wavy midnight hair, blue-gray eyes, "
         "a teal star-patterned robe, moon brooch, leather spellbook, and crystal wand.",
     ),
     _profile(
-        "female_01", "Mina", "female", "child",
+        "female_01", "미나", "female", "child",
         ["fantasy", "adventure"], ["hero", "mage"],
         "Korean girl around age 8 with a round friendly face, short dark-brown bob, "
         "midnight-blue star cape, lavender tunic, brown boots, and glowing star wand.",
     ),
     _profile(
-        "female_02", "Hana", "female", "child",
+        "female_02", "하나", "female", "child",
         ["friendship", "nature"], ["companion", "helper"],
         "Korean girl around age 8 with two low braids, bright brown eyes, "
         "a sunflower-yellow cardigan, denim-blue overalls, coral shoes, and friendship bracelet.",
     ),
     _profile(
-        "female_03", "Miran", "female", "teen",
+        "female_03", "미란", "female", "teen",
         ["royal", "fantasy"], ["target", "princess", "healer"],
         "Korean teenage girl with a soft oval face, long chestnut hair, hazel eyes, "
         "a rose-pink royal dress, pearl circlet, cream cape, and golden key necklace.",
     ),
     _profile(
-        "female_04", "Luna", "female", "young_adult",
+        "female_04", "루나", "female", "young_adult",
         ["fantasy", "nature"], ["companion", "guide", "fairy"],
         "Young Korean woman with a heart-shaped face, wavy silver-brown hair, green eyes, "
         "a leaf-layered emerald dress, translucent wings, vine belt, and glowing lantern.",
     ),
     _profile(
-        "female_05", "Seoyeon", "female", "adult",
+        "female_05", "서연", "female", "adult",
         ["adventure", "mystery"], ["hero", "explorer", "detective"],
         "Korean adult woman with a confident oval face, black hair in a low ponytail, "
         "an amber scarf, navy expedition coat, charcoal trousers, notebook, and magnifying glass.",
     ),
     _profile(
-        "female_06", "Arin", "female", "elder",
+        "female_06", "아린", "female", "elder",
         ["folktale", "fantasy"], ["guide", "mentor", "healer"],
         "Elderly Korean woman with silver hair in a low bun, warm smile lines, "
         "a plum shawl, cream hanbok-inspired dress, herb pouch, and carved willow cane.",
     ),
     _profile(
-        "female_07", "Nara", "female", "young_adult",
+        "female_07", "나라", "female", "young_adult",
         ["dark_fantasy", "royal"], ["antagonist", "rival", "queen"],
         "Young Korean woman with an angular face, long raven hair, violet eyes, "
         "a burgundy-black royal gown, obsidian crown, silver shoulder cape, and dark mirror.",
     ),
     _profile(
-        "female_08", "Sol", "female", "teen",
+        "female_08", "솔", "female", "teen",
         ["nature", "friendship"], ["guardian", "companion", "archer"],
         "Korean teenage girl with a sun-kissed round face, wavy dark-brown hair, "
         "a moss cape, leaf-pattern cream tunic, forest boots, acorn pendant, and short bow.",

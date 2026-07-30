@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/admin_model.dart';
+import '../models/character_profile.dart';
 import '../models/media_readiness.dart';
 import '../models/moderation_model.dart';
 import '../models/story_model.dart';
@@ -89,6 +90,9 @@ class DbService {
     }
     return _apiUri(trimmed).toString();
   }
+
+  static String? resolveMediaUrl(String? pathOrUrl) =>
+      _absoluteMediaUrl(pathOrUrl);
 
   static SceneMediaResult _withAbsoluteMediaUrls(SceneMediaResult result) {
     return SceneMediaResult(
@@ -277,6 +281,34 @@ class DbService {
       _extractDetailMessage(response.body) ??
           '미디어 준비 현황 조회 실패: ${response.statusCode}',
     );
+  }
+
+  static Future<List<CharacterProfile>> fetchCharacterProfiles() async {
+    final response = await http
+        .get(
+          _apiUri('/api/media/characters?active_only=true'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractDetailMessage(response.body) ??
+            '캐릭터 프로필을 불러오지 못했습니다: ${response.statusCode}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! List) return const [];
+    return decoded
+        .whereType<Map>()
+        .map(
+          (item) => CharacterProfile.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .where((profile) => profile.characterKey.isNotEmpty)
+        .toList(growable: false);
   }
 
   static Future<bool> deleteAdminUser({
@@ -646,6 +678,7 @@ class DbService {
     required String age,
     required String prompt,
     Map<String, String> characters = const {},
+    Map<String, String> characterOverrides = const {},
   }) async {
     try {
       final response = await http
@@ -659,6 +692,7 @@ class DbService {
               'age': age,
               'prompt': prompt,
               'characters': characters,
+              'character_overrides': characterOverrides,
               'created_at': DateTime.now().toUtc().toIso8601String(),
             }),
           )
@@ -675,13 +709,18 @@ class DbService {
   static Future<bool> saveStoryCharacters({
     required String storyId,
     required Map<String, String> characters,
+    Map<String, String>? characterOverrides,
     String? userId,
   }) async {
+    final body = <String, dynamic>{'characters': characters, 'user_id': userId};
+    if (characterOverrides != null) {
+      body['character_overrides'] = characterOverrides;
+    }
     final response = await http
         .put(
           Uri.parse('$baseUrl/api/stories/$storyId/characters'),
           headers: _jsonHeaders,
-          body: jsonEncode({'characters': characters, 'user_id': userId}),
+          body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 20));
     return response.statusCode == 200;

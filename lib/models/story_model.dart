@@ -303,6 +303,7 @@ class StorySession {
   List<VocabWord> candidateVocab;
   List<VocabWord> vocab;
   Map<String, String> characters;
+  Map<String, String> characterOverrides;
   List<StoryCastMember> storyCast;
   List<String> allChoicesMade;
   int currentChapter;
@@ -323,6 +324,7 @@ class StorySession {
     this.candidateVocab = const [],
     required this.vocab,
     this.characters = const {},
+    this.characterOverrides = const {},
     this.storyCast = const [],
     this.allChoicesMade = const [],
     this.currentChapter = 1,
@@ -396,6 +398,12 @@ class StorySession {
             (key, value) => MapEntry(key.toString(), value.toString()),
           )
         : <String, String>{};
+    final rawCharacterOverrides = json['character_overrides'];
+    final characterOverrides = rawCharacterOverrides is Map
+        ? rawCharacterOverrides.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          )
+        : <String, String>{};
     final rawStoryCast = json['story_cast'];
     final storyCast = rawStoryCast is List
         ? rawStoryCast
@@ -440,6 +448,7 @@ class StorySession {
       candidateVocab: const [],
       vocab: vocab,
       characters: characters,
+      characterOverrides: characterOverrides,
       storyCast: storyCast,
       allChoicesMade: choicesMade,
       currentChapter: chapters.fold<int>(

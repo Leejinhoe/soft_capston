@@ -30,11 +30,13 @@ class StorySchema(BaseModel):
     age: str
     prompt: str
     characters: Dict[str, str] = Field(default_factory=dict)
+    character_overrides: Dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class StoryCharactersSchema(BaseModel):
     characters: Dict[str, str] = Field(default_factory=dict)
+    character_overrides: Optional[Dict[str, str]] = None
     user_id: Optional[str] = None
 
 

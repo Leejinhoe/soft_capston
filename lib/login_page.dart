@@ -29,7 +29,8 @@ class _LoginPageState extends State<LoginPage> {
     final defined = _definedGoogleClientId.trim();
     if (defined.isNotEmpty) return defined;
 
-    final configured = dotenv.env['GOOGLE_CLIENT_ID']?.trim() ?? '';
+    final configured =
+        dotenv.isInitialized ? dotenv.env['GOOGLE_CLIENT_ID']?.trim() ?? '' : '';
     return configured.isEmpty ? null : configured;
   }
 

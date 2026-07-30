@@ -87,6 +87,25 @@ class StoryCastTests(unittest.TestCase):
         )
         self.assertEqual([item["role"] for item in cast], ["hero"])
 
+    def test_honors_user_selected_profile_for_hero(self):
+        cast = build_story_cast(
+            {
+                "hero": "brave child 'Yonggam'",
+                "companion": "forest fairy 'Luna'",
+            },
+            [
+                _profile("auto_hero", ["fantasy"]),
+                _profile("user_selected_face", ["adventure"]),
+            ],
+            genre="fantasy",
+            character_overrides={"hero": "user_selected_face"},
+        )
+
+        by_role = {member["role"]: member for member in cast}
+        self.assertEqual(by_role["hero"]["character_key"], "user_selected_face")
+        self.assertEqual(by_role["hero"]["selection_source"], "user")
+        self.assertEqual(by_role["companion"]["selection_source"], "automatic")
+
 
 if __name__ == "__main__":
     unittest.main()

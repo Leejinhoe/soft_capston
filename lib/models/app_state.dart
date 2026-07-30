@@ -178,10 +178,12 @@ class AppState extends ChangeNotifier {
     required String genre,
     required String age,
     required String prompt,
+    String? selectedHeroCharacterKey,
   }) async {
     _setLoading(true);
     errorMessage = null;
     try {
+      final selectedCharacterKey = selectedHeroCharacterKey?.trim();
       final data = await ApiService.startStory(
         genre: genre,
         age: age,
@@ -199,6 +201,13 @@ class AppState extends ChangeNotifier {
         storyEmotion: _parseEmotionAnalysis(data['story_emotion']),
       );
 
+      final storyCharacters = _parseStoryCharacters(data);
+      if (selectedCharacterKey != null &&
+          selectedCharacterKey.isNotEmpty &&
+          !storyCharacters.containsKey('hero')) {
+        storyCharacters['hero'] = 'The selected story protagonist';
+      }
+
       currentStory = StorySession(
         storyId: data['story_id']?.toString() ?? 'story_0',
         genre: genre,
@@ -212,7 +221,11 @@ class AppState extends ChangeNotifier {
         ),
         candidateVocab: vocab,
         vocab: [],
-        characters: _parseStoryCharacters(data),
+        characters: storyCharacters,
+        characterOverrides:
+            selectedCharacterKey == null || selectedCharacterKey.isEmpty
+                ? const {}
+                : {'hero': selectedCharacterKey},
         allChoicesMade: [],
         currentChapter: 1,
       );
@@ -468,12 +481,14 @@ class AppState extends ChangeNotifier {
     required String genre,
     required String age,
     required String prompt,
+    String? selectedHeroCharacterKey,
   }) async {
     _setLoading(true);
     errorMessage = null;
     try {
       final normalizedPrompt =
           prompt.trim().isEmpty ? '반짝이는 숲속 모험' : prompt.trim();
+      final selectedCharacterKey = selectedHeroCharacterKey?.trim() ?? '';
       final chapterVocab = _temporaryVocabForChapter(
         genre: genre,
         prompt: normalizedPrompt,
@@ -513,6 +528,12 @@ class AppState extends ChangeNotifier {
             .toList(),
         candidateVocab: chapterVocab,
         vocab: [],
+        characters: selectedCharacterKey.isEmpty
+            ? const {}
+            : const {'hero': 'The selected story protagonist'},
+        characterOverrides: selectedCharacterKey.isEmpty
+            ? const {}
+            : {'hero': selectedCharacterKey},
         allChoicesMade: [],
         currentChapter: 1,
       );
@@ -586,6 +607,7 @@ class AppState extends ChangeNotifier {
         age: session.age,
         prompt: session.initialPrompt,
         characters: session.characters,
+        characterOverrides: session.characterOverrides,
       );
 
       if (dbStoryId == null) return;
