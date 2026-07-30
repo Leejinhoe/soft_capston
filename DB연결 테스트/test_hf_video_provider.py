@@ -238,6 +238,43 @@ class LocalCharacterVideoTests(unittest.TestCase):
 
         self.assertGreater(visible_heights[1], visible_heights[0] * 1.5)
 
+    def test_action_frames_align_on_feet_instead_of_cape_width(self):
+        sheet = Image.new("RGBA", (200, 100), (0, 0, 0, 0))
+        for x in range(40, 61):
+            for y in range(42, 96):
+                sheet.putpixel((x, y), (35, 110, 220, 255))
+        for x in range(5, 41):
+            for y in range(20, 55):
+                sheet.putpixel((x, y), (220, 45, 55, 255))
+        for x in range(140, 161):
+            for y in range(42, 96):
+                sheet.putpixel((x, y), (35, 110, 220, 255))
+        for x in range(160, 196):
+            for y in range(20, 55):
+                sheet.putpixel((x, y), (220, 45, 55, 255))
+        buffer = io.BytesIO()
+        sheet.save(buffer, format="PNG")
+
+        frames, _ = hf_video_provider._prepare_action_cycle_frames(
+            buffer.getvalue(),
+            Image,
+            width=320,
+            height=256,
+            layout="2x1",
+            frame_count=2,
+        )
+        anchors = []
+        for frame in frames:
+            alpha = frame.getchannel("A")
+            lower_start = round(frame.height * 0.58)
+            bounds = alpha.crop(
+                (0, lower_start, frame.width, frame.height)
+            ).getbbox()
+            anchors.append((bounds[0] + bounds[2]) / 2.0)
+
+        self.assertAlmostEqual(anchors[0], anchors[1], delta=1.0)
+        self.assertLessEqual(frames[0].width, round(320 * 0.82))
+
     def test_action_cycle_index_advances_by_action_timing(self):
         walk_indexes = [
             hf_video_provider._action_cycle_frame_index("walk", time, 4)

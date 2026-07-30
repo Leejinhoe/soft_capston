@@ -321,7 +321,7 @@ def composite_story_action_effects(
     action_progress: float,
     character_box: Tuple[int, int, int, int],
     feet_center: Tuple[int, int],
-    camera_progress: float,
+    camera_progress: Optional[float],
     motion_strength: int,
     Image,
     ImageDraw,
@@ -331,12 +331,16 @@ def composite_story_action_effects(
         return camera_frame
 
     state = story_stage_state(action_name, action_progress)
-    target = map_scene_point_to_camera(
-        stage["target"],
-        width=camera_frame.width,
-        height=camera_frame.height,
-        progress=camera_progress,
-        motion_strength=max(1, motion_strength // 2),
+    target = (
+        stage["target"]
+        if camera_progress is None
+        else map_scene_point_to_camera(
+            stage["target"],
+            width=camera_frame.width,
+            height=camera_frame.height,
+            progress=camera_progress,
+            motion_strength=max(1, motion_strength // 2),
+        )
     )
     result = camera_frame
 
@@ -434,4 +438,57 @@ def composite_story_action_effects(
                 fill=(255, 230, 100, alpha),
             )
         result.alpha_composite(burst)
+
+    success_strength = state["success_strength"]
+    if success_strength > 0.2:
+        success = Image.new("RGBA", result.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(success)
+        radius = max(
+            14,
+            round(result.width * (0.045 + success_strength * 0.075)),
+        )
+        glow_alpha = round(90 * success_strength)
+        draw.ellipse(
+            (
+                target[0] - radius,
+                target[1] - radius,
+                target[0] + radius,
+                target[1] + radius,
+            ),
+            outline=(255, 221, 92, glow_alpha),
+            width=max(3, round(radius * 0.1)),
+        )
+        for index in range(10):
+            angle = math.tau * index / 10.0
+            distance = radius * (
+                0.72 + 0.34 * math.sin(index * 1.7 + action_progress * 4.0)
+            )
+            spark_x = target[0] + round(math.cos(angle) * distance)
+            spark_y = target[1] + round(math.sin(angle) * distance * 0.72)
+            spark_radius = max(2, round(result.width * 0.005))
+            draw.line(
+                (
+                    spark_x - spark_radius * 2,
+                    spark_y,
+                    spark_x + spark_radius * 2,
+                    spark_y,
+                ),
+                fill=(255, 239, 150, round(190 * success_strength)),
+                width=max(1, spark_radius),
+            )
+            draw.line(
+                (
+                    spark_x,
+                    spark_y - spark_radius * 2,
+                    spark_x,
+                    spark_y + spark_radius * 2,
+                ),
+                fill=(255, 248, 195, round(210 * success_strength)),
+                width=max(1, spark_radius),
+            )
+        glow = success.filter(
+            ImageFilter.GaussianBlur(max(2, round(radius * 0.08)))
+        )
+        result.alpha_composite(glow)
+        result.alpha_composite(success)
     return result

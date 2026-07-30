@@ -7,6 +7,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from cinematic_animatic import (
+    ANIMATION_MODE as CINEMATIC_ANIMATION_MODE,
+    apply_cinematic_cut_effect,
+    resolve_cinematic_shot,
+    supports_cinematic_animatic,
+)
 from hf_media_common import HfMediaError
 from media_compositor import build_character_shadow, prepare_story_scene_layers
 from story_stage_renderer import (
@@ -21,7 +27,7 @@ LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip(
 LOCAL_VIDEO_MODEL = (
     os.getenv("LOCAL_VIDEO_MODEL")
     or os.getenv("VIDEO_MODEL")
-    or "storybook-profile-action-sequence-v18-grounded-jump"
+    or "storybook-cinematic-animatic-v1"
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "24"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
@@ -44,7 +50,7 @@ def get_hf_video_config() -> Dict[str, Any]:
         "video_supported": True,
         "video_provider": LOCAL_VIDEO_PROVIDER,
         "video_model": LOCAL_VIDEO_MODEL,
-        "video_task": "profile-driven-multi-action-animation",
+        "video_task": "profile-driven-cinematic-animatic",
         "video_requires_gpu": False,
         "video_requires_external_api": False,
         "video_default_frame_rate": LOCAL_VIDEO_FRAME_RATE,
@@ -408,11 +414,27 @@ def _prepare_action_cycle_frames(
     if len(frames) < 2:
         return [], None
 
+    def foot_anchor(frame) -> float:
+        alpha = frame.getchannel("A")
+        lower_start = round(frame.height * 0.58)
+        lower_bounds = alpha.crop(
+            (0, lower_start, frame.width, frame.height)
+        ).getbbox()
+        if lower_bounds is None:
+            return frame.width / 2.0
+        return (lower_bounds[0] + lower_bounds[2]) / 2.0
+
     target_height = round(height * 0.70)
     max_width = round(width * 0.82)
+    raw_foot_anchors = [foot_anchor(frame) for frame in frames]
+    anchored_width = max(raw_foot_anchors) + max(
+        frame.width - anchor
+        for frame, anchor in zip(frames, raw_foot_anchors)
+    )
     common_scale = min(
         target_height / max(frame.height for frame in frames),
         max_width / max(frame.width for frame in frames),
+        max_width / max(anchored_width, 1.0),
     )
     resized_frames = []
     for frame in frames:
@@ -426,10 +448,18 @@ def _prepare_action_cycle_frames(
             )
         )
 
-    canvas_width = max(frame.width for frame in resized_frames)
+    foot_anchors = [foot_anchor(frame) for frame in resized_frames]
+    left_extent = math.ceil(max(foot_anchors))
+    right_extent = math.ceil(
+        max(
+            frame.width - anchor
+            for frame, anchor in zip(resized_frames, foot_anchors)
+        )
+    )
+    canvas_width = left_extent + right_extent
     canvas_height = max(frame.height for frame in resized_frames)
     normalized_frames = []
-    for frame in resized_frames:
+    for frame, foot_anchor in zip(resized_frames, foot_anchors):
         canvas = Image.new(
             "RGBA",
             (canvas_width, canvas_height),
@@ -438,7 +468,7 @@ def _prepare_action_cycle_frames(
         canvas.alpha_composite(
             frame,
             (
-                (canvas_width - frame.width) // 2,
+                round(left_extent - foot_anchor),
                 canvas_height - frame.height,
             ),
         )
@@ -867,6 +897,7 @@ def _prepare_action_segments(
     *,
     width: int,
     height: int,
+    build_transitions: bool = True,
 ) -> List[Dict[str, Any]]:
     prepared = []
     for segment in raw_segments:
@@ -886,12 +917,17 @@ def _prepare_action_segments(
             continue
         if not frames or position is None:
             continue
-        transition_frames, samples_per_key = _build_action_transition_frames(
-            frames,
-            Image,
-            np,
-            cv2,
-        )
+        if build_transitions:
+            transition_frames, samples_per_key = (
+                _build_action_transition_frames(
+                    frames,
+                    Image,
+                    np,
+                    cv2,
+                )
+            )
+        else:
+            transition_frames, samples_per_key = [], 1
         try:
             cycle_seconds = float(segment.get("cycle_seconds") or 0.0)
         except (TypeError, ValueError):
@@ -907,6 +943,8 @@ def _prepare_action_segments(
                 "cycle_seconds": cycle_seconds or None,
             }
         )
+    if not build_transitions:
+        return prepared
     for index in range(1, len(prepared)):
         previous = prepared[index - 1]
         current = prepared[index]
@@ -1139,16 +1177,7 @@ def _render_layered_frame(
         ImageDraw=ImageDraw,
         ImageFilter=ImageFilter,
     )
-    camera_frame = _render_frame(
-        source_image=staged_background.convert("RGB"),
-        Image=Image,
-        ImageEnhance=ImageEnhance,
-        ImageOps=ImageOps,
-        width=width,
-        height=height,
-        progress=progress,
-        motion_strength=max(1, motion_strength // 2),
-    ).convert("RGBA")
+    scene_frame = staged_background.copy().convert("RGBA")
     motion = _character_motion(
         preset=motion_preset,
         progress=progress,
@@ -1177,16 +1206,16 @@ def _render_layered_frame(
     character_x = round(base_center_x - animated.width / 2 + motion["x"])
     character_y = round(base_feet_y - animated.height + motion["y"])
     shadow = build_character_shadow(
-        camera_frame.size,
+        scene_frame.size,
         animated.size,
         (character_x, character_y),
         opacity=round(motion["shadow_opacity"]),
         scale=motion["shadow_scale"],
     )
-    camera_frame.alpha_composite(shadow)
-    camera_frame.alpha_composite(animated, (character_x, character_y))
-    camera_frame = composite_story_action_effects(
-        camera_frame,
+    scene_frame.alpha_composite(shadow)
+    scene_frame.alpha_composite(animated, (character_x, character_y))
+    scene_frame = composite_story_action_effects(
+        scene_frame,
         story_stage,
         action_name=action_name,
         action_progress=action_progress,
@@ -1200,13 +1229,22 @@ def _render_layered_frame(
             character_x + animated.width // 2,
             character_y + animated.height,
         ),
-        camera_progress=progress,
+        camera_progress=None,
         motion_strength=motion_strength,
         Image=Image,
         ImageDraw=ImageDraw,
         ImageFilter=ImageFilter,
     )
-    return camera_frame.convert("RGB")
+    return _render_frame(
+        source_image=scene_frame.convert("RGB"),
+        Image=Image,
+        ImageEnhance=ImageEnhance,
+        ImageOps=ImageOps,
+        width=width,
+        height=height,
+        progress=progress,
+        motion_strength=max(1, motion_strength // 2),
+    )
 
 
 def _generate_local_video_bytes(
@@ -1275,6 +1313,14 @@ def _generate_local_video_bytes(
                 "frame_count": action_cycle_frame_count,
             }
         )
+    raw_action_names = [
+        str(segment.get("name") or "").strip().lower()
+        for segment in raw_action_segments
+    ]
+    cinematic_candidate = supports_cinematic_animatic(
+        raw_action_names,
+        supports_story_stage(raw_action_names, story_text),
+    )
     prepared_action_segments = (
         _prepare_action_segments(
             raw_action_segments,
@@ -1283,6 +1329,7 @@ def _generate_local_video_bytes(
             cv2,
             width=render_width,
             height=render_height,
+            build_transitions=not cinematic_candidate,
         )
         if layered_scene is not None
         else []
@@ -1303,6 +1350,45 @@ def _generate_local_video_bytes(
         height=render_height,
         story_text=story_text,
     )
+    cinematic_animatic = supports_cinematic_animatic(
+        prepared_action_names,
+        story_stage is not None,
+    )
+    if cinematic_candidate and not cinematic_animatic:
+        prepared_action_segments = _prepare_action_segments(
+            raw_action_segments,
+            Image,
+            np,
+            cv2,
+            width=render_width,
+            height=render_height,
+            build_transitions=True,
+        )
+        prepared_action_names = [
+            segment["name"] for segment in prepared_action_segments
+        ]
+        segment_weights = _action_segment_duration_weights(
+            prepared_action_names
+        )
+        segment_boundaries = _action_segment_boundaries(
+            total_frames,
+            len(prepared_action_segments),
+            segment_weights,
+        )
+        story_stage = prepare_story_stage(
+            prepared_action_names,
+            Image,
+            width=render_width,
+            height=render_height,
+            story_text=story_text,
+        )
+    cinematic_segments = {
+        segment["name"]: segment for segment in prepared_action_segments
+    }
+    cinematic_frame_counts = {
+        name: len(segment["frames"])
+        for name, segment in cinematic_segments.items()
+    }
     travel_plan = _build_action_travel_plan(
         prepared_action_names,
         cinematic_stage=story_stage is not None,
@@ -1323,11 +1409,43 @@ def _generate_local_video_bytes(
             for index in range(total_frames):
                 progress = index / max(total_frames - 1, 1)
                 action_motion = None
+                cinematic_state = None
                 frame_action_name = None
                 frame_action_progress = progress
                 if layered_scene is not None:
                     background, character, position = layered_scene
-                    if prepared_action_segments:
+                    if cinematic_animatic:
+                        cinematic_state = resolve_cinematic_shot(
+                            index,
+                            total_frames,
+                            frame_rate,
+                            cinematic_frame_counts,
+                        )
+                        segment = cinematic_segments[
+                            cinematic_state["action_name"]
+                        ]
+                        pose_index = min(
+                            len(segment["frames"]) - 1,
+                            max(0, int(cinematic_state["pose_index"])),
+                        )
+                        character = segment["frames"][pose_index]
+                        position = segment["position"]
+                        frame_action_name = cinematic_state["action_name"]
+                        frame_action_progress = cinematic_state[
+                            "action_progress"
+                        ]
+                        action_motion = {
+                            "x": cinematic_state["x_ratio"] * render_width,
+                            "y": cinematic_state["y_ratio"] * render_height,
+                            "angle": 0.0,
+                            "scale_x": cinematic_state["scale_x"],
+                            "scale_y": cinematic_state["scale_y"],
+                            "shadow_scale": cinematic_state["shadow_scale"],
+                            "shadow_opacity": (
+                                cinematic_state["shadow_opacity"] * 255.0
+                            ),
+                        }
+                    elif prepared_action_segments:
                         segment_index, local_progress = _resolve_action_segment(
                             index,
                             total_frames,
@@ -1467,6 +1585,14 @@ def _generate_local_video_bytes(
                         action_progress=frame_action_progress,
                         story_stage=story_stage,
                     )
+                    if cinematic_state is not None:
+                        frame = apply_cinematic_cut_effect(
+                            frame,
+                            cinematic_state,
+                            Image,
+                            ImageDraw,
+                            ImageFilter,
+                        )
                 else:
                     frame = _render_frame(
                         source_image=source_image,
@@ -1490,7 +1616,9 @@ def _generate_local_video_bytes(
         video_bytes = output_path.read_bytes()
         if not video_bytes:
             raise HfMediaError("Local video renderer returned an empty MP4 file.")
-        if len(prepared_action_segments) > 1:
+        if cinematic_animatic:
+            animation_mode = CINEMATIC_ANIMATION_MODE
+        elif len(prepared_action_segments) > 1:
             animation_mode = "profile_action_sequence"
         elif prepared_action_segments:
             animation_mode = "profile_action_cycle"
@@ -1574,6 +1702,17 @@ async def generate_hf_fairytale_video(
     ]
     if not action_cycle_names and action_cycle_name:
         action_cycle_names = [action_cycle_name]
+    character_animation_modes = {
+        "identity_safe_character_parallax",
+        "profile_action_cycle",
+        "profile_action_sequence",
+        CINEMATIC_ANIMATION_MODE,
+    }
+    action_animation_modes = {
+        "profile_action_cycle",
+        "profile_action_sequence",
+        CINEMATIC_ANIMATION_MODE,
+    }
 
     return {
         "video_bytes": video_bytes,
@@ -1594,36 +1733,24 @@ async def generate_hf_fairytale_video(
             "render_scale": _quality_render_scale(quality_steps),
             "motion_preset": motion_preset,
             "animation_mode": animation_mode,
-            "character_motion": animation_mode in {
-                "identity_safe_character_parallax",
-                "profile_action_cycle",
-                "profile_action_sequence",
-            },
+            "character_motion": animation_mode in character_animation_modes,
             "character_identity_locked": (
-                animation_mode
-                in {
-                    "identity_safe_character_parallax",
-                    "profile_action_cycle",
-                    "profile_action_sequence",
-                }
+                animation_mode in character_animation_modes
             ),
             "action_cycle_name": (
                 action_cycle_names[0]
-                if animation_mode
-                in {"profile_action_cycle", "profile_action_sequence"}
+                if animation_mode in action_animation_modes
                 and action_cycle_names
                 else None
             ),
             "action_cycle_names": (
                 action_cycle_names
-                if animation_mode
-                in {"profile_action_cycle", "profile_action_sequence"}
+                if animation_mode in action_animation_modes
                 else []
             ),
             "action_segment_count": (
                 len(action_cycle_names)
-                if animation_mode
-                in {"profile_action_cycle", "profile_action_sequence"}
+                if animation_mode in action_animation_modes
                 else 0
             ),
             "action_cycle_frame_count": (
@@ -1632,23 +1759,31 @@ async def generate_hf_fairytale_video(
                     if action_cycle_segments
                     else action_cycle_frame_count
                 )
-                if animation_mode
-                in {"profile_action_cycle", "profile_action_sequence"}
+                if animation_mode in action_animation_modes
                 else None
             ),
             "transition_mode": (
-                "grounded-landing-recovery-root-aligned-entry"
-                if animation_mode == "profile_action_sequence"
-                else None
+                "editorial-hard-cuts-fixed-poses"
+                if animation_mode == CINEMATIC_ANIMATION_MODE
+                else (
+                    "grounded-landing-recovery-root-aligned-entry"
+                    if animation_mode == "profile_action_sequence"
+                    else None
+                )
             ),
             "frame_interpolation": (
-                "character-layer-optical-flow"
-                if animation_mode
-                in {"profile_action_cycle", "profile_action_sequence"}
-                else None
+                "none-fixed-key-poses"
+                if animation_mode == CINEMATIC_ANIMATION_MODE
+                else (
+                    "character-layer-optical-flow"
+                    if animation_mode in action_animation_modes
+                    else None
+                )
             ),
             "inbetween_frames_per_transition": (
-                (
+                0
+                if animation_mode == CINEMATIC_ANIMATION_MODE
+                else (
                     math.ceil(
                         ACTION_RENDER_FRAME_TARGET
                         / max(
@@ -1665,8 +1800,7 @@ async def generate_hf_fairytale_video(
                     )
                     - 1
                 )
-                if animation_mode
-                in {"profile_action_cycle", "profile_action_sequence"}
+                if animation_mode in action_animation_modes
                 else 0
             ),
             "action_cycle_render_frame_count": (
@@ -1679,6 +1813,9 @@ async def generate_hf_fairytale_video(
                 _action_segment_duration_weights(action_cycle_names)
                 if animation_mode == "profile_action_sequence"
                 else []
+            ),
+            "cinematic_shot_count": (
+                11 if animation_mode == CINEMATIC_ANIMATION_MODE else 0
             ),
             "story_stage": (
                 STAGE_ID
