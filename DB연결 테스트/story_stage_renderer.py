@@ -65,14 +65,14 @@ def prepare_story_stage(
 
     with Image.open(OBSTACLE_PATH) as source:
         prop = source.convert("RGBA")
-    target_width = max(1, round(width * 0.34))
+    target_width = max(1, round(width * 0.31))
     scale = target_width / prop.width
     prop = prop.resize(
         (target_width, max(1, round(prop.height * scale))),
         getattr(Image, "Resampling", Image).LANCZOS,
     )
     position = (
-        round(width * 0.43),
+        round(width * 0.40),
         round(height * 0.87) - prop.height,
     )
     target = (

@@ -510,9 +510,9 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertAlmostEqual(plan[0][0], -0.26)
         self.assertAlmostEqual(plan[0][1], -0.08)
         self.assertAlmostEqual(plan[1][0], -0.08)
-        self.assertAlmostEqual(plan[1][1], 0.28)
-        self.assertAlmostEqual(plan[2][0], 0.28)
-        self.assertAlmostEqual(plan[2][1], 0.28)
+        self.assertAlmostEqual(plan[1][1], 0.38)
+        self.assertAlmostEqual(plan[2][0], 0.38)
+        self.assertAlmostEqual(plan[2][1], 0.38)
         self.assertAlmostEqual(plan[0][1], plan[1][0])
         self.assertAlmostEqual(plan[1][1], plan[2][0])
 
@@ -541,6 +541,61 @@ class LocalCharacterVideoTests(unittest.TestCase):
         )
 
         self.assertGreater(landing["x"] - takeoff["x"], 150)
+
+    def test_entry_transition_finishes_before_action_clock_advances(self):
+        self.assertEqual(
+            hf_video_provider._post_entry_action_progress(0.08, 50, 10),
+            0.0,
+        )
+        after_entry = hf_video_provider._post_entry_action_progress(
+            0.4,
+            50,
+            10,
+        )
+
+        self.assertGreater(after_entry, 0.0)
+        self.assertLess(after_entry, 0.4)
+
+    def test_grounded_walk_holds_root_during_early_stance(self):
+        start = hf_video_provider._action_cycle_motion(
+            "walk",
+            elapsed_seconds=0.0,
+            progress=0.0,
+            width=512,
+            height=384,
+            frame_index=0,
+            cycle_progress=0.0,
+            travel_start=-0.26,
+            travel_end=-0.08,
+            travel_steps=2,
+        )
+        planted = hf_video_provider._action_cycle_motion(
+            "walk",
+            elapsed_seconds=0.2,
+            progress=0.1,
+            width=512,
+            height=384,
+            frame_index=0,
+            cycle_progress=0.1,
+            travel_start=-0.26,
+            travel_end=-0.08,
+            travel_steps=2,
+        )
+        finished = hf_video_provider._action_cycle_motion(
+            "walk",
+            elapsed_seconds=2.0,
+            progress=1.0,
+            width=512,
+            height=384,
+            frame_index=0,
+            cycle_progress=1.0,
+            travel_start=-0.26,
+            travel_end=-0.08,
+            travel_steps=2,
+        )
+
+        self.assertAlmostEqual(start["x"], planted["x"])
+        self.assertGreater(finished["x"], planted["x"])
 
 
 if __name__ == "__main__":

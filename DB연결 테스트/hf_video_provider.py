@@ -21,7 +21,7 @@ LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip(
 LOCAL_VIDEO_MODEL = (
     os.getenv("LOCAL_VIDEO_MODEL")
     or os.getenv("VIDEO_MODEL")
-    or "storybook-profile-action-sequence-v13-story-stage"
+    or "storybook-profile-action-sequence-v18-grounded-jump"
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "24"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
@@ -495,7 +495,7 @@ def _action_cycle_frame_sample(
         "walk": (2, 2, 2, 2, 2, 2),
         "run": (2, 1, 1, 2, 1, 1),
         "fight": (3, 5, 7, 4, 5, 6),
-        "jump": (3, 6, 4, 6, 5, 6),
+        "jump": (2, 4, 5, 9, 2, 2),
         "magic": (2, 6, 6, 5, 5, 7),
     }
     weights = weight_presets.get(action_name or "")
@@ -648,6 +648,29 @@ def _pad_action_frame_pair(
     return first_canvas, second_canvas, (left, top)
 
 
+def _pad_action_frame_sequence(frame_positions, Image):
+    left = min(position[0] for _, position in frame_positions)
+    top = min(position[1] for _, position in frame_positions)
+    right = max(
+        position[0] + frame.width
+        for frame, position in frame_positions
+    )
+    bottom = max(
+        position[1] + frame.height
+        for frame, position in frame_positions
+    )
+    size = (right - left, bottom - top)
+    canvases = []
+    for frame, position in frame_positions:
+        canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+        canvas.alpha_composite(
+            frame,
+            (position[0] - left, position[1] - top),
+        )
+        canvases.append(canvas)
+    return canvases, (left, top)
+
+
 def _smootherstep(value: float) -> float:
     normalized = min(1.0, max(0.0, value))
     return normalized * normalized * normalized * (
@@ -686,6 +709,7 @@ def _action_cycle_motion(
     cycle_progress: Optional[float] = None,
     travel_start: Optional[float] = None,
     travel_end: Optional[float] = None,
+    travel_steps: Optional[int] = None,
 ) -> Dict[str, float]:
     default_seconds = {
         "walk": 1.0,
@@ -709,9 +733,29 @@ def _action_cycle_motion(
         if cycle_progress is not None
         else min(1.0, max(0.0, progress))
     )
+    travel_progress = _smootherstep(stage_progress)
+    if travel_steps and action_name in {"walk", "run"}:
+        normalized_steps = max(1, int(travel_steps))
+        step_position = stage_progress * normalized_steps
+        step_index = min(normalized_steps - 1, int(step_position))
+        step_phase = min(1.0, max(0.0, step_position - step_index))
+        stance_fraction = 0.35
+        step_travel = (
+            0.0
+            if step_phase <= stance_fraction
+            else _smootherstep(
+                (step_phase - stance_fraction)
+                / (1.0 - stance_fraction)
+            )
+        )
+        travel_progress = (
+            1.0
+            if stage_progress >= 1.0
+            else (step_index + step_travel) / normalized_steps
+        )
     stage_x = width * (
         travel_start
-        + (travel_end - travel_start) * _smootherstep(stage_progress)
+        + (travel_end - travel_start) * travel_progress
     )
 
     if action_name == "fight":
@@ -767,8 +811,8 @@ def _action_cycle_motion(
             phase,
             [
                 (0.0, 0.0),
-                (0.18, 0.0),
-                (0.38, -0.13),
+                (0.27, 0.0),
+                (0.4, -0.1),
                 (0.55, -0.23),
                 (0.78, -0.12),
                 (1.0, 0.0),
@@ -797,10 +841,6 @@ def _action_cycle_motion(
             "shadow_opacity": 92.0 - energy * 5.0,
         }
 
-    travel_progress = _smootherstep(progress)
-    root_x = width * (
-        travel_start + (travel_end - travel_start) * travel_progress
-    )
     footfall = abs(math.sin(math.tau * phase))
     root_y = (
         -(4.0 if action_name == "walk" else 8.0)
@@ -809,7 +849,7 @@ def _action_cycle_motion(
         / 384.0
     )
     return {
-        "x": root_x,
+        "x": stage_x,
         "y": root_y,
         "angle": 0.0,
         "scale_x": 1.0,
@@ -875,22 +915,62 @@ def _prepare_action_segments(
             if previous["name"] in {"walk", "run"}
             else len(previous["frames"]) - 1
         )
-        first, second, transition_position = _pad_action_frame_pair(
-            previous["frames"][previous_end_index],
-            previous["position"],
-            current["frames"][0],
-            current["position"],
-            Image,
-        )
-        current["entry_transition_frames"] = _build_optical_transition_pair(
-            first,
-            second,
-            ACTION_SEGMENT_TRANSITION_SAMPLES,
-            Image,
-            np,
-            cv2,
-            include_endpoint=True,
-        )
+        if previous["name"] == "jump" and current["name"] == "magic":
+            padded, transition_position = _pad_action_frame_sequence(
+                (
+                    (
+                        previous["frames"][previous_end_index],
+                        previous["position"],
+                    ),
+                    (previous["frames"][0], previous["position"]),
+                    (current["frames"][0], current["position"]),
+                ),
+                Image,
+            )
+            landing_to_ready = _build_optical_transition_pair(
+                padded[0],
+                padded[1],
+                5,
+                Image,
+                np,
+                cv2,
+                include_endpoint=True,
+            )
+            ready_to_cast = _build_optical_transition_pair(
+                padded[1],
+                padded[2],
+                5,
+                Image,
+                np,
+                cv2,
+                include_endpoint=True,
+            )
+            current["entry_transition_frames"] = (
+                landing_to_ready[:-1] + ready_to_cast
+            )
+            current["entry_transition_seconds"] = 0.42
+        else:
+            first, second, transition_position = _pad_action_frame_pair(
+                previous["frames"][previous_end_index],
+                previous["position"],
+                current["frames"][0],
+                current["position"],
+                Image,
+            )
+            current["entry_transition_frames"] = (
+                _build_optical_transition_pair(
+                    first,
+                    second,
+                    ACTION_SEGMENT_TRANSITION_SAMPLES,
+                    Image,
+                    np,
+                    cv2,
+                    include_endpoint=True,
+                )
+            )
+            current["entry_transition_seconds"] = (
+                ACTION_SEGMENT_TRANSITION_SECONDS
+            )
         current["entry_transition_position"] = transition_position
     return prepared
 
@@ -967,6 +1047,26 @@ def _resolve_action_segment(
     return segment_index, min(1.0, max(0.0, local_progress))
 
 
+def _post_entry_action_progress(
+    local_progress: float,
+    segment_frame_count: int,
+    entry_output_frames: int,
+) -> float:
+    progress = min(1.0, max(0.0, local_progress))
+    if entry_output_frames <= 1 or segment_frame_count <= 1:
+        return progress
+    entry_fraction = min(
+        0.9,
+        (entry_output_frames - 1) / max(segment_frame_count - 1, 1),
+    )
+    if progress <= entry_fraction:
+        return 0.0
+    return min(
+        1.0,
+        max(0.0, (progress - entry_fraction) / (1.0 - entry_fraction)),
+    )
+
+
 def _build_action_travel_plan(
     action_names: List[str],
     *,
@@ -987,7 +1087,7 @@ def _build_action_travel_plan(
         elif action_name == "run":
             cursor = min(0.24, cursor + 0.24)
         elif action_name == "jump":
-            cursor = min(0.28, cursor + 0.36)
+            cursor = min(0.38, cursor + 0.46)
         plan.append((start, cursor))
     return plan
 
@@ -1246,29 +1346,41 @@ def _generate_local_video_bytes(
                             segment_end - segment_start,
                         )
                         segment_duration = segment_frame_count / frame_rate
-                        local_elapsed_seconds = local_progress * segment_duration
+                        frame_cycle_seconds = segment["cycle_seconds"]
                         if (
                             story_stage is not None
                             and action_name in {"walk", "run"}
-                            and local_progress >= 0.86
                         ):
-                            cycle_seconds = float(
-                                segment["cycle_seconds"]
-                                or (1.0 if action_name == "walk" else 0.8)
+                            gait_cycles = 2 if action_name == "walk" else 3
+                            frame_cycle_seconds = (
+                                segment_duration / gait_cycles
                             )
-                            completed_cycles = max(
-                                1,
-                                round(
-                                    segment_duration
-                                    * 0.86
-                                    / cycle_seconds
-                                ),
-                            )
-                            local_elapsed_seconds = (
-                                completed_cycles * cycle_seconds
-                            )
+                        entry_frames = (
+                            segment.get("entry_transition_frames") or []
+                        )
+                        entry_output_frames = max(
+                            2,
+                            round(
+                                float(
+                                    segment.get(
+                                        "entry_transition_seconds",
+                                        ACTION_SEGMENT_TRANSITION_SECONDS,
+                                    )
+                                )
+                                * frame_rate
+                            ),
+                        )
+                        pose_progress = _post_entry_action_progress(
+                            local_progress,
+                            segment_frame_count,
+                            entry_output_frames if entry_frames else 0,
+                        )
+                        frame_action_progress = pose_progress
+                        local_elapsed_seconds = (
+                            pose_progress * segment_duration
+                        )
                         cycle_progress = (
-                            local_progress
+                            pose_progress
                             if len(prepared_action_segments) > 1
                             else None
                         )
@@ -1280,7 +1392,7 @@ def _generate_local_video_bytes(
                             action_name,
                             local_elapsed_seconds,
                             len(segment["frames"]),
-                            cycle_seconds=segment["cycle_seconds"],
+                            cycle_seconds=frame_cycle_seconds,
                             cycle_progress=cycle_progress,
                             frame_rate=frame_rate,
                         )
@@ -1297,14 +1409,6 @@ def _generate_local_video_bytes(
                                 action_index
                             ][transition_index]
                         position = segment["position"]
-                        entry_frames = segment.get("entry_transition_frames") or []
-                        entry_output_frames = max(
-                            2,
-                            round(
-                                ACTION_SEGMENT_TRANSITION_SECONDS
-                                * frame_rate
-                            ),
-                        )
                         local_frame_index = round(
                             local_progress * max(segment_frame_count - 1, 1)
                         )
@@ -1323,14 +1427,25 @@ def _generate_local_video_bytes(
                         action_motion = _action_cycle_motion(
                             action_name,
                             elapsed_seconds=local_elapsed_seconds,
-                            progress=local_progress,
+                            progress=pose_progress,
                             width=render_width,
                             height=render_height,
                             frame_index=action_index,
-                            cycle_seconds=segment["cycle_seconds"],
+                            cycle_seconds=frame_cycle_seconds,
                             cycle_progress=cycle_progress,
                             travel_start=travel_start,
                             travel_end=travel_end,
+                            travel_steps=(
+                                4
+                                if story_stage is not None
+                                and action_name == "walk"
+                                else (
+                                    3
+                                    if story_stage is not None
+                                    and action_name == "run"
+                                    else None
+                                )
+                            ),
                         )
                     frame = _render_layered_frame(
                         background=background,
@@ -1522,7 +1637,7 @@ async def generate_hf_fairytale_video(
                 else None
             ),
             "transition_mode": (
-                "landing-preserved-root-aligned-optical-entry"
+                "grounded-landing-recovery-root-aligned-entry"
                 if animation_mode == "profile_action_sequence"
                 else None
             ),

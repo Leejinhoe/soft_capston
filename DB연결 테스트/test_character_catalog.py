@@ -105,6 +105,17 @@ class CharacterCatalogTests(unittest.TestCase):
                     self.assertEqual(preferred_fight["animation_version"], 2)
                     self.assertEqual(preferred_fight["animation_frame_count"], 6)
                     self.assertEqual(preferred_fight["animation_layout"], "3x2")
+                    preferred_walk = max(
+                        (
+                            asset
+                            for asset in action_cycles
+                            if asset["animation_group"] == "walk"
+                        ),
+                        key=lambda asset: asset["animation_version"],
+                    )
+                    self.assertEqual(preferred_walk["animation_version"], 2)
+                    self.assertEqual(preferred_walk["animation_frame_count"], 2)
+                    self.assertEqual(preferred_walk["animation_layout"], "2x1")
                 else:
                     self.assertEqual(action_cycles, [])
                 fast_action_filenames = [

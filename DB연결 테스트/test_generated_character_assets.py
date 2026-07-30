@@ -23,6 +23,7 @@ PREMIUM_REFERENCES = {
 }
 ACTION_CYCLE_SHEETS = {
     "male_01_walk_cycle_v1_sheet.png": (2, 2),
+    "male_01_walk_cycle_v2_sheet.png": (2, 1),
     "male_01_fight_cycle_v1_sheet.png": (2, 2),
     "male_01_fight_cycle_v2_sheet.png": (3, 2),
     "male_01_run_cycle_v1_sheet.png": (3, 2),
