@@ -29,7 +29,9 @@ ACTION_CYCLE_SHEETS = {
     "male_01_fight_cycle_v2_sheet.png": (3, 2),
     "male_01_run_cycle_v1_sheet.png": (3, 2),
     "male_01_jump_cycle_v1_sheet.png": (3, 2),
+    "male_01_jump_cycle_v2_sheet.png": (3, 3),
     "male_01_magic_cycle_v1_sheet.png": (3, 2),
+    "male_01_magic_cycle_v2_sheet.png": (3, 3),
 }
 
 spec = importlib.util.spec_from_file_location("generate_character_assets", GENERATOR_PATH)

@@ -178,6 +178,24 @@ def _jump_pose(
     frame_count: int,
     local_progress: float,
 ) -> int:
+    if frame_count >= 9:
+        if shot_id == "crouch":
+            if local_progress < 0.24:
+                return _pose_index(frame_count, 1)
+            if local_progress < 0.58:
+                return _pose_index(frame_count, 2)
+            return _pose_index(frame_count, 3)
+        if shot_id == "takeoff":
+            return _pose_index(frame_count, 3 if local_progress < 0.42 else 4)
+        if shot_id == "flight":
+            return _pose_index(frame_count, 5 if local_progress < 0.62 else 6)
+        if shot_id == "apex":
+            return _pose_index(frame_count, 6)
+        if shot_id == "landing":
+            return _pose_index(frame_count, 7 if local_progress < 0.56 else 8)
+        if shot_id == "recovery":
+            return _pose_index(frame_count, 8 if local_progress < 0.54 else 0)
+        return _pose_index(frame_count, 0)
     if shot_id == "crouch":
         return _pose_index(frame_count, 0 if local_progress < 0.38 else 1)
     if shot_id == "takeoff":
@@ -194,6 +212,28 @@ def _jump_pose(
 
 
 def _magic_pose(shot_id: str, frame_count: int, local_progress: float) -> int:
+    if frame_count >= 9:
+        if shot_id == "charge":
+            if local_progress < 0.12:
+                return _pose_index(frame_count, 0)
+            if local_progress < 0.25:
+                return _pose_index(frame_count, 1)
+            if local_progress < 0.43:
+                return _pose_index(frame_count, 2)
+            if local_progress < 0.66:
+                return _pose_index(frame_count, 3)
+            if local_progress < 0.86:
+                return _pose_index(frame_count, 4)
+            return _pose_index(frame_count, 5)
+        if shot_id == "release":
+            if local_progress < 0.18:
+                return _pose_index(frame_count, 5)
+            if local_progress < 0.56:
+                return _pose_index(frame_count, 6)
+            if local_progress < 0.84:
+                return _pose_index(frame_count, 7)
+            return _pose_index(frame_count, 8)
+        return _pose_index(frame_count, 8)
     if shot_id == "charge":
         if local_progress < 0.20:
             return _pose_index(frame_count, 0)
@@ -439,13 +479,13 @@ def resolve_cinematic_shot(
             scale_x = 1.0
             scale_y = _lerp(0.99, 1.02, _smoothstep(local_progress))
         elif shot_id == "release":
-            magic_progress = _lerp(0.28, 0.72, local_progress)
+            magic_progress = _lerp(0.22, 0.75, local_progress)
             x_ratio = 0.27
             y_ratio = -0.01 * math.sin(math.pi * local_progress)
             scale_x = _lerp(0.98, 1.0, _smoothstep(local_progress))
             scale_y = _lerp(1.02, 1.0, _smoothstep(local_progress))
         else:
-            magic_progress = _lerp(0.72, 1.0, local_progress)
+            magic_progress = _lerp(0.75, 1.0, local_progress)
             x_ratio = _lerp(0.27, 0.25, _smoothstep(local_progress))
             y_ratio = 0.0
             scale_x = 1.0

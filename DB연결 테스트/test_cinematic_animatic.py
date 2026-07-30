@@ -7,7 +7,7 @@ import cinematic_animatic
 
 class CinematicAnimaticTests(unittest.TestCase):
     def setUp(self):
-        self.frame_counts = {"walk": 6, "jump": 6, "magic": 6}
+        self.frame_counts = {"walk": 6, "jump": 9, "magic": 9}
 
     def test_story_action_sequence_enables_cinematic_mode(self):
         self.assertTrue(
@@ -168,8 +168,32 @@ class CinematicAnimaticTests(unittest.TestCase):
             if state["shot_id"] == "release"
         }
 
-        self.assertEqual(recovery_poses, {0, 5})
-        self.assertEqual(release_poses, {2, 3, 4})
+        self.assertEqual(recovery_poses, {0, 8})
+        self.assertEqual(release_poses, {5, 6, 7, 8})
+
+    def test_nine_pose_action_sequences_use_all_key_action_beats(self):
+        states = [
+            cinematic_animatic.resolve_cinematic_shot(
+                frame_index,
+                216,
+                24,
+                self.frame_counts,
+            )
+            for frame_index in range(216)
+        ]
+        jump_poses = {
+            state["pose_index"]
+            for state in states
+            if state["action_name"] == "jump"
+        }
+        magic_poses = {
+            state["pose_index"]
+            for state in states
+            if state["action_name"] == "magic"
+        }
+
+        self.assertEqual(jump_poses, set(range(9)))
+        self.assertEqual(magic_poses, set(range(9)))
 
     def test_cut_effect_preserves_frame_dimensions(self):
         frame = Image.new("RGB", (320, 240), (40, 60, 80))
