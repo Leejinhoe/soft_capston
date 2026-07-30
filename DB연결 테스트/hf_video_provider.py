@@ -9,12 +9,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hf_media_common import HfMediaError
 from media_compositor import build_character_shadow, prepare_story_scene_layers
+from story_stage_renderer import (
+    STAGE_ID,
+    compose_story_stage_background,
+    composite_story_action_effects,
+    prepare_story_stage,
+    supports_story_stage,
+)
 
 LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip()
 LOCAL_VIDEO_MODEL = (
     os.getenv("LOCAL_VIDEO_MODEL")
     or os.getenv("VIDEO_MODEL")
-    or "storybook-profile-action-sequence-v8-24fps"
+    or "storybook-profile-action-sequence-v13-story-stage"
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "24"))
 LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "4.0"))
@@ -68,14 +75,23 @@ def _load_video_dependencies():
         import cv2
         import imageio.v2 as imageio
         import numpy as np
-        from PIL import Image, ImageEnhance, ImageOps
+        from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
     except ImportError as exc:
         raise HfMediaError(
             "Local video generation needs pillow, numpy, OpenCV, imageio, "
             "and imageio-ffmpeg. "
             "Run `pip install -r requirements.txt` in the backend folder."
         ) from exc
-    return imageio, np, Image, ImageEnhance, ImageOps, cv2
+    return (
+        imageio,
+        np,
+        Image,
+        ImageEnhance,
+        ImageOps,
+        cv2,
+        ImageDraw,
+        ImageFilter,
+    )
 
 
 def _even_dimension(value: int, minimum: int = 256) -> int:
@@ -495,7 +511,7 @@ def _action_cycle_frame_sample(
             continue
 
         local_progress = (weighted_position - frame_start) / max(weight, 1e-9)
-        should_loop = cycle_progress is None or action_name == "jump"
+        should_loop = cycle_progress is None
         next_index = (
             (index + 1) % frame_count
             if index < frame_count - 1 or should_loop
@@ -668,8 +684,8 @@ def _action_cycle_motion(
     frame_index: int,
     cycle_seconds: Optional[float] = None,
     cycle_progress: Optional[float] = None,
-    travel_start: float = -0.22,
-    travel_end: float = 0.22,
+    travel_start: Optional[float] = None,
+    travel_end: Optional[float] = None,
 ) -> Dict[str, float]:
     default_seconds = {
         "walk": 1.0,
@@ -683,6 +699,20 @@ def _action_cycle_motion(
         phase = min(1.0, max(0.0, cycle_progress))
     else:
         phase = (max(0.0, elapsed_seconds) % duration) / duration
+    if travel_start is None or travel_end is None:
+        if action_name in {"walk", "run"}:
+            travel_start, travel_end = -0.22, 0.22
+        else:
+            travel_start, travel_end = 0.0, 0.0
+    stage_progress = (
+        min(1.0, max(0.0, cycle_progress))
+        if cycle_progress is not None
+        else min(1.0, max(0.0, progress))
+    )
+    stage_x = width * (
+        travel_start
+        + (travel_end - travel_start) * _smootherstep(stage_progress)
+    )
 
     if action_name == "fight":
         local_frame = phase * 36.0
@@ -723,7 +753,7 @@ def _action_cycle_motion(
             ],
         )
         return {
-            "x": root_x * width / 512.0,
+            "x": stage_x + root_x * width / 512.0,
             "y": root_y * height / 384.0,
             "angle": 0.0,
             "scale_x": scale,
@@ -746,7 +776,7 @@ def _action_cycle_motion(
         )
         lift = abs(root_y_ratio)
         return {
-            "x": 0.0,
+            "x": stage_x,
             "y": root_y_ratio * height,
             "angle": 0.0,
             "scale_x": 1.0,
@@ -758,7 +788,7 @@ def _action_cycle_motion(
     if action_name == "magic":
         energy = math.sin(math.pi * phase)
         return {
-            "x": 0.0,
+            "x": stage_x,
             "y": -energy * height * 0.008,
             "angle": 0.0,
             "scale_x": 1.0 + energy * 0.012,
@@ -842,7 +872,7 @@ def _prepare_action_segments(
         current = prepared[index]
         previous_end_index = (
             0
-            if previous["name"] in {"walk", "run", "jump"}
+            if previous["name"] in {"walk", "run"}
             else len(previous["frames"]) - 1
         )
         first, second, transition_position = _pad_action_frame_pair(
@@ -865,24 +895,101 @@ def _prepare_action_segments(
     return prepared
 
 
+def _action_segment_duration_weights(action_names: List[str]) -> List[float]:
+    presets = {
+        "walk": 1.25,
+        "run": 1.0,
+        "jump": 0.75,
+        "fight": 1.1,
+        "magic": 1.25,
+    }
+    return [presets.get(name, 1.0) for name in action_names]
+
+
+def _action_segment_boundaries(
+    total_frames: int,
+    segment_count: int,
+    weights: Optional[List[float]] = None,
+) -> List[Tuple[int, int]]:
+    if segment_count <= 0:
+        return []
+    normalized_weights = (
+        [max(0.01, float(weight)) for weight in weights]
+        if weights and len(weights) == segment_count
+        else [1.0] * segment_count
+    )
+    total_weight = sum(normalized_weights)
+    boundaries = []
+    segment_start = 0
+    cumulative = 0.0
+    for index, weight in enumerate(normalized_weights):
+        cumulative += weight
+        if index == segment_count - 1:
+            segment_end = total_frames
+        else:
+            remaining_segments = segment_count - index - 1
+            ideal_end = round(total_frames * cumulative / total_weight)
+            segment_end = min(
+                total_frames - remaining_segments,
+                max(segment_start + 1, ideal_end),
+            )
+        boundaries.append((segment_start, segment_end))
+        segment_start = segment_end
+    return boundaries
+
+
 def _resolve_action_segment(
     frame_index: int,
     total_frames: int,
     segment_count: int,
+    weights: Optional[List[float]] = None,
 ) -> Tuple[int, float]:
     if segment_count <= 1:
         return 0, frame_index / max(total_frames - 1, 1)
-    segment_index = min(
-        segment_count - 1,
-        frame_index * segment_count // max(total_frames, 1),
+    boundaries = _action_segment_boundaries(
+        total_frames,
+        segment_count,
+        weights,
     )
-    segment_start = round(total_frames * segment_index / segment_count)
-    segment_end = round(total_frames * (segment_index + 1) / segment_count)
+    segment_index = next(
+        (
+            index
+            for index, (_, segment_end) in enumerate(boundaries)
+            if frame_index < segment_end
+        ),
+        segment_count - 1,
+    )
+    segment_start, segment_end = boundaries[segment_index]
     local_progress = (frame_index - segment_start) / max(
         segment_end - segment_start - 1,
         1,
     )
     return segment_index, min(1.0, max(0.0, local_progress))
+
+
+def _build_action_travel_plan(
+    action_names: List[str],
+    *,
+    cinematic_stage: bool,
+) -> List[Tuple[float, float]]:
+    if not cinematic_stage:
+        return [
+            _action_travel_bounds(name, index, len(action_names))
+            for index, name in enumerate(action_names)
+        ]
+
+    cursor = -0.26 if action_names and action_names[0] in {"walk", "run"} else 0.0
+    plan = []
+    for action_name in action_names:
+        start = cursor
+        if action_name == "walk":
+            cursor = min(0.24, cursor + 0.18)
+        elif action_name == "run":
+            cursor = min(0.24, cursor + 0.24)
+        elif action_name == "jump":
+            cursor = min(0.28, cursor + 0.36)
+        plan.append((start, cursor))
+    return plan
 
 
 def _action_travel_bounds(
@@ -917,9 +1024,23 @@ def _render_layered_frame(
     motion_preset: str,
     elapsed_seconds: Optional[float] = None,
     action_motion: Optional[Dict[str, float]] = None,
+    action_name: Optional[str] = None,
+    action_progress: float = 0.0,
+    story_stage: Optional[Dict[str, Any]] = None,
+    ImageDraw=None,
+    ImageFilter=None,
 ):
+    staged_background = compose_story_stage_background(
+        background,
+        story_stage,
+        action_name=action_name,
+        action_progress=action_progress,
+        Image=Image,
+        ImageDraw=ImageDraw,
+        ImageFilter=ImageFilter,
+    )
     camera_frame = _render_frame(
-        source_image=background.convert("RGB"),
+        source_image=staged_background.convert("RGB"),
         Image=Image,
         ImageEnhance=ImageEnhance,
         ImageOps=ImageOps,
@@ -964,6 +1085,27 @@ def _render_layered_frame(
     )
     camera_frame.alpha_composite(shadow)
     camera_frame.alpha_composite(animated, (character_x, character_y))
+    camera_frame = composite_story_action_effects(
+        camera_frame,
+        story_stage,
+        action_name=action_name,
+        action_progress=action_progress,
+        character_box=(
+            character_x,
+            character_y,
+            animated.width,
+            animated.height,
+        ),
+        feet_center=(
+            character_x + animated.width // 2,
+            character_y + animated.height,
+        ),
+        camera_progress=progress,
+        motion_strength=motion_strength,
+        Image=Image,
+        ImageDraw=ImageDraw,
+        ImageFilter=ImageFilter,
+    )
     return camera_frame.convert("RGB")
 
 
@@ -985,7 +1127,16 @@ def _generate_local_video_bytes(
     action_cycle_frame_count: Optional[int] = None,
     action_cycle_segments: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[bytes, str]:
-    imageio, np, Image, ImageEnhance, ImageOps, cv2 = _load_video_dependencies()
+    (
+        imageio,
+        np,
+        Image,
+        ImageEnhance,
+        ImageOps,
+        cv2,
+        ImageDraw,
+        ImageFilter,
+    ) = _load_video_dependencies()
     width = _even_dimension(width)
     height = _even_dimension(height)
     frame_rate = min(max(int(frame_rate), 6), 30)
@@ -1036,6 +1187,26 @@ def _generate_local_video_bytes(
         if layered_scene is not None
         else []
     )
+    prepared_action_names = [
+        segment["name"] for segment in prepared_action_segments
+    ]
+    segment_weights = _action_segment_duration_weights(prepared_action_names)
+    segment_boundaries = _action_segment_boundaries(
+        total_frames,
+        len(prepared_action_segments),
+        segment_weights,
+    )
+    story_stage = prepare_story_stage(
+        prepared_action_names,
+        Image,
+        width=render_width,
+        height=render_height,
+        story_text=story_text,
+    )
+    travel_plan = _build_action_travel_plan(
+        prepared_action_names,
+        cinematic_stage=story_stage is not None,
+    )
 
     with tempfile.TemporaryDirectory(prefix="fairytale_video_") as temp_dir:
         output_path = Path(temp_dir) / "scene.mp4"
@@ -1052,6 +1223,8 @@ def _generate_local_video_bytes(
             for index in range(total_frames):
                 progress = index / max(total_frames - 1, 1)
                 action_motion = None
+                frame_action_name = None
+                frame_action_progress = progress
                 if layered_scene is not None:
                     background, character, position = layered_scene
                     if prepared_action_segments:
@@ -1059,15 +1232,41 @@ def _generate_local_video_bytes(
                             index,
                             total_frames,
                             len(prepared_action_segments),
+                            segment_weights,
                         )
                         segment = prepared_action_segments[segment_index]
                         action_name = segment["name"]
-                        segment_duration = (
-                            total_frames
-                            / frame_rate
-                            / len(prepared_action_segments)
+                        frame_action_name = action_name
+                        frame_action_progress = local_progress
+                        segment_start, segment_end = segment_boundaries[
+                            segment_index
+                        ]
+                        segment_frame_count = max(
+                            1,
+                            segment_end - segment_start,
                         )
+                        segment_duration = segment_frame_count / frame_rate
                         local_elapsed_seconds = local_progress * segment_duration
+                        if (
+                            story_stage is not None
+                            and action_name in {"walk", "run"}
+                            and local_progress >= 0.86
+                        ):
+                            cycle_seconds = float(
+                                segment["cycle_seconds"]
+                                or (1.0 if action_name == "walk" else 0.8)
+                            )
+                            completed_cycles = max(
+                                1,
+                                round(
+                                    segment_duration
+                                    * 0.86
+                                    / cycle_seconds
+                                ),
+                            )
+                            local_elapsed_seconds = (
+                                completed_cycles * cycle_seconds
+                            )
                         cycle_progress = (
                             local_progress
                             if len(prepared_action_segments) > 1
@@ -1106,10 +1305,6 @@ def _generate_local_video_bytes(
                                 * frame_rate
                             ),
                         )
-                        segment_frame_count = max(
-                            1,
-                            round(total_frames / len(prepared_action_segments)),
-                        )
                         local_frame_index = round(
                             local_progress * max(segment_frame_count - 1, 1)
                         )
@@ -1124,11 +1319,7 @@ def _generate_local_video_bytes(
                             )
                             character = entry_frames[entry_index]
                             position = segment["entry_transition_position"]
-                        travel_start, travel_end = _action_travel_bounds(
-                            action_name,
-                            segment_index,
-                            len(prepared_action_segments),
-                        )
+                        travel_start, travel_end = travel_plan[segment_index]
                         action_motion = _action_cycle_motion(
                             action_name,
                             elapsed_seconds=local_elapsed_seconds,
@@ -1146,7 +1337,9 @@ def _generate_local_video_bytes(
                         character=character,
                         position=position,
                         Image=Image,
+                        ImageDraw=ImageDraw,
                         ImageEnhance=ImageEnhance,
+                        ImageFilter=ImageFilter,
                         ImageOps=ImageOps,
                         width=render_width,
                         height=render_height,
@@ -1155,6 +1348,9 @@ def _generate_local_video_bytes(
                         motion_preset=motion_preset,
                         elapsed_seconds=index / frame_rate,
                         action_motion=action_motion,
+                        action_name=frame_action_name,
+                        action_progress=frame_action_progress,
+                        story_stage=story_stage,
                     )
                 else:
                     frame = _render_frame(
@@ -1326,7 +1522,7 @@ async def generate_hf_fairytale_video(
                 else None
             ),
             "transition_mode": (
-                "ready-recovery-root-aligned-optical-entry"
+                "landing-preserved-root-aligned-optical-entry"
                 if animation_mode == "profile_action_sequence"
                 else None
             ),
@@ -1362,6 +1558,21 @@ async def generate_hf_fairytale_video(
                 ACTION_RENDER_FRAME_TARGET
                 if animation_mode
                 in {"profile_action_cycle", "profile_action_sequence"}
+                else None
+            ),
+            "segment_duration_weights": (
+                _action_segment_duration_weights(action_cycle_names)
+                if animation_mode == "profile_action_sequence"
+                else []
+            ),
+            "story_stage": (
+                STAGE_ID
+                if supports_story_stage(action_cycle_names, story_text)
+                else None
+            ),
+            "narrative_arc": (
+                "approach-obstacle-jump-unlock"
+                if supports_story_stage(action_cycle_names, story_text)
                 else None
             ),
             "seed": seed,

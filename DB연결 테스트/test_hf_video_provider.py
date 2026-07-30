@@ -429,7 +429,7 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertLess(apex["shadow_scale"], grounded["shadow_scale"])
         self.assertLess(apex["shadow_opacity"], grounded["shadow_opacity"])
 
-    def test_jump_cycle_returns_to_ready_pose_before_next_action(self):
+    def test_jump_cycle_holds_landing_pose_before_next_action(self):
         current_index, next_index, progress = (
             hf_video_provider._action_cycle_frame_sample(
                 "jump",
@@ -441,8 +441,8 @@ class LocalCharacterVideoTests(unittest.TestCase):
         )
 
         self.assertEqual(current_index, 5)
-        self.assertEqual(next_index, 0)
-        self.assertGreater(progress, 0.5)
+        self.assertEqual(next_index, 5)
+        self.assertEqual(progress, 0.0)
 
     def test_magic_action_builds_and_releases_energy_without_root_slide(self):
         ready = hf_video_provider._action_cycle_motion(
@@ -483,6 +483,64 @@ class LocalCharacterVideoTests(unittest.TestCase):
         self.assertEqual(first, (0, 0.0))
         self.assertEqual(middle[0], 1)
         self.assertEqual(last, (2, 1.0))
+
+    def test_story_sequence_uses_action_weighted_timing(self):
+        action_names = ["walk", "jump", "magic"]
+        weights = hf_video_provider._action_segment_duration_weights(
+            action_names
+        )
+        boundaries = hf_video_provider._action_segment_boundaries(
+            216,
+            len(action_names),
+            weights,
+        )
+        lengths = [end - start for start, end in boundaries]
+
+        self.assertEqual(weights, [1.25, 0.75, 1.25])
+        self.assertEqual(sum(lengths), 216)
+        self.assertGreater(lengths[0], lengths[1])
+        self.assertEqual(lengths[0], lengths[2])
+
+    def test_story_travel_plan_connects_walk_jump_and_magic_positions(self):
+        plan = hf_video_provider._build_action_travel_plan(
+            ["walk", "jump", "magic"],
+            cinematic_stage=True,
+        )
+
+        self.assertAlmostEqual(plan[0][0], -0.26)
+        self.assertAlmostEqual(plan[0][1], -0.08)
+        self.assertAlmostEqual(plan[1][0], -0.08)
+        self.assertAlmostEqual(plan[1][1], 0.28)
+        self.assertAlmostEqual(plan[2][0], 0.28)
+        self.assertAlmostEqual(plan[2][1], 0.28)
+        self.assertAlmostEqual(plan[0][1], plan[1][0])
+        self.assertAlmostEqual(plan[1][1], plan[2][0])
+
+    def test_jump_root_motion_crosses_the_obstacle(self):
+        takeoff = hf_video_provider._action_cycle_motion(
+            "jump",
+            elapsed_seconds=0.0,
+            progress=0.0,
+            width=512,
+            height=384,
+            frame_index=0,
+            cycle_progress=0.0,
+            travel_start=-0.08,
+            travel_end=0.28,
+        )
+        landing = hf_video_provider._action_cycle_motion(
+            "jump",
+            elapsed_seconds=2.4,
+            progress=1.0,
+            width=512,
+            height=384,
+            frame_index=5,
+            cycle_progress=1.0,
+            travel_start=-0.08,
+            travel_end=0.28,
+        )
+
+        self.assertGreater(landing["x"] - takeoff["x"], 150)
 
 
 if __name__ == "__main__":
