@@ -56,3 +56,6 @@ DB*/**/*.pyc
 # Generated or local-only files
 *.tmp
 *.bak
+/output/
+/tmp/
+/assets/characters/motion_sheets/generated*/

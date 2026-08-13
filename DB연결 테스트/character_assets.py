@@ -1,10 +1,34 @@
 from typing import Any, Dict, Optional
 
 
+MOTION_SHEET_QUALITY_TIER = "video_motion_sheet_v3"
+TARGET_JOURNEY_SHEET_QUALITY_TIER = "video_target_journey_sheet_v4"
+RUN_CYCLE_SHEET_QUALITY_TIER = "video_run_cycle_v16"
+JUMP_CYCLE_SHEET_QUALITY_TIER = "video_jump_cycle_v20"
+ACTION_SHEET_QUALITY_TIER = "video_action_sheet_v21"
+ACTION_CYCLE_QUALITY_TIERS = {
+    "battle": "video_battle_cycle_v22",
+    "magic": "video_magic_cycle_v22",
+    "interaction": "video_interaction_cycle_v22",
+}
+
+VIDEO_ASSET_QUALITY_TIERS = {
+    MOTION_SHEET_QUALITY_TIER,
+    TARGET_JOURNEY_SHEET_QUALITY_TIER,
+    RUN_CYCLE_SHEET_QUALITY_TIER,
+    JUMP_CYCLE_SHEET_QUALITY_TIER,
+    ACTION_SHEET_QUALITY_TIER,
+    *ACTION_CYCLE_QUALITY_TIERS.values(),
+}
+
+
 def select_character_asset(
     profile: Optional[Dict[str, Any]],
     story_text: str,
     visual_context: Optional[Dict[str, Any]] = None,
+    preferred_pose: Optional[str] = None,
+    preferred_emotion: Optional[str] = None,
+    prefer_premium_reference: bool = False,
 ) -> Optional[Dict[str, Any]]:
     if not profile:
         return None
@@ -12,14 +36,36 @@ def select_character_asset(
     if not isinstance(assets, list) or not assets:
         return None
 
+    scene_assets = [
+        asset
+        for asset in assets
+        if asset.get("quality_tier") not in VIDEO_ASSET_QUALITY_TIERS
+        and asset.get("pose")
+        not in {
+            "motion-sheet", "target-journey-sheet", "run-cycle-sheet",
+            "jump-cycle-sheet",
+            "action-sheet",
+            "battle-cycle-sheet", "magic-cycle-sheet", "interaction-cycle-sheet",
+        }
+    ]
+    if not scene_assets:
+        return None
+
     normalized_story = " ".join(story_text.lower().split())
     default_asset = next(
-        (asset for asset in assets if asset.get("pose") == "default"),
-        assets[0],
+        (asset for asset in scene_assets if asset.get("pose") == "default"),
+        scene_assets[0],
     )
+    normalized_preferred_pose = str(preferred_pose or "").strip().lower()
+    normalized_preferred_emotion = str(preferred_emotion or "").strip().lower()
+    explicit_emotions = {
+        str(item).strip().lower()
+        for item in (visual_context or {}).get("emotion_tags", [])
+        if str(item).strip()
+    }
     best_asset = default_asset
     best_score = 0
-    for asset in assets:
+    for asset in scene_assets:
         keywords = asset.get("scene_keywords") or []
         score = sum(
             1
@@ -31,13 +77,146 @@ def select_character_asset(
         context = visual_context or {}
         if asset.get("pose") in context.get("action_tags", []):
             score += 5
-        if asset.get("emotion") in context.get("emotion_tags", []):
-            score += 3
+        if str(asset.get("emotion") or "").strip().lower() in explicit_emotions:
+            score += 16
+        if normalized_preferred_pose and str(asset.get("pose") or "").strip().lower() == normalized_preferred_pose:
+            score += 12
+        if (
+            normalized_preferred_emotion
+            and not explicit_emotions
+            and str(asset.get("emotion") or "").strip().lower()
+            == normalized_preferred_emotion
+        ):
+            score += 8
+        if (
+            prefer_premium_reference
+            and asset.get("quality_tier") == "premium_reference"
+        ):
+            score += 100
         if score > best_score:
             best_asset = asset
             best_score = score
 
     return best_asset
+
+
+def select_character_motion_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == MOTION_SHEET_QUALITY_TIER
+            or asset.get("pose") == "motion-sheet"
+        ),
+        None,
+    )
+
+
+def select_character_target_journey_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == TARGET_JOURNEY_SHEET_QUALITY_TIER
+            or asset.get("pose") == "target-journey-sheet"
+        ),
+        None,
+    )
+
+
+def select_character_run_cycle_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == RUN_CYCLE_SHEET_QUALITY_TIER
+            or asset.get("pose") == "run-cycle-sheet"
+        ),
+        None,
+    )
+
+
+def select_character_jump_cycle_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == JUMP_CYCLE_SHEET_QUALITY_TIER
+            or asset.get("pose") == "jump-cycle-sheet"
+        ),
+        None,
+    )
+
+
+def select_character_action_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == ACTION_SHEET_QUALITY_TIER
+            or asset.get("pose") == "action-sheet"
+        ),
+        None,
+    )
+
+
+def select_character_action_cycle_sheet(
+    profile: Optional[Dict[str, Any]],
+    action: str,
+) -> Optional[Dict[str, Any]]:
+    if not profile:
+        return None
+    assets = profile.get("assets")
+    if not isinstance(assets, list):
+        return None
+    normalized_action = "interaction" if action == "rescue" else str(action or "")
+    quality_tier = ACTION_CYCLE_QUALITY_TIERS.get(normalized_action)
+    if not quality_tier:
+        return None
+    return next(
+        (
+            asset
+            for asset in assets
+            if asset.get("quality_tier") == quality_tier
+            or asset.get("pose") == f"{normalized_action}-cycle-sheet"
+        ),
+        None,
+    )
 
 
 def build_character_action_hint(
@@ -51,4 +230,34 @@ def build_character_action_hint(
         parts.append(f"{pose} pose, {emotion} expression")
     context = visual_context or {}
     parts.extend(str(item).replace("_", " ") for item in context.get("effect_tags", []))
+    parts.extend(
+        f"clearly visible {str(item).replace('_', ' ')}"
+        for item in context.get("prop_tags", [])
+    )
+    parts.extend(
+        f"{str(item).replace('_', ' ')} motion"
+        for item in context.get("motion_modifier_tags", [])
+    )
+    parts.extend(
+        f"{str(item).replace('_', ' ')} expression"
+        for item in context.get("emotion_tags", [])
+    )
+    semantics = context.get("action_semantics") or {}
+    interaction_kind = str(semantics.get("interaction_kind") or "").strip()
+    if interaction_kind:
+        parts.append(interaction_kind.replace("_", " "))
+    if semantics.get("requires_partner"):
+        subject_role = str(semantics.get("subject_role") or "character").replace(
+            "_", " "
+        )
+        partner_role = str(semantics.get("partner_role") or "partner").replace(
+            "_", " "
+        )
+        parts.append(f"{subject_role} visibly interacting with {partner_role}")
+    if semantics.get("requires_object") and semantics.get("object_role"):
+        object_role = str(semantics["object_role"]).replace("_", " ")
+        parts.append(f"clearly visible {object_role}")
+    if semantics.get("body_focus"):
+        body_focus = str(semantics["body_focus"]).replace("_", " ")
+        parts.append(f"readable {body_focus} action")
     return ", ".join(parts) or None

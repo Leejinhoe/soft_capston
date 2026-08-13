@@ -87,14 +87,8 @@ class _CharacterPickerState extends State<CharacterPicker> {
         SegmentedButton<String>(
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(
-              value: 'male',
-              label: Text('남자', softWrap: false),
-            ),
-            ButtonSegment(
-              value: 'female',
-              label: Text('여자', softWrap: false),
-            ),
+            ButtonSegment(value: 'male', label: Text('남자', softWrap: false)),
+            ButtonSegment(value: 'female', label: Text('여자', softWrap: false)),
           ],
           selected: {_gender},
           onSelectionChanged: (selected) {
@@ -127,7 +121,7 @@ class _CharacterPickerState extends State<CharacterPicker> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 4),
               itemCount: visibleProfiles.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final profile = visibleProfiles[index];
                 return SizedBox(
@@ -253,7 +247,7 @@ class _ProfileImage extends StatelessWidget {
         localAsset,
         fit: BoxFit.cover,
         alignment: Alignment.topCenter,
-        errorBuilder: (_, __, ___) => _placeholder(),
+        errorBuilder: (_, _, _) => _placeholder(),
       );
     }
 
@@ -261,18 +255,19 @@ class _ProfileImage extends StatelessWidget {
     if (imageUrl != null) {
       return Image.network(
         imageUrl,
+        headers: DbService.mediaHeaders,
         fit: BoxFit.cover,
         alignment: Alignment.topCenter,
-        errorBuilder: (_, __, ___) => _placeholder(),
+        errorBuilder: (_, _, _) => _placeholder(),
       );
     }
     return _placeholder();
   }
 
   Widget _placeholder() => const ColoredBox(
-        color: AppColors.bg2,
-        child: Center(
-          child: Icon(Icons.person_rounded, color: AppColors.p300, size: 42),
-        ),
-      );
+    color: AppColors.bg2,
+    child: Center(
+      child: Icon(Icons.person_rounded, color: AppColors.p300, size: 42),
+    ),
+  );
 }

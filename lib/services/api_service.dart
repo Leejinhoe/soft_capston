@@ -1,9 +1,25 @@
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl =
-      'https://restaurant-reward-himself-vbulletin.trycloudflare.com';
+  static const String _definedBaseUrl = String.fromEnvironment(
+    'STORY_API_BASE_URL',
+  );
+
+  static String get baseUrl {
+    final defined = _definedBaseUrl.trim();
+    if (defined.isNotEmpty) return defined;
+
+    if (dotenv.isInitialized) {
+      final configured = dotenv.env['STORY_API_BASE_URL']?.trim() ??
+          dotenv.env['LLM_API_BASE_URL']?.trim() ??
+          '';
+      if (configured.isNotEmpty) return configured;
+    }
+
+    return 'http://127.0.0.1:5000';
+  }
 
   static Future<Map<String, dynamic>> startStory({
     required String genre,

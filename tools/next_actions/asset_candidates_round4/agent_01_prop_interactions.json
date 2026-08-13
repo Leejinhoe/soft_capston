@@ -1,0 +1,202 @@
+{
+  "group": "소품 상호작용",
+  "created_at": "2026-08-10",
+  "candidate_count": 5,
+  "candidates": [
+    {
+      "key": "open_chest",
+      "korean_meaning": "보물상자를 열다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "requires_environment": false,
+        "requires_partner": false,
+        "required_scene": "닫힌 보물상자와 뚜껑 또는 걸쇠, 그리고 뚜껑이 열린 뒤 보일 내용물이 한 화면에 있어야 한다.",
+        "minimum_view": "medium_full_body_3_4"
+      },
+      "priority": "next_asset",
+      "status": "prototype_review",
+      "example_sentence": "The child opened the treasure chest and found a golden key.",
+      "required_assets": [
+        "보물상자 본체와 분리 가능한 뚜껑 또는 걸쇠",
+        "열린 상자 안에 남아 있을 내용물",
+        "손 접점이 보이는 캐릭터 시트"
+      ],
+      "positive_visual_cues": [
+        "캐릭터가 닫힌 상자의 걸쇠나 뚜껑 가장자리에 실제로 손을 댄다.",
+        "뚜껑이 캐릭터의 동작에 맞춰 닫힘에서 열림으로 분명하게 회전한다.",
+        "열린 상자와 안쪽 내용물이 손을 뗀 뒤에도 같은 위치에 유지된다."
+      ],
+      "negative_cues": [
+        "상자나 뚜껑 없이 허공에서 손만 여닫거나 일반 문을 여는 동작.",
+        "뚜껑이 손 접점 없이 순간적으로 사라지거나 상자 안 내용물이 함께 사라짐.",
+        "상자가 열리지 않고 캐릭터가 단순히 상자 옆을 살피거나 들어 올림."
+      ],
+      "four_phase_contract": {
+        "prepare": "닫힌 보물상자와 걸쇠 또는 뚜껑 가장자리를 확인하고 손을 접점 가까이 가져간다.",
+        "act": "걸쇠를 풀거나 뚜껑을 잡아 위로 회전시켜 닫힌 상태를 열린 상태로 바꾼다.",
+        "hold": "열린 뚜껑, 상자 안 내용물, 캐릭터의 손이 서로 가려지지 않게 결과 상태를 유지한다.",
+        "recover": "손을 상자에서 떼고 열린 상자 안의 내용물을 바라보며 안정된 자세로 돌아간다."
+      },
+      "ambiguity_risk": "일반 open이나 unlock과 겹칠 수 있으므로 뚜껑의 회전과 상자 안 내용물의 reveal을 필수 결과로 삼아야 한다.",
+      "asset_scope": "character sheet + prop + composite"
+    },
+    {
+      "key": "unlock",
+      "korean_meaning": "잠금을 풀다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "requires_environment": false,
+        "requires_partner": false,
+        "required_scene": "열쇠와 열쇠구멍이 있는 자물쇠가 보이고, 잠금 해제 뒤 연결된 문이나 상자가 다음 상태로 넘어갈 수 있어야 한다.",
+        "minimum_view": "medium_close"
+      },
+      "priority": "next_asset",
+      "status": "prototype_review",
+      "example_sentence": "The girl unlocked the treasure chest with the silver key.",
+      "required_assets": [
+        "열쇠와 손잡이가 분리된 캐릭터 소품",
+        "식별 가능한 열쇠구멍과 잠금 장치",
+        "잠금 해제 뒤 열릴 문 또는 상자"
+      ],
+      "positive_visual_cues": [
+        "캐릭터가 열쇠를 열쇠구멍에 맞춰 실제로 삽입한다.",
+        "열쇠가 자물쇠 안에서 일정한 각도로 회전하고 손과 함께 움직인다.",
+        "회전 뒤 걸쇠나 잠금 표시가 해제된 채 유지되고 연결된 대상이 열릴 준비를 한다."
+      ],
+      "negative_cues": [
+        "열쇠구멍이나 열쇠 없이 손잡이를 당겨 바로 문을 여는 일반 open.",
+        "열쇠가 자물쇠 앞에서 멈추거나 손을 통과하며 삽입과 회전이 보이지 않음.",
+        "다이얼이나 캐릭터 몸을 돌리거나, 잠금 표시가 바뀌지 않은 채 손만 흔듦."
+      ],
+      "four_phase_contract": {
+        "prepare": "자물쇠의 열쇠구멍과 열쇠의 방향을 확인하고 열쇠 끝을 입구에 맞춘다.",
+        "act": "열쇠를 열쇠구멍에 끝까지 삽입한 뒤 잠금이 풀리는 방향으로 한 번 회전시킨다.",
+        "hold": "열쇠가 삽입된 상태, 열린 잠금 표시, 아직 연결된 대상이 보이는 상태를 짧게 유지한다.",
+        "recover": "열쇠를 빼거나 손을 놓고 잠금이 풀린 문 또는 상자를 다음 open 단계로 넘긴다."
+      },
+      "ambiguity_risk": "turn_key와 insert는 unlock의 내부 단계로 읽힐 수 있으므로 삽입과 회전 뒤 잠금 상태가 실제로 해제되는 결과를 반드시 포함해야 한다.",
+      "asset_scope": "character sheet + prop + composite"
+    },
+    {
+      "key": "pick_up",
+      "korean_meaning": "바닥의 물체를 줍다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "requires_environment": true,
+        "requires_partner": false,
+        "required_scene": "바닥에 놓인 작고 집을 수 있는 열쇠, 보물, 또는 단서와 그 물체를 손으로 집을 수 있는 바닥면이 보여야 한다.",
+        "minimum_view": "wide_medium"
+      },
+      "priority": "next_asset",
+      "status": "prototype_review",
+      "example_sentence": "The child picked up the key from the dusty floor.",
+      "required_assets": [
+        "바닥에 고정된 작은 대상 소품",
+        "물체와 손을 동시에 읽을 수 있는 바닥 배경",
+        "허리 또는 무릎을 낮출 수 있는 캐릭터 시트"
+      ],
+      "positive_visual_cues": [
+        "캐릭터가 바닥의 특정 물체를 먼저 바라보고 몸을 낮춘다.",
+        "손가락이나 손바닥이 물체와 접촉한 뒤 물체가 바닥에서 분리되어 손으로 올라온다.",
+        "캐릭터가 손 안의 작은 물체를 잠시 확인한 뒤 바닥을 비운다."
+      ],
+      "negative_cues": [
+        "물체가 바닥에 남아 있는데 crouch나 kneel 자세만 취하고 손으로 분리하지 않음.",
+        "작은 물체 없이 바닥을 조사하거나 기존 investigate처럼 주변만 살핌.",
+        "물체를 멀리 던지거나 큰 물체를 양손으로 들어 올리는 lift 동작."
+      ],
+      "four_phase_contract": {
+        "prepare": "바닥의 작은 물체를 발견하고 시선을 고정한 뒤 허리와 무릎을 낮춰 손을 그 위로 가져간다.",
+        "act": "손으로 물체를 잡아 바닥 접점을 끊고 물체를 손 높이까지 들어 올린다.",
+        "hold": "물체가 손에 안정적으로 붙어 있고 바닥에는 더 이상 물체가 남지 않은 상태를 보여준다.",
+        "recover": "손에 든 물체를 확인하고 몸을 세워 다음 상호작용을 준비한다."
+      },
+      "ambiguity_risk": "crouch와 kneel의 낮은 자세, investigate의 바닥 관찰과 쉽게 겹치므로 손-물체 접촉과 바닥에서 손으로의 이동을 필수로 해야 한다.",
+      "asset_scope": "character sheet + prop + background + composite"
+    },
+    {
+      "key": "lift",
+      "korean_meaning": "무거운 물체를 들어 올리다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "requires_environment": true,
+        "requires_partner": false,
+        "required_scene": "바닥이나 낮은 지지면에 놓인 상자, 돌, 또는 큰 보물이 양손으로 들어 올릴 수 있는 크기와 무게감으로 보여야 한다.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "next_asset",
+      "status": "prototype_review",
+      "example_sentence": "The hero lifted the heavy stone and revealed a hidden mark beneath it.",
+      "required_assets": [
+        "양손으로 잡을 수 있는 큰 물체와 바닥 접점",
+        "물체 아래의 지지면 또는 드러날 표면",
+        "힘을 주고 무게를 버티는 전신 캐릭터 시트"
+      ],
+      "positive_visual_cues": [
+        "캐릭터가 큰 물체 양쪽에 양손을 대고 무게 중심을 낮춘다.",
+        "물체 전체가 지지면에서 수직으로 올라가고 팔과 몸통이 무게를 받친다.",
+        "물체를 허리 또는 가슴 높이에서 잠시 유지하며 아래의 빈 공간이나 표면이 보인다."
+      ],
+      "negative_cues": [
+        "물체가 없는 힘주기, stretch, 또는 단순히 팔을 들어 올리는 동작.",
+        "작은 바닥 물체 하나를 한 손으로 줍는 pick_up처럼 짧게 끝남.",
+        "물체가 지지면에서 떨어지지 않거나 캐릭터가 물체만 바라보고 몸을 세움."
+      ],
+      "four_phase_contract": {
+        "prepare": "큰 물체의 양쪽을 확인하고 발을 고정한 뒤 무릎과 허리를 굽혀 양손으로 잡는다.",
+        "act": "다리와 팔에 힘을 주어 물체를 지지면에서 수직으로 들어 올리고 몸 가까이 당긴다.",
+        "hold": "물체가 바닥에서 떨어진 높이와 무게를 버티는 자세를 유지하며 아래 지지면을 함께 보여준다.",
+        "recover": "물체를 천천히 내려놓거나 안전한 높이에서 확인한 뒤 손과 몸을 중립으로 회복한다."
+      },
+      "ambiguity_risk": "pick_up과 단순 grasp 또는 stretch로 오인될 수 있으므로 양손 접촉, 큰 물체의 지지면 이탈, 무게를 버티는 hold를 모두 요구해야 한다.",
+      "asset_scope": "character sheet + prop + background + composite"
+    },
+    {
+      "key": "uncover",
+      "korean_meaning": "가림막을 걷어 숨은 대상을 드러내다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "requires_environment": true,
+        "requires_partner": false,
+        "required_scene": "천, 커튼, 얇은 덮개, 또는 가림막 뒤에 숨은 보물·상자·단서가 있고 가림막을 옆으로 이동시킬 공간이 있어야 한다.",
+        "minimum_view": "medium_full_body_3_4"
+      },
+      "priority": "next_asset",
+      "status": "prototype_review",
+      "example_sentence": "The child uncovered the treasure map beneath the dusty cloth.",
+      "required_assets": [
+        "움직일 수 있는 천이나 가림막 소품",
+        "가림막 뒤에 숨겨진 보물, 상자, 또는 단서",
+        "가림막 뒤 reveal을 읽을 수 있는 배경과 캐릭터 시트"
+      ],
+      "positive_visual_cues": [
+        "캐릭터가 가림막의 가장자리나 손잡이를 찾아 실제로 잡는다.",
+        "가림막이 옆이나 뒤로 이동하면서 가려진 대상의 면적이 연속적으로 늘어난다.",
+        "가림막이 치워진 뒤 숨은 대상이 노출된 상태로 잠시 유지된다."
+      ],
+      "negative_cues": [
+        "캐릭터가 가림막 뒤에 숨어 사라지는 hide 동작.",
+        "가림막이나 숨은 대상 없이 손을 좌우로 흔드는 wave 또는 주변을 살피는 investigate.",
+        "가림막이 움직이지 않고 대상이 프레임 사이에서 갑자기 나타나거나, 뚜껑을 들어 올리는 open_chest."
+      ],
+      "four_phase_contract": {
+        "prepare": "가림막의 가장자리와 그 뒤에 있을 숨은 대상을 바라보고 손을 잡을 위치로 가져간다.",
+        "act": "가림막을 옆으로 끌어 대상이 보일 때까지 걷어 내고 손과 천의 접촉을 유지한다.",
+        "hold": "가림막은 대상 시야를 막지 않는 위치에 있고, 드러난 보물·상자·단서를 분명하게 보여준다.",
+        "recover": "가림막에서 손을 떼고 새로 드러난 대상을 바라보며 다음 상호작용을 위한 자세로 돌아간다."
+      },
+      "ambiguity_risk": "hide, wave, investigate, open_chest와 겹칠 수 있으므로 가림막의 실제 이동과 그 뒤 대상의 연속적인 reveal을 반드시 기록해야 한다.",
+      "asset_scope": "character sheet + prop + background + composite"
+    }
+  ]
+}

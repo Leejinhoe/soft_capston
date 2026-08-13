@@ -41,6 +41,97 @@ REFERENCE_VARIANT = (
     (),
 )
 
+MOTION_SHEET_VARIANT = {
+    "pose": "motion-sheet",
+    "emotion": "dynamic",
+    "quality_tier": "video_motion_sheet_v3",
+    "tags": ("video", "motion-sheet", "action"),
+    "scene_keywords": (),
+    "sheet_columns": 4,
+    "sheet_rows": 2,
+    "motion_cells": {
+        "idle": [0],
+        "walking": [1, 2],
+        "running": [3],
+        "magic": [4],
+        "battle": [5],
+        "rescue": [6],
+        "talking": [7],
+    },
+}
+TARGET_JOURNEY_SHEET_VARIANT = {
+    "pose": "target-journey-sheet",
+    "emotion": "determined",
+    "quality_tier": "video_target_journey_sheet_v4",
+    "tags": ("video", "motion-sheet", "rear-view", "target-journey"),
+    "scene_keywords": ("castle", "tower", "forest path", "\uc131", "\ud0d1", "\uc232\uae38"),
+    "sheet_columns": 4,
+    "sheet_rows": 2,
+    "motion_cells": {
+        "target_running": list(range(8)),
+    },
+}
+RUN_CYCLE_SHEET_VARIANT = {
+    "pose": "run-cycle-sheet",
+    "emotion": "determined",
+    "quality_tier": "video_run_cycle_v16",
+    "tags": ("video", "sprite-sheet", "rear-view", "running"),
+    "scene_keywords": ("run", "running", "castle", "달리", "성"),
+    "sheet_columns": 4,
+    "sheet_rows": 2,
+    "motion_cells": {
+        "target_running": list(range(8)),
+    },
+    "playback": "discrete-frames",
+}
+JUMP_CYCLE_SHEET_VARIANT = {
+    "pose": "jump-cycle-sheet",
+    "emotion": "determined",
+    "quality_tier": "video_jump_cycle_v20",
+    "tags": ("video", "sprite-sheet", "jumping", "identity-locked"),
+    "scene_keywords": ("jump", "leap", "hop", "\uc810\ud504", "\ub3c4\uc57d"),
+    "sheet_columns": 4,
+    "sheet_rows": 2,
+    "motion_cells": {"jumping": list(range(8))},
+    "playback": "discrete-frames",
+}
+ACTION_SHEET_VARIANT = {
+    "pose": "action-sheet",
+    "emotion": "dynamic",
+    "quality_tier": "video_action_sheet_v21",
+    "tags": ("video", "sprite-sheet", "actions", "identity-locked"),
+    "scene_keywords": (
+        "wave", "investigate", "handoff", "rescue", "magic", "battle",
+    ),
+    "sheet_columns": 4,
+    "sheet_rows": 2,
+    "motion_cells": {
+        "idle": [0], "wave": [1], "investigate": [2], "handoff": [3],
+        "magic": [4, 5], "battle": [6, 7],
+    },
+    "playback": "discrete-frames",
+}
+ACTION_CYCLE_VARIANTS = {
+    "battle": {
+        "pose": "battle-cycle-sheet",
+        "emotion": "determined",
+        "quality_tier": "video_battle_cycle_v22",
+        "tags": ("video", "sprite-sheet", "battle", "identity-locked"),
+    },
+    "magic": {
+        "pose": "magic-cycle-sheet",
+        "emotion": "focused",
+        "quality_tier": "video_magic_cycle_v22",
+        "tags": ("video", "sprite-sheet", "magic", "identity-locked"),
+    },
+    "interaction": {
+        "pose": "interaction-cycle-sheet",
+        "emotion": "helpful",
+        "quality_tier": "video_interaction_cycle_v22",
+        "tags": ("video", "sprite-sheet", "interaction", "identity-locked"),
+    },
+}
+
 
 def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
     specs = []
@@ -55,6 +146,118 @@ def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
                 "quality_tier": "premium_reference",
                 "tags": sorted(set(tags).union(variant_tags)),
                 "scene_keywords": list(keywords),
+            }
+        )
+    motion_filename = f"motion_sheets/{character_key}_motion_sheet_v3.png"
+    if (CHARACTER_ASSET_DIR / motion_filename).is_file():
+        specs.append(
+            {
+                "filename": motion_filename,
+                "pose": MOTION_SHEET_VARIANT["pose"],
+                "emotion": MOTION_SHEET_VARIANT["emotion"],
+                "quality_tier": MOTION_SHEET_VARIANT["quality_tier"],
+                "tags": sorted(set(tags).union(MOTION_SHEET_VARIANT["tags"])),
+                "scene_keywords": list(MOTION_SHEET_VARIANT["scene_keywords"]),
+                "sheet_columns": MOTION_SHEET_VARIANT["sheet_columns"],
+                "sheet_rows": MOTION_SHEET_VARIANT["sheet_rows"],
+                "motion_cells": dict(MOTION_SHEET_VARIANT["motion_cells"]),
+            }
+        )
+    target_journey_filename = (
+        f"motion_sheets/{character_key}_target_journey_sheet_v4.png"
+    )
+    if (CHARACTER_ASSET_DIR / target_journey_filename).is_file():
+        specs.append(
+            {
+                "filename": target_journey_filename,
+                "pose": TARGET_JOURNEY_SHEET_VARIANT["pose"],
+                "emotion": TARGET_JOURNEY_SHEET_VARIANT["emotion"],
+                "quality_tier": TARGET_JOURNEY_SHEET_VARIANT["quality_tier"],
+                "tags": sorted(
+                    set(tags).union(TARGET_JOURNEY_SHEET_VARIANT["tags"])
+                ),
+                "scene_keywords": list(
+                    TARGET_JOURNEY_SHEET_VARIANT["scene_keywords"]
+                ),
+                "sheet_columns": TARGET_JOURNEY_SHEET_VARIANT["sheet_columns"],
+                "sheet_rows": TARGET_JOURNEY_SHEET_VARIANT["sheet_rows"],
+                "motion_cells": dict(
+                    TARGET_JOURNEY_SHEET_VARIANT["motion_cells"]
+                ),
+            }
+        )
+    run_cycle_filename = f"motion_sheets/{character_key}_run_cycle_v16.png"
+    if (CHARACTER_ASSET_DIR / run_cycle_filename).is_file():
+        specs.append(
+            {
+                "filename": run_cycle_filename,
+                "pose": RUN_CYCLE_SHEET_VARIANT["pose"],
+                "emotion": RUN_CYCLE_SHEET_VARIANT["emotion"],
+                "quality_tier": RUN_CYCLE_SHEET_VARIANT["quality_tier"],
+                "tags": sorted(
+                    set(tags).union(RUN_CYCLE_SHEET_VARIANT["tags"])
+                ),
+                "scene_keywords": list(
+                    RUN_CYCLE_SHEET_VARIANT["scene_keywords"]
+                ),
+                "sheet_columns": RUN_CYCLE_SHEET_VARIANT["sheet_columns"],
+                "sheet_rows": RUN_CYCLE_SHEET_VARIANT["sheet_rows"],
+                "motion_cells": dict(RUN_CYCLE_SHEET_VARIANT["motion_cells"]),
+                "playback": RUN_CYCLE_SHEET_VARIANT["playback"],
+            }
+        )
+    jump_cycle_filename = f"motion_sheets/{character_key}_jump_cycle_v19.png"
+    if (CHARACTER_ASSET_DIR / jump_cycle_filename).is_file():
+        specs.append(
+            {
+                "filename": jump_cycle_filename,
+                "pose": JUMP_CYCLE_SHEET_VARIANT["pose"],
+                "emotion": JUMP_CYCLE_SHEET_VARIANT["emotion"],
+                "quality_tier": JUMP_CYCLE_SHEET_VARIANT["quality_tier"],
+                "tags": sorted(
+                    set(tags).union(JUMP_CYCLE_SHEET_VARIANT["tags"])
+                ),
+                "scene_keywords": list(
+                    JUMP_CYCLE_SHEET_VARIANT["scene_keywords"]
+                ),
+                "sheet_columns": JUMP_CYCLE_SHEET_VARIANT["sheet_columns"],
+                "sheet_rows": JUMP_CYCLE_SHEET_VARIANT["sheet_rows"],
+                "motion_cells": dict(JUMP_CYCLE_SHEET_VARIANT["motion_cells"]),
+                "playback": JUMP_CYCLE_SHEET_VARIANT["playback"],
+            }
+        )
+    action_sheet_filename = f"motion_sheets/{character_key}_action_sheet_v21.png"
+    if (CHARACTER_ASSET_DIR / action_sheet_filename).is_file():
+        specs.append(
+            {
+                "filename": action_sheet_filename,
+                "pose": ACTION_SHEET_VARIANT["pose"],
+                "emotion": ACTION_SHEET_VARIANT["emotion"],
+                "quality_tier": ACTION_SHEET_VARIANT["quality_tier"],
+                "tags": sorted(set(tags).union(ACTION_SHEET_VARIANT["tags"])),
+                "scene_keywords": list(ACTION_SHEET_VARIANT["scene_keywords"]),
+                "sheet_columns": ACTION_SHEET_VARIANT["sheet_columns"],
+                "sheet_rows": ACTION_SHEET_VARIANT["sheet_rows"],
+                "motion_cells": dict(ACTION_SHEET_VARIANT["motion_cells"]),
+                "playback": ACTION_SHEET_VARIANT["playback"],
+            }
+        )
+    for action_name, variant in ACTION_CYCLE_VARIANTS.items():
+        cycle_filename = f"motion_sheets/{character_key}_{action_name}_cycle_v22.png"
+        if not (CHARACTER_ASSET_DIR / cycle_filename).is_file():
+            continue
+        specs.append(
+            {
+                "filename": cycle_filename,
+                "pose": variant["pose"],
+                "emotion": variant["emotion"],
+                "quality_tier": variant["quality_tier"],
+                "tags": sorted(set(tags).union(variant["tags"])),
+                "scene_keywords": [action_name],
+                "sheet_columns": 4,
+                "sheet_rows": 2,
+                "motion_cells": {action_name: list(range(8))},
+                "playback": "optical-flow-adjacent-frames",
             }
         )
     for suffix, pose, emotion, variant_tags, keywords in ASSET_VARIANTS:
@@ -205,16 +408,76 @@ async def _store_character_asset(
     sha256 = hashlib.sha256(content).hexdigest()
     quality_tier = asset.get("quality_tier", "fast_action")
     is_premium_reference = quality_tier == "premium_reference"
-    provider = "openai-imagegen" if is_premium_reference else "local-procedural"
+    is_target_journey_sheet = quality_tier == "video_target_journey_sheet_v4"
+    is_run_cycle_sheet = quality_tier == "video_run_cycle_v16"
+    is_jump_cycle_sheet = quality_tier == "video_jump_cycle_v20"
+    is_action_sheet = quality_tier == "video_action_sheet_v21"
+    is_action_cycle_sheet = quality_tier in {
+        "video_battle_cycle_v22",
+        "video_magic_cycle_v22",
+        "video_interaction_cycle_v22",
+    }
+    is_motion_sheet = (
+        quality_tier == "video_motion_sheet_v3"
+        or is_target_journey_sheet
+        or is_run_cycle_sheet
+        or is_jump_cycle_sheet
+        or is_action_sheet
+        or is_action_cycle_sheet
+    )
+    provider = (
+        "openai-imagegen"
+        if is_premium_reference or is_motion_sheet
+        else "local-procedural"
+    )
     model = (
-        "storybook-character-reference-v2"
-        if is_premium_reference
-        else "storybook-character-vector-v1"
+        (
+            (
+                "storybook-action-cycle-sheet-v22"
+                if is_action_cycle_sheet
+                else "storybook-action-sheet-v21"
+                if is_action_sheet
+                else "storybook-jump-cycle-sheet-v20"
+                if is_jump_cycle_sheet
+                else "storybook-run-cycle-sheet-v16"
+                if is_run_cycle_sheet
+                else "storybook-target-journey-sheet-v4"
+            )
+            if is_target_journey_sheet or is_run_cycle_sheet or is_jump_cycle_sheet or is_action_sheet or is_action_cycle_sheet
+            else "storybook-character-motion-sheet-v3"
+        )
+        if is_motion_sheet
+        else (
+            "storybook-character-reference-v2"
+            if is_premium_reference
+            else "storybook-character-vector-v1"
+        )
+    )
+    asset_role = (
+        "character_action_cycle_sheet"
+        if is_action_cycle_sheet
+        else "character_action_sheet"
+        if is_action_sheet
+        else "character_jump_cycle_sheet"
+        if is_jump_cycle_sheet
+        else (
+            "character_run_cycle_sheet"
+            if is_run_cycle_sheet
+            else (
+                "character_target_journey_sheet"
+                if is_target_journey_sheet
+                else (
+                    "character_motion_sheet"
+                    if is_motion_sheet
+                    else "character_reference"
+                )
+            )
+        )
     )
     files_collection = database.get_collection(f"{MEDIA_GRIDFS_BUCKET}.files")
     existing = await files_collection.find_one(
         {
-            "metadata.asset_role": "character_reference",
+            "metadata.asset_role": asset_role,
             "metadata.character_key": character["character_key"],
             "metadata.sha256": sha256,
         }
@@ -228,7 +491,7 @@ async def _store_character_asset(
             metadata={
                 "content_type": "image/png",
                 "media_kind": "image",
-                "asset_role": "character_reference",
+                "asset_role": asset_role,
                 "character_key": character["character_key"],
                 "pose": asset["pose"],
                 "emotion": asset["emotion"],
@@ -236,6 +499,9 @@ async def _store_character_asset(
                 "provider": provider,
                 "model": model,
                 "sha256": sha256,
+                "sheet_columns": asset.get("sheet_columns"),
+                "sheet_rows": asset.get("sheet_rows"),
+                "motion_cells": asset.get("motion_cells"),
                 "created_at": datetime.utcnow().isoformat(),
             },
         )
@@ -273,17 +539,24 @@ async def seed_default_character_profiles() -> int:
             except FileNotFoundError as exc:
                 logger.warning("%s", exc)
                 continue
-            stored_assets.append(
-                {
-                    "pose": asset_spec["pose"],
-                    "emotion": asset_spec["emotion"],
-                    "image_file_id": stored["file_id"],
-                    "image_url": stored["url"],
-                    "quality_tier": asset_spec.get("quality_tier", "fast_action"),
-                    "tags": asset_spec["tags"],
-                    "scene_keywords": asset_spec["scene_keywords"],
-                }
-            )
+            stored_asset = {
+                "pose": asset_spec["pose"],
+                "emotion": asset_spec["emotion"],
+                "image_file_id": stored["file_id"],
+                "image_url": stored["url"],
+                "quality_tier": asset_spec.get("quality_tier", "fast_action"),
+                "tags": asset_spec["tags"],
+                "scene_keywords": asset_spec["scene_keywords"],
+            }
+            for key in (
+                "sheet_columns",
+                "sheet_rows",
+                "motion_cells",
+                "playback",
+            ):
+                if key in asset_spec:
+                    stored_asset[key] = asset_spec[key]
+            stored_assets.append(stored_asset)
         if not stored_assets:
             continue
 

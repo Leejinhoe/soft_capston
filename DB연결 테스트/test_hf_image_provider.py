@@ -75,6 +75,30 @@ class HuggingFaceImageProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["attempted_providers"], ["first", "second"])
         self.assertGreater(len(result["image_bytes"]), 0)
 
+    async def test_hosted_provider_receives_supported_guidance_scale(self):
+        captured = {}
+
+        class CapturingClient(FakeClient):
+            async def text_to_image(self, *args, **kwargs):
+                captured.update(kwargs)
+                return await super().text_to_image(*args, **kwargs)
+
+        with (
+            patch.object(hf_image_provider, "HF_TOKEN", "test-token"),
+            patch.object(hf_image_provider, "HF_IMAGE_API_URL", ""),
+            patch.object(hf_image_provider, "HF_IMAGE_PROVIDERS", ("first",)),
+            patch.object(
+                hf_image_provider,
+                "AsyncInferenceClient",
+                return_value=CapturingClient(Image.new("RGB", (32, 32), "navy")),
+            ),
+        ):
+            await hf_image_provider.generate_hf_fairytale_image(
+                story_text="A glowing forest door",
+            )
+
+        self.assertGreaterEqual(captured["guidance_scale"], 1.0)
+
     async def test_non_retryable_error_stops_immediately(self):
         calls = []
 

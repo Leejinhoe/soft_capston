@@ -23,6 +23,7 @@ void main() {
     });
 
     expect(story.storyCast, hasLength(1));
+    expect(story.selectedHeroCharacterKey, 'fantasy_mina');
     expect(story.effectiveStoryCast.single.name, '용감이');
     expect(story.effectiveStoryCast.single.characterKey, 'fantasy_mina');
     expect(story.effectiveStoryCast.single.identityLabel, '판타지 미나');
@@ -56,6 +57,47 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('selected hero falls back to the saved character override', () {
+    final story = StorySession(
+      storyId: 'story-override',
+      genre: 'fantasy',
+      age: '7',
+      initialPrompt: 'A castle journey',
+      chapters: const [],
+      choices: const [],
+      choiceOptions: const [],
+      vocab: const [],
+      characterOverrides: const {'hero': 'male_01'},
+    );
+
+    expect(story.selectedHeroCharacterKey, 'male_01');
+  });
+
+  test('explicit hero selection takes priority over legacy cast data', () {
+    final story = StorySession(
+      storyId: 'story-explicit-selection',
+      genre: 'fantasy',
+      age: '7',
+      initialPrompt: 'A castle journey',
+      chapters: const [],
+      choices: const [],
+      choiceOptions: const [],
+      vocab: const [],
+      characterOverrides: const {'hero': 'male_01'},
+      storyCast: const [
+        StoryCastMember(
+          role: 'hero',
+          name: 'Legacy hero',
+          characterKey: 'fantasy_mina',
+        ),
+      ],
+    );
+
+    expect(story.selectedHeroCharacterKey, 'male_01');
+    expect(story.effectiveStoryCast.single.characterKey, 'male_01');
+    expect(story.effectiveStoryCast.single.identityLabel, '민호');
   });
 
   testWidgets('opens a compact cast bottom sheet', (tester) async {

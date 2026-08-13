@@ -1,0 +1,5367 @@
+{
+  "manifest_version": "round100-hq-v1",
+  "status": "rendered",
+  "source_catalog": "D:\\capstone\\soft_capston-main\\tools\\next_actions\\round100_catalog.json",
+  "record_count": 100,
+  "quality_policy": {
+    "full_body_alpha_dissolve": false,
+    "low_overlap_pose_cut": true,
+    "generated_composite_pose_cut": true,
+    "partner_required_layers": true,
+    "scene_layers": true
+  },
+  "format": {
+    "width": 960,
+    "height": 480,
+    "fps": 30,
+    "frame_count": 240,
+    "duration_seconds": 8.0,
+    "codec": "H.264/libx264"
+  },
+  "records": [
+    {
+      "key": "stand",
+      "ko": "서다",
+      "group": "01_posture",
+      "anchor": "stable feet and upright torso",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "stand",
+        "word": "서다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "stable feet and upright torso",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 1,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_stand_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_stand_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_stand_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_stand_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_stand_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": false,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "sit",
+      "ko": "앉다",
+      "group": "01_posture",
+      "anchor": "bent knees and grounded seat",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "sit",
+        "word": "앉다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "bent knees and grounded seat",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 2,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_sit_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_sit_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_sit_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_sit_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_sit_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": false,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "kneel",
+      "ko": "무릎 꿇다",
+      "group": "01_posture",
+      "anchor": "one or both knees touch the ground",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "kneel",
+        "word": "무릎 꿇다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "one or both knees touch the ground",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 3,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_kneel_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_kneel_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_kneel_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_kneel_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_kneel_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "bow",
+      "ko": "고개 숙이다",
+      "group": "01_posture",
+      "anchor": "upper body bends forward then recovers",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "bow",
+        "word": "고개 숙이다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "upper body bends forward then recovers",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 4,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_bow_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_bow_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_bow_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_bow_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_bow_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "crouch",
+      "ko": "웅크리다",
+      "group": "01_posture",
+      "anchor": "low center of gravity with bent knees",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "crouch",
+        "word": "웅크리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "low center of gravity with bent knees",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 5,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_crouch_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_crouch_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_crouch_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_crouch_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_crouch_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": false,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "stretch",
+      "ko": "기지개 켜다",
+      "group": "01_posture",
+      "anchor": "arms extend overhead and torso lengthens",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "stretch",
+        "word": "기지개 켜다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "arms extend overhead and torso lengthens",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 6,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_stretch_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_stretch_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_stretch_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_stretch_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_stretch_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": false,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "prone",
+      "ko": "엎드리다",
+      "group": "01_posture",
+      "anchor": "body settles flat on the ground",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "prone",
+        "word": "엎드리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "body settles flat on the ground",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 7,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_prone_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_prone_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_prone_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_prone_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_prone_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "wake",
+      "ko": "잠에서 깨다",
+      "group": "01_posture",
+      "anchor": "eyes and torso rise from rest",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "wake",
+        "word": "잠에서 깨다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "eyes and torso rise from rest",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 8,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_wake_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_wake_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_wake_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_wake_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_wake_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "yawn",
+      "ko": "하품하다",
+      "group": "01_posture",
+      "anchor": "mouth opens and arms lift in a slow stretch",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "yawn",
+        "word": "하품하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "mouth opens and arms lift in a slow stretch",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 9,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_yawn_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_yawn_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_yawn_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_yawn_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_yawn_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": false,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "sneeze",
+      "ko": "재채기하다",
+      "group": "01_posture",
+      "anchor": "short forward recoil and recovery",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "sneeze",
+        "word": "재채기하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "short forward recoil and recovery",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 10,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_sneeze_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_sneeze_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_sneeze_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_sneeze_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_sneeze_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "stagger",
+      "ko": "비틀거리다",
+      "group": "01_posture",
+      "anchor": "weight shifts unevenly before balance returns",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "stagger",
+        "word": "비틀거리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "weight shifts unevenly before balance returns",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 11,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_stagger_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_stagger_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_stagger_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_stagger_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_stagger_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "salute",
+      "ko": "경례하다",
+      "group": "01_posture",
+      "anchor": "hand reaches the forehead and holds",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "salute",
+        "word": "경례하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "hand reaches the forehead and holds",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 12,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_salute_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_salute_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_salute_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_salute_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_salute_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": false,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "clap",
+      "ko": "박수치다",
+      "group": "01_posture",
+      "anchor": "hands meet twice in front of the chest",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "clap",
+        "word": "박수치다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "hands meet twice in front of the chest",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 13,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_clap_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_clap_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_clap_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_clap_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_clap_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "dance",
+      "ko": "춤추다",
+      "group": "01_posture",
+      "anchor": "rhythmic side step with arms moving",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "dance",
+        "word": "춤추다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "rhythmic side step with arms moving",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 14,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_dance_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_dance_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_dance_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_dance_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_dance_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "nod",
+      "ko": "고개 끄덕이다",
+      "group": "01_posture",
+      "anchor": "small repeated head nod",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "nod",
+        "word": "고개 끄덕이다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "small repeated head nod",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 15,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_nod_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_nod_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_nod_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_nod_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_nod_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": false,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "smile",
+      "ko": "웃다",
+      "group": "01_posture",
+      "anchor": "open friendly expression",
+      "solo": true,
+      "needs": [],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "smile",
+        "word": "웃다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "stationary",
+        "visual_anchor": "open friendly expression",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 16,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\01_posture\\male_01_smile_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_smile_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\01_posture\\male_01_smile_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_smile_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\01_posture\\male_01_smile_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "journey",
+      "ko": "여행하다",
+      "group": "02_travel",
+      "anchor": "steady forward path",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "journey",
+        "word": "여행하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "steady forward path",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 17,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_journey_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_journey_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_journey_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_journey_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_journey_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "walk",
+      "ko": "걷다",
+      "group": "02_travel",
+      "anchor": "alternating feet and gentle arm swing",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "walk",
+        "word": "걷다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "alternating feet and gentle arm swing",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 18,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_walk_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_walk_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_walk_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_walk_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_walk_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "run",
+      "ko": "달리다",
+      "group": "02_travel",
+      "anchor": "alternating stride toward a destination",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "run",
+        "word": "달리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "alternating stride toward a destination",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 19,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_run_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_run_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_run_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_run_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_run_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "jump",
+      "ko": "뛰어오르다",
+      "group": "02_travel",
+      "anchor": "knees compress then both feet leave the ground",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "jump",
+        "word": "뛰어오르다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "knees compress then both feet leave the ground",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 20,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_jump_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_jump_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_jump_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_jump_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_jump_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "crawl",
+      "ko": "기어가다",
+      "group": "02_travel",
+      "anchor": "hands and knees move through a low route",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "crawl",
+        "word": "기어가다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "hands and knees move through a low route",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 21,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_crawl_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_crawl_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_crawl_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_crawl_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_crawl_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "climb",
+      "ko": "기어오르다",
+      "group": "02_travel",
+      "anchor": "hands and feet rise against a vertical surface",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "climb",
+        "word": "기어오르다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "hands and feet rise against a vertical surface",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 22,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_climb_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_climb_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_climb_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_climb_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_climb_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "slide",
+      "ko": "미끄러지다",
+      "group": "02_travel",
+      "anchor": "body lowers and travels along the ground",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "slide",
+        "word": "미끄러지다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "body lowers and travels along the ground",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 23,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_slide_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_slide_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_slide_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_slide_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_slide_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "hide",
+      "ko": "숨다",
+      "group": "02_travel",
+      "anchor": "body moves behind a visible cover",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "hide",
+        "word": "숨다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "body moves behind a visible cover",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 24,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_hide_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_hide_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_hide_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_hide_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_hide_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "fall_roll",
+      "ko": "굴러 넘어지다",
+      "group": "02_travel",
+      "anchor": "controlled fall becomes a side roll",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "fall_roll",
+        "word": "굴러 넘어지다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "controlled fall becomes a side roll",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 25,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_fall_roll_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_fall_roll_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_fall_roll_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_fall_roll_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_fall_roll_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "cross_bridge",
+      "ko": "다리를 건너다",
+      "group": "02_travel",
+      "anchor": "feet follow a bridge toward the far side",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "cross_bridge",
+        "word": "다리를 건너다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "feet follow a bridge toward the far side",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 26,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_cross_bridge_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_cross_bridge_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_cross_bridge_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_cross_bridge_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_cross_bridge_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "squeeze_through",
+      "ko": "비집고 지나가다",
+      "group": "02_travel",
+      "anchor": "shoulders turn through a narrow gap",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "squeeze_through",
+        "word": "비집고 지나가다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "shoulders turn through a narrow gap",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 27,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_squeeze_through_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_squeeze_through_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_squeeze_through_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_squeeze_through_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_squeeze_through_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "duck_under",
+      "ko": "몸을 숙여 지나가다",
+      "group": "02_travel",
+      "anchor": "head and torso pass below an obstacle",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "duck_under",
+        "word": "몸을 숙여 지나가다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "head and torso pass below an obstacle",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 28,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_duck_under_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_duck_under_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_duck_under_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_duck_under_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_duck_under_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "wade",
+      "ko": "물살을 헤치며 걷다",
+      "group": "02_travel",
+      "anchor": "upright steps through shallow water",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "wade",
+        "word": "물살을 헤치며 걷다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "upright steps through shallow water",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 29,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_wade_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_wade_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_wade_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_wade_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_wade_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "row",
+      "ko": "노를 젓다",
+      "group": "02_travel",
+      "anchor": "oar pulls through water with a boat anchor",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "row",
+        "word": "노를 젓다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "oar pulls through water with a boat anchor",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 30,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_row_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_row_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_row_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_row_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_row_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "weave_through",
+      "ko": "누비다",
+      "group": "02_travel",
+      "anchor": "side-to-side path between fixed trees",
+      "solo": true,
+      "needs": [
+        "trees",
+        "clear destination"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "weave_through",
+        "word": "누비다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "journey",
+        "visual_anchor": "side-to-side path between fixed trees",
+        "needs": [
+          "trees",
+          "clear destination"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 31,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_weave_through_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_weave_through_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_weave_through_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_weave_through_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_weave_through_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "swim",
+      "ko": "헤엄치다",
+      "group": "02_travel",
+      "anchor": "horizontal body and alternating arm strokes",
+      "solo": true,
+      "needs": [
+        "water",
+        "far bank"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "swim",
+        "word": "헤엄치다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "journey",
+        "visual_anchor": "horizontal body and alternating arm strokes",
+        "needs": [
+          "water",
+          "far bank"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 32,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_swim_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_swim_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_swim_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_swim_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_swim_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "vault_over",
+      "ko": "타넘다",
+      "group": "02_travel",
+      "anchor": "hands touch a low wall as legs pass over",
+      "solo": true,
+      "needs": [
+        "low wall"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "vault_over",
+        "word": "타넘다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "journey",
+        "visual_anchor": "hands touch a low wall as legs pass over",
+        "needs": [
+          "low wall"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 33,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_vault_over_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_vault_over_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_vault_over_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_vault_over_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_vault_over_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "clamber_over",
+      "ko": "기어넘다",
+      "group": "02_travel",
+      "anchor": "hands and boots alternate over rubble",
+      "solo": true,
+      "needs": [
+        "low rubble"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "clamber_over",
+        "word": "기어넘다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "journey",
+        "visual_anchor": "hands and boots alternate over rubble",
+        "needs": [
+          "low rubble"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 34,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_clamber_over_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_clamber_over_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_clamber_over_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_clamber_over_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_clamber_over_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "dive",
+      "ko": "잠수하다",
+      "group": "02_travel",
+      "anchor": "head-first entry through a visible water surface",
+      "solo": true,
+      "needs": [
+        "water surface"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "dive",
+        "word": "잠수하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "journey",
+        "visual_anchor": "head-first entry through a visible water surface",
+        "needs": [
+          "water surface"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 35,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_dive_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_dive_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_dive_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_dive_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_dive_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "stop",
+      "ko": "멈추다",
+      "group": "02_travel",
+      "anchor": "forward motion settles into a planted stance",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "stop",
+        "word": "멈추다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "journey",
+        "visual_anchor": "forward motion settles into a planted stance",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 36,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\02_travel\\male_01_stop_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_stop_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\02_travel\\male_01_stop_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_stop_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\02_travel\\male_01_stop_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "investigate",
+      "ko": "조사하다",
+      "group": "03_objects",
+      "anchor": "body leans toward a clue",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "investigate",
+        "word": "조사하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "body leans toward a clue",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 37,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_investigate_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_investigate_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_investigate_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_investigate_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_investigate_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "open_chest",
+      "ko": "보물상자를 열다",
+      "group": "03_objects",
+      "anchor": "lid rises and treasure remains visible",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "open_chest",
+        "word": "보물상자를 열다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "lid rises and treasure remains visible",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 38,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_open_chest_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_open_chest_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_open_chest_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_open_chest_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_open_chest_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "unlock",
+      "ko": "잠금을 풀다",
+      "group": "03_objects",
+      "anchor": "key turns and latch releases",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "unlock",
+        "word": "잠금을 풀다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "key turns and latch releases",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 39,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_unlock_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_unlock_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_unlock_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_unlock_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_unlock_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "pick_up",
+      "ko": "줍다",
+      "group": "03_objects",
+      "anchor": "hand lowers then lifts a visible object",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "pick_up",
+        "word": "줍다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "hand lowers then lifts a visible object",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 40,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_pick_up_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_pick_up_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_pick_up_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_pick_up_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_pick_up_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "lift",
+      "ko": "들어 올리다",
+      "group": "03_objects",
+      "anchor": "object rises from waist to chest",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "lift",
+        "word": "들어 올리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "object rises from waist to chest",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 41,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_lift_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_lift_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_lift_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_lift_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_lift_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "uncover",
+      "ko": "덮개를 걷다",
+      "group": "03_objects",
+      "anchor": "cover moves aside to reveal a target",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "uncover",
+        "word": "덮개를 걷다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "cover moves aside to reveal a target",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 42,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_uncover_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_uncover_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_uncover_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_uncover_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_uncover_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "pull_lever",
+      "ko": "레버를 당기다",
+      "group": "03_objects",
+      "anchor": "hand pulls a lever to its end stop",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "pull_lever",
+        "word": "레버를 당기다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "hand pulls a lever to its end stop",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 43,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_pull_lever_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_pull_lever_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_pull_lever_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_pull_lever_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_pull_lever_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "turn_dial",
+      "ko": "다이얼을 돌리다",
+      "group": "03_objects",
+      "anchor": "fingers rotate a marked dial",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "turn_dial",
+        "word": "다이얼을 돌리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "fingers rotate a marked dial",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 44,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_turn_dial_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_turn_dial_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_turn_dial_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_turn_dial_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_turn_dial_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "place_gem",
+      "ko": "보석을 놓다",
+      "group": "03_objects",
+      "anchor": "gem settles into a matching socket",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "place_gem",
+        "word": "보석을 놓다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "gem settles into a matching socket",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 45,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_place_gem_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_place_gem_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_place_gem_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_place_gem_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_place_gem_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "press_seal",
+      "ko": "봉인을 누르다",
+      "group": "03_objects",
+      "anchor": "palm presses a seal and holds",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "press_seal",
+        "word": "봉인을 누르다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "palm presses a seal and holds",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 46,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_press_seal_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_press_seal_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_press_seal_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_press_seal_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_press_seal_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "light_lantern",
+      "ko": "등불을 켜다",
+      "group": "03_objects",
+      "anchor": "flame appears after a clear lighting gesture",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "light_lantern",
+        "word": "등불을 켜다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "flame appears after a clear lighting gesture",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 47,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_light_lantern_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_light_lantern_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_light_lantern_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_light_lantern_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_light_lantern_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "plant_flag",
+      "ko": "깃발을 꽂다",
+      "group": "03_objects",
+      "anchor": "flagpole enters a marked ground anchor",
+      "solo": true,
+      "needs": [
+        "flag",
+        "ground anchor"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "plant_flag",
+        "word": "깃발을 꽂다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "flagpole enters a marked ground anchor",
+        "needs": [
+          "flag",
+          "ground anchor"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 48,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_plant_flag_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_plant_flag_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_plant_flag_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_plant_flag_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_plant_flag_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "put_on_crown",
+      "ko": "왕관을 쓰다",
+      "group": "03_objects",
+      "anchor": "crown moves from chest height to the head",
+      "solo": true,
+      "needs": [
+        "crown"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "put_on_crown",
+        "word": "왕관을 쓰다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "crown moves from chest height to the head",
+        "needs": [
+          "crown"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 49,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_put_on_crown_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_put_on_crown_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_put_on_crown_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_put_on_crown_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_put_on_crown_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "touch_probe",
+      "ko": "만져보다",
+      "group": "03_objects",
+      "anchor": "fingertips briefly touch a surface",
+      "solo": true,
+      "needs": [
+        "rune wall"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "touch_probe",
+        "word": "만져보다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "fingertips briefly touch a surface",
+        "needs": [
+          "rune wall"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 50,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_touch_probe_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_touch_probe_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_touch_probe_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_touch_probe_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_touch_probe_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "stack_stones",
+      "ko": "돌을 쌓다",
+      "group": "03_objects",
+      "anchor": "multiple stones remain in a stable stack",
+      "solo": true,
+      "needs": [
+        "stones",
+        "flat ground"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "stack_stones",
+        "word": "돌을 쌓다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "multiple stones remain in a stable stack",
+        "needs": [
+          "stones",
+          "flat ground"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 51,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_stack_stones_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_stack_stones_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_stack_stones_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_stack_stones_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_stack_stones_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "hang_sign",
+      "ko": "표지판을 걸다",
+      "group": "03_objects",
+      "anchor": "sign loop catches on a visible hook",
+      "solo": true,
+      "needs": [
+        "sign",
+        "hook"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "hang_sign",
+        "word": "표지판을 걸다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "sign loop catches on a visible hook",
+        "needs": [
+          "sign",
+          "hook"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 52,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_hang_sign_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_hang_sign_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_hang_sign_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_hang_sign_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_hang_sign_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "tie_string",
+      "ko": "끈을 묶다",
+      "group": "03_objects",
+      "anchor": "crossed rope ends tighten into a knot",
+      "solo": true,
+      "needs": [
+        "rope",
+        "post"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "tie_string",
+        "word": "끈을 묶다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "crossed rope ends tighten into a knot",
+        "needs": [
+          "rope",
+          "post"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 53,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_tie_string_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_tie_string_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_tie_string_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_tie_string_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_tie_string_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "sweep_floor",
+      "ko": "바닥을 쓸다",
+      "group": "03_objects",
+      "anchor": "broom stays on floor while leaves gather",
+      "solo": true,
+      "needs": [
+        "broom",
+        "leaves"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "sweep_floor",
+        "word": "바닥을 쓸다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "broom stays on floor while leaves gather",
+        "needs": [
+          "broom",
+          "leaves"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 54,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_sweep_floor_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_sweep_floor_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_sweep_floor_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_sweep_floor_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_sweep_floor_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "knock",
+      "ko": "두드리다",
+      "group": "03_objects",
+      "anchor": "knuckles tap a door three times",
+      "solo": true,
+      "needs": [
+        "door"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "knock",
+        "word": "두드리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "knuckles tap a door three times",
+        "needs": [
+          "door"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 55,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_knock_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_knock_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_knock_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_knock_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_knock_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "push",
+      "ko": "밀다",
+      "group": "03_objects",
+      "anchor": "hands drive a heavy object forward",
+      "solo": true,
+      "needs": [
+        "door",
+        "crate"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "push",
+        "word": "밀다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "hands drive a heavy object forward",
+        "needs": [
+          "door",
+          "crate"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 56,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_push_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_push_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_push_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_push_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_push_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "pull_rope",
+      "ko": "밧줄을 당기다",
+      "group": "03_objects",
+      "anchor": "rope tightens as body leans back",
+      "solo": true,
+      "needs": [
+        "rope"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "pull_rope",
+        "word": "밧줄을 당기다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "rope tightens as body leans back",
+        "needs": [
+          "rope"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 57,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_pull_rope_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_pull_rope_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_pull_rope_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_pull_rope_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_pull_rope_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "dig",
+      "ko": "파다",
+      "group": "03_objects",
+      "anchor": "tool breaks the soil and a small hole remains",
+      "solo": true,
+      "needs": [
+        "spade",
+        "soil"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "dig",
+        "word": "파다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "tool breaks the soil and a small hole remains",
+        "needs": [
+          "spade",
+          "soil"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 58,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_dig_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_dig_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_dig_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_dig_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_dig_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "read_map",
+      "ko": "지도를 읽다",
+      "group": "03_objects",
+      "anchor": "map opens and gaze tracks a route",
+      "solo": true,
+      "needs": [
+        "map"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "read_map",
+        "word": "지도를 읽다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "map opens and gaze tracks a route",
+        "needs": [
+          "map"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 59,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_read_map_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_read_map_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_read_map_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_read_map_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_read_map_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "write",
+      "ko": "쓰다",
+      "group": "03_objects",
+      "anchor": "hand moves a quill across a page",
+      "solo": true,
+      "needs": [
+        "paper",
+        "quill"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "write",
+        "word": "쓰다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "hand moves a quill across a page",
+        "needs": [
+          "paper",
+          "quill"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 60,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_write_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_write_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_write_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_write_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_write_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "open_door",
+      "ko": "문을 열다",
+      "group": "03_objects",
+      "anchor": "hand turns handle and door swings open",
+      "solo": true,
+      "needs": [
+        "door"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "open_door",
+        "word": "문을 열다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "hand turns handle and door swings open",
+        "needs": [
+          "door"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 61,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\03_objects\\male_01_open_door_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_open_door_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\03_objects\\male_01_open_door_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_open_door_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\03_objects\\male_01_open_door_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "wave",
+      "ko": "손을 흔들다",
+      "group": "04_social",
+      "anchor": "open hand makes a friendly side-to-side gesture",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "wave",
+        "word": "손을 흔들다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "open hand makes a friendly side-to-side gesture",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 62,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_wave_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_wave_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_wave_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_wave_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_wave_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "point",
+      "ko": "가리키다",
+      "group": "04_social",
+      "anchor": "finger and gaze stay locked on a target",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "point",
+        "word": "가리키다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "finger and gaze stay locked on a target",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 63,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_point_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_point_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_point_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_point_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_point_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "beckon",
+      "ko": "손짓해 부르다",
+      "group": "04_social",
+      "anchor": "palm curls toward a partner",
+      "solo": false,
+      "needs": [
+        "partner"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "beckon",
+        "word": "손짓해 부르다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "palm curls toward a partner",
+        "needs": [
+          "partner"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 64,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_beckon_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_beckon_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_beckon_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_beckon_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_beckon_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "shake_hands",
+      "ko": "악수하다",
+      "group": "04_social",
+      "anchor": "two hands meet and make a short agreement shake",
+      "solo": false,
+      "needs": [
+        "partner"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "shake_hands",
+        "word": "악수하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "two hands meet and make a short agreement shake",
+        "needs": [
+          "partner"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 65,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_shake_hands_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_shake_hands_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_shake_hands_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_shake_hands_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_shake_hands_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "protect",
+      "ko": "지키다",
+      "group": "04_social",
+      "anchor": "body steps between danger and a partner",
+      "solo": false,
+      "needs": [
+        "partner",
+        "danger"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "protect",
+        "word": "지키다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "body steps between danger and a partner",
+        "needs": [
+          "partner",
+          "danger"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 66,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_protect_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_protect_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_protect_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_protect_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_protect_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "catch",
+      "ko": "받아내다",
+      "group": "04_social",
+      "anchor": "arms receive a falling or moving target",
+      "solo": false,
+      "needs": [
+        "target"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "catch",
+        "word": "받아내다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "arms receive a falling or moving target",
+        "needs": [
+          "target"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 67,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_catch_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_catch_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_catch_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_catch_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_catch_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "release",
+      "ko": "놓아주다",
+      "group": "04_social",
+      "anchor": "hands open and target moves free",
+      "solo": false,
+      "needs": [
+        "target"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "release",
+        "word": "놓아주다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "hands open and target moves free",
+        "needs": [
+          "target"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 68,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_release_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_release_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_release_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_release_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_release_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "cower",
+      "ko": "움츠리다",
+      "group": "04_social",
+      "anchor": "shoulders close around the face in fear",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "cower",
+        "word": "움츠리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "shoulders close around the face in fear",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 69,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_cower_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_cower_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_cower_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_cower_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_cower_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "hesitate",
+      "ko": "망설이다",
+      "group": "04_social",
+      "anchor": "hand reaches then returns between two choices",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "hesitate",
+        "word": "망설이다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "hand reaches then returns between two choices",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 70,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_hesitate_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_hesitate_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_hesitate_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_hesitate_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_hesitate_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "eavesdrop",
+      "ko": "엿듣다",
+      "group": "04_social",
+      "anchor": "ear leans toward a door while body stays hidden",
+      "solo": true,
+      "needs": [
+        "door"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "eavesdrop",
+        "word": "엿듣다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "ear leans toward a door while body stays hidden",
+        "needs": [
+          "door"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 71,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_eavesdrop_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_eavesdrop_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_eavesdrop_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_eavesdrop_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_eavesdrop_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "spot",
+      "ko": "발견하다",
+      "group": "04_social",
+      "anchor": "eyes find a distant clue and body turns",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "spot",
+        "word": "발견하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "eyes find a distant clue and body turns",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 72,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_spot_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_spot_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_spot_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_spot_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_spot_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "gasp",
+      "ko": "깜짝 놀라 숨을 들이쉬다",
+      "group": "04_social",
+      "anchor": "hands rise as mouth opens in surprise",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "gasp",
+        "word": "깜짝 놀라 숨을 들이쉬다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "hands rise as mouth opens in surprise",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 73,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_gasp_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_gasp_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_gasp_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_gasp_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_gasp_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "present_gift",
+      "ko": "선물하다",
+      "group": "04_social",
+      "anchor": "large gift passes from giver to receiver",
+      "solo": false,
+      "needs": [
+        "partner",
+        "gift"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "present_gift",
+        "word": "선물하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": true,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "large gift passes from giver to receiver",
+        "needs": [
+          "partner",
+          "gift"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 74,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_present_gift_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_present_gift_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_present_gift_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_present_gift_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_present_gift_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "shoulder_link",
+      "ko": "어깨동무하다",
+      "group": "04_social",
+      "anchor": "arm rests around a partner shoulder",
+      "solo": false,
+      "needs": [
+        "partner"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "shoulder_link",
+        "word": "어깨동무하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "arm rests around a partner shoulder",
+        "needs": [
+          "partner"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 75,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_shoulder_link_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_shoulder_link_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_shoulder_link_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_shoulder_link_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_shoulder_link_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "apologize",
+      "ko": "사과하다",
+      "group": "04_social",
+      "anchor": "clear bow followed by a waiting posture",
+      "solo": false,
+      "needs": [
+        "partner"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "apologize",
+        "word": "사과하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "clear bow followed by a waiting posture",
+        "needs": [
+          "partner"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 76,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_apologize_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_apologize_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_apologize_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_apologize_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_apologize_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "warn",
+      "ko": "경고하다",
+      "group": "04_social",
+      "anchor": "open palm stops an approaching partner",
+      "solo": false,
+      "needs": [
+        "partner",
+        "danger"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "warn",
+        "word": "경고하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "open palm stops an approaching partner",
+        "needs": [
+          "partner",
+          "danger"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 77,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_warn_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_warn_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_warn_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_warn_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_warn_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "flinch",
+      "ko": "움찔하다",
+      "group": "04_social",
+      "anchor": "brief shoulder jolt followed by a cautious look",
+      "solo": true,
+      "needs": [
+        "sudden cue"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "flinch",
+        "word": "움찔하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "brief shoulder jolt followed by a cautious look",
+        "needs": [
+          "sudden cue"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 78,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_flinch_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_flinch_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_flinch_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_flinch_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_flinch_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "nod_confirm",
+      "ko": "끄덕이다",
+      "group": "04_social",
+      "anchor": "two deliberate nods after reading a clue",
+      "solo": true,
+      "needs": [
+        "clue"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "nod_confirm",
+        "word": "끄덕이다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "two deliberate nods after reading a clue",
+        "needs": [
+          "clue"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 79,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_nod_confirm_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_nod_confirm_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_nod_confirm_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_nod_confirm_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_nod_confirm_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "talk",
+      "ko": "이야기하다",
+      "group": "04_social",
+      "anchor": "facing partner with measured hand gesture",
+      "solo": false,
+      "needs": [
+        "partner"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "talk",
+        "word": "이야기하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "facing partner with measured hand gesture",
+        "needs": [
+          "partner"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 80,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_talk_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_talk_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_talk_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_talk_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_talk_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "rescue",
+      "ko": "구하다",
+      "group": "04_social",
+      "anchor": "arm reaches toward a partner and pulls them clear",
+      "solo": false,
+      "needs": [
+        "partner",
+        "danger"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "rescue",
+        "word": "구하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "arm reaches toward a partner and pulls them clear",
+        "needs": [
+          "partner",
+          "danger"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 81,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\04_social\\male_01_rescue_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_rescue_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\04_social\\male_01_rescue_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_rescue_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\04_social\\male_01_rescue_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "magic",
+      "ko": "마법을 쓰다",
+      "group": "05_magic_senses",
+      "anchor": "raised hand and controlled magical glow",
+      "solo": true,
+      "needs": [],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "magic",
+        "word": "마법을 쓰다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "raised hand and controlled magical glow",
+        "needs": [],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 82,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_magic_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_magic_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_magic_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_magic_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_magic_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "battle",
+      "ko": "싸우다",
+      "group": "05_magic_senses",
+      "anchor": "guarded stance and clear defensive strike",
+      "solo": false,
+      "needs": [
+        "opponent"
+      ],
+      "tier": "existing",
+      "learning": {
+        "vocabulary_key": "battle",
+        "word": "싸우다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "guarded stance and clear defensive strike",
+        "needs": [
+          "opponent"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 83,
+      "asset_kind": "existing",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_battle_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_battle_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_battle_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_battle_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_battle_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "throw",
+      "ko": "던지다",
+      "group": "05_magic_senses",
+      "anchor": "arm winds up then releases a visible object",
+      "solo": true,
+      "needs": [
+        "object"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "throw",
+        "word": "던지다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "arm winds up then releases a visible object",
+        "needs": [
+          "object"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 84,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_throw_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_throw_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_throw_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_throw_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_throw_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "dodge",
+      "ko": "피하다",
+      "group": "05_magic_senses",
+      "anchor": "torso shifts away from a visible threat",
+      "solo": true,
+      "needs": [
+        "threat"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "dodge",
+        "word": "피하다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "torso shifts away from a visible threat",
+        "needs": [
+          "threat"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 85,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_dodge_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_dodge_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_dodge_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_dodge_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_dodge_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "block",
+      "ko": "막다",
+      "group": "05_magic_senses",
+      "anchor": "arms form a guard between body and threat",
+      "solo": true,
+      "needs": [
+        "threat"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "block",
+        "word": "막다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "arms form a guard between body and threat",
+        "needs": [
+          "threat"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 86,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_block_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_block_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_block_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_block_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_block_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": true,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "shoot_bow",
+      "ko": "활을 쏘다",
+      "group": "05_magic_senses",
+      "anchor": "bow draws, aims, and releases an arrow",
+      "solo": true,
+      "needs": [
+        "bow",
+        "target"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "shoot_bow",
+        "word": "활을 쏘다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "bow draws, aims, and releases an arrow",
+        "needs": [
+          "bow",
+          "target"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 87,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_shoot_bow_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_shoot_bow_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_shoot_bow_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_shoot_bow_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_shoot_bow_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "heal",
+      "ko": "치유하다",
+      "group": "05_magic_senses",
+      "anchor": "hands hover over a wound as warm light settles",
+      "solo": true,
+      "needs": [
+        "partner",
+        "wound"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "heal",
+        "word": "치유하다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": false,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "hands hover over a wound as warm light settles",
+        "needs": [
+          "partner",
+          "wound"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 88,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_heal_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_heal_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_heal_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_heal_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_heal_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "ring_bell",
+      "ko": "종을 울리다",
+      "group": "05_magic_senses",
+      "anchor": "rope pulls a bell and the clapper swings",
+      "solo": true,
+      "needs": [
+        "bell"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "ring_bell",
+        "word": "종을 울리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "rope pulls a bell and the clapper swings",
+        "needs": [
+          "bell"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 89,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_ring_bell_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_ring_bell_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_ring_bell_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_ring_bell_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_ring_bell_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "close_door",
+      "ko": "문을 닫다",
+      "group": "05_magic_senses",
+      "anchor": "door swings shut and latch remains visible",
+      "solo": true,
+      "needs": [
+        "door"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "close_door",
+        "word": "문을 닫다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "door swings shut and latch remains visible",
+        "needs": [
+          "door"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 90,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_close_door_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_close_door_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_close_door_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_close_door_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_close_door_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "drink_potion",
+      "ko": "물약을 마시다",
+      "group": "05_magic_senses",
+      "anchor": "bottle reaches mouth then lowers",
+      "solo": true,
+      "needs": [
+        "potion"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "drink_potion",
+        "word": "물약을 마시다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "bottle reaches mouth then lowers",
+        "needs": [
+          "potion"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 91,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_drink_potion_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_drink_potion_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_drink_potion_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_drink_potion_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_drink_potion_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "eat",
+      "ko": "먹다",
+      "group": "05_magic_senses",
+      "anchor": "food reaches mouth and hand returns",
+      "solo": true,
+      "needs": [
+        "food"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "eat",
+        "word": "먹다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "food reaches mouth and hand returns",
+        "needs": [
+          "food"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 92,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_eat_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_eat_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_eat_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_eat_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_eat_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "carry",
+      "ko": "나르다",
+      "group": "05_magic_senses",
+      "anchor": "both arms support a visible crate",
+      "solo": true,
+      "needs": [
+        "crate"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "carry",
+        "word": "나르다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "both arms support a visible crate",
+        "needs": [
+          "crate"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 93,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_carry_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_carry_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_carry_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_carry_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_carry_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "read_book",
+      "ko": "책을 읽다",
+      "group": "05_magic_senses",
+      "anchor": "book opens and gaze follows its pages",
+      "solo": true,
+      "needs": [
+        "book"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "read_book",
+        "word": "책을 읽다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "book opens and gaze follows its pages",
+        "needs": [
+          "book"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 94,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_read_book_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_read_book_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_read_book_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_read_book_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_read_book_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "draw",
+      "ko": "그리다",
+      "group": "05_magic_senses",
+      "anchor": "charcoal hand traces a visible line",
+      "solo": true,
+      "needs": [
+        "paper",
+        "charcoal"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "draw",
+        "word": "그리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "charcoal hand traces a visible line",
+        "needs": [
+          "paper",
+          "charcoal"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 95,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_draw_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_draw_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_draw_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_draw_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_draw_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "listen",
+      "ko": "귀 기울이다",
+      "group": "05_magic_senses",
+      "anchor": "hand cups ear while head turns toward sound",
+      "solo": true,
+      "needs": [
+        "sound cue"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "listen",
+        "word": "귀 기울이다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": false,
+        "motion_mode": "gesture_or_reaction",
+        "visual_anchor": "hand cups ear while head turns toward sound",
+        "needs": [
+          "sound cue"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 96,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_listen_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_listen_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_listen_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_listen_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_listen_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "smell",
+      "ko": "냄새 맡다",
+      "group": "05_magic_senses",
+      "anchor": "object rises near nose and character pauses",
+      "solo": true,
+      "needs": [
+        "flower",
+        "potion"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "smell",
+        "word": "냄새 맡다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "object rises near nose and character pauses",
+        "needs": [
+          "flower",
+          "potion"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 97,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_smell_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_smell_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_smell_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_smell_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_smell_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "feed_dragon",
+      "ko": "용에게 먹이를 주다",
+      "group": "05_magic_senses",
+      "anchor": "food reaches a friendly dragon mouth",
+      "solo": false,
+      "needs": [
+        "dragon",
+        "food"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "feed_dragon",
+        "word": "용에게 먹이를 주다",
+        "participant_count": 2,
+        "requires_partner": true,
+        "requires_object": true,
+        "motion_mode": "partner_interaction",
+        "visual_anchor": "food reaches a friendly dragon mouth",
+        "needs": [
+          "dragon",
+          "food"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 98,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_feed_dragon_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_feed_dragon_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_feed_dragon_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_feed_dragon_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_feed_dragon_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": true,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "sprinkle_fairy_dust",
+      "ko": "요정 가루를 뿌리다",
+      "group": "05_magic_senses",
+      "anchor": "hand scatters visible dust over a target",
+      "solo": true,
+      "needs": [
+        "dust",
+        "target"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "sprinkle_fairy_dust",
+        "word": "요정 가루를 뿌리다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "hand scatters visible dust over a target",
+        "needs": [
+          "dust",
+          "target"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 99,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_sprinkle_fairy_dust_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_sprinkle_fairy_dust_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_sprinkle_fairy_dust_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_sprinkle_fairy_dust_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_sprinkle_fairy_dust_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    },
+    {
+      "key": "look_into_mirror",
+      "ko": "마법 거울을 들여다보다",
+      "group": "05_magic_senses",
+      "anchor": "face leans toward a framed mirror",
+      "solo": true,
+      "needs": [
+        "mirror"
+      ],
+      "tier": "generated_prototype",
+      "learning": {
+        "vocabulary_key": "look_into_mirror",
+        "word": "마법 거울을 들여다보다",
+        "participant_count": 1,
+        "requires_partner": false,
+        "requires_object": true,
+        "motion_mode": "object_interaction",
+        "visual_anchor": "face leans toward a framed mirror",
+        "needs": [
+          "mirror"
+        ],
+        "learning_status": "catalogued_for_visual_vocabulary"
+      },
+      "index": 100,
+      "asset_kind": "generated_composite",
+      "motion_sheet_path": "D:\\capstone\\soft_capston-main\\assets\\characters\\motion_sheets\\generated_round100\\05_magic_senses\\male_01_look_into_mirror_motion_sheet_round100.png",
+      "video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_look_into_mirror_round100.mp4",
+      "video": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100\\05_magic_senses\\male_01_look_into_mirror_round100.mp4",
+        "frames": 240,
+        "fps": 30,
+        "size": [
+          960,
+          480
+        ],
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264"
+      },
+      "hq_video_path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_look_into_mirror_hq.mp4",
+      "quality_render": {
+        "path": "D:\\capstone\\soft_capston-main\\output\\video_final\\generated_round100_hq\\05_magic_senses\\male_01_look_into_mirror_hq.mp4",
+        "size": [
+          960,
+          480
+        ],
+        "fps": 30,
+        "frame_count": 240,
+        "duration_seconds": 8.0,
+        "codec": "H.264/libx264",
+        "hard_cut_policy": true,
+        "partner_layer": false,
+        "scene_layer": false,
+        "skipped_existing": true
+      }
+    }
+  ]
+}

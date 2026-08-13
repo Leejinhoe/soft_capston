@@ -143,7 +143,8 @@ async def generate_hf_fairytale_image(
         "width": int(width),
         "height": int(height),
         "num_inference_steps": int(steps),
-        "guidance_scale": 0.0,
+        # Hosted inference providers such as fal-ai require a value of at least 1.
+        "guidance_scale": 1.0,
         "negative_prompt": "text, watermark, logo, blurry, distorted hands, scary, violent",
     }
     if seed is not None:

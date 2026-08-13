@@ -28,6 +28,11 @@ class DbService {
     return headers;
   }
 
+  static Map<String, String> get mediaHeaders {
+    if (_accessToken == null) return const <String, String>{};
+    return <String, String>{'Authorization': 'Bearer $_accessToken'};
+  }
+
   static const String _definedBaseUrl = String.fromEnvironment(
     'DB_API_BASE_URL',
   );
@@ -104,6 +109,9 @@ class DbService {
       jobId: result.jobId,
       status: result.status,
       statusUrl: result.statusUrl,
+      error: result.error,
+      includeVideoRequested: result.includeVideoRequested,
+      videoStatus: result.videoStatus,
     );
   }
 
@@ -761,6 +769,7 @@ class DbService {
     required String storyText,
     required String genre,
     required String age,
+    String? characterKey,
     bool includeVideo = false,
   }) async {
     try {
@@ -772,6 +781,8 @@ class DbService {
               'story_text': storyText,
               'genre': genre,
               'age': age,
+              if (characterKey?.trim().isNotEmpty == true)
+                'character_key': characterKey!.trim(),
               'include_video': includeVideo,
             }),
           )
@@ -792,6 +803,7 @@ class DbService {
           storyText: storyText,
           genre: genre,
           age: age,
+          characterKey: characterKey,
           includeVideo: includeVideo,
         );
       }
@@ -805,7 +817,12 @@ class DbService {
     Map<String, dynamic> initialJob,
   ) async {
     var latest = _withAbsoluteMediaUrls(SceneMediaResult.fromJson(initialJob));
-    if (latest.hasMedia) return latest;
+    final initialStatus = latest.status?.toLowerCase();
+    if (initialStatus == 'completed' ||
+        initialStatus == 'partial' ||
+        initialStatus == 'failed') {
+      return latest;
+    }
 
     final pollPathOrUrl = _sceneMediaJobStatusPath(latest);
     if (pollPathOrUrl == null) return null;
@@ -814,7 +831,7 @@ class DbService {
     while (DateTime.now().isBefore(deadline)) {
       final status = latest.status?.toLowerCase();
       if (status == 'completed') return latest.hasMedia ? latest : null;
-      if (status == 'failed') return null;
+      if (status == 'partial' || status == 'failed') return latest;
 
       await Future.delayed(const Duration(seconds: 3));
       try {
@@ -833,7 +850,12 @@ class DbService {
             jsonDecode(response.body) as Map<String, dynamic>,
           ),
         );
-        if (latest.hasMedia) return latest;
+        final refreshedStatus = latest.status?.toLowerCase();
+        if (refreshedStatus == 'completed' ||
+            refreshedStatus == 'partial' ||
+            refreshedStatus == 'failed') {
+          return latest;
+        }
       } catch (_) {}
     }
 
@@ -860,6 +882,7 @@ class DbService {
     required String storyText,
     required String genre,
     required String age,
+    String? characterKey,
     required bool includeVideo,
   }) async {
     try {
@@ -871,6 +894,8 @@ class DbService {
               'story_text': storyText,
               'genre': genre,
               'age': age,
+              if (characterKey?.trim().isNotEmpty == true)
+                'character_key': characterKey!.trim(),
               'include_video': includeVideo,
             }),
           )

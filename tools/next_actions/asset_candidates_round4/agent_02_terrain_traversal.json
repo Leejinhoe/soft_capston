@@ -1,0 +1,208 @@
+{
+  "group": "지형 이동",
+  "created_at": "2026-08-10",
+  "candidate_count": 5,
+  "candidates": [
+    {
+      "key": "cross_bridge",
+      "korean_meaning": "다리를 건너다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "requires_prop": true,
+        "requires_partner": false,
+        "requires_target": false,
+        "required_scene": "입구와 반대편 지면이 한 축으로 보이는 다리와 아래의 물 또는 틈이 필요하다.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "next_asset",
+      "status": "candidate_prototype",
+      "review_status": "review_required",
+      "example_sentence": "The child crosses the old bridge to reach the castle.",
+      "required_assets": [
+        "주인공 전신 캐릭터 시트",
+        "다리 표면과 양쪽 지면이 포함된 배경",
+        "다리 아래의 물 또는 낙차를 보여 주는 환경 레이어"
+      ],
+      "positive_visual_cues": [
+        "발이 가까운 둑에서 다리 표면으로 올라간다.",
+        "캐릭터가 다리의 길이를 따라 이동하고 아래의 물 또는 틈이 읽힌다.",
+        "두 발이 반대편 지면에 닿은 뒤에야 회복 자세로 전환된다."
+      ],
+      "negative_cues": [
+        "다리의 양 끝이나 아래의 낙차 없이 평평한 바닥을 걷는다.",
+        "다리 위를 걷지 않고 틈을 뛰어넘는다.",
+        "난간을 타거나 오르는 동작으로 보여 다리 횡단의 경로가 사라진다."
+      ],
+      "four_phase_contract": {
+        "prepare": "다리 입구와 반대편을 바라보고 두 발을 다리 축에 맞춘다.",
+        "act": "아래의 물 또는 틈이 보이는 상태로 다리 표면을 따라 조심스럽게 이동한다.",
+        "hold": "다리 중간에서 한 발을 내딛은 자세를 잠시 유지해 다리와 반대편 목표를 함께 보여 준다.",
+        "recover": "반대편 지면으로 내려와 몸을 안정시키고 다리에서 벗어난다."
+      },
+      "ambiguity_risk": "다리 배경이 없으면 일반적인 걷기나 틈 넘기로 오인될 수 있으며, 다리의 양 끝과 아래 공간을 한 화면에서 확인해야 한다.",
+      "asset_scope": "composite: 전신 캐릭터 시트와 다리·양쪽 지면·아래 환경 배경을 함께 authoring해야 하며 파트너는 필요하지 않다."
+    },
+    {
+      "key": "squeeze_through",
+      "korean_meaning": "좁은 틈을 비집고 통과하다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "requires_prop": false,
+        "requires_partner": false,
+        "requires_target": false,
+        "required_scene": "두 벽이나 바위가 가까이 붙어 좁은 통로를 만들고 반대편 출구가 보여야 한다.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "next_asset",
+      "status": "candidate_prototype",
+      "review_status": "review_required",
+      "example_sentence": "The child squeezes through the crack in the ruined wall and finds a secret passage.",
+      "required_assets": [
+        "어깨 폭과 옆모습을 읽을 수 있는 전신 캐릭터 시트",
+        "양쪽 경계와 출구가 포함된 좁은 틈 배경",
+        "벽 또는 바위와의 접촉을 보여 주는 합성 가이드"
+      ],
+      "positive_visual_cues": [
+        "들어가기 전에 어깨를 틈 방향으로 돌리고 몸통을 안쪽으로 좁힌다.",
+        "양쪽 벽 또는 바위가 팔과 몸통 가까이에 있는 상태로 한 발씩 통과한다.",
+        "전신이 출구로 빠져나온 뒤 어깨가 다시 펴진다."
+      ],
+      "negative_cues": [
+        "넓은 바닥에서 네 발로 기거나 단순히 몸을 숙인다.",
+        "경계에 닿지 않은 채 장애물 뒤에 멈춰 숨는다.",
+        "출구와의 경계 통과 없이 캐릭터가 갑자기 사라진다."
+      ],
+      "four_phase_contract": {
+        "prepare": "틈의 폭과 출구를 확인하고 몸을 옆으로 돌려 어깨를 안쪽으로 모은다.",
+        "act": "양쪽 경계와 가까운 자세로 한 발씩 좁은 틈을 밀고 지나간다.",
+        "hold": "두 경계가 모두 읽히는 틈의 중앙에서 압축된 몸통 자세를 잠시 유지한다.",
+        "recover": "출구를 완전히 통과한 뒤 어깨를 펴고 안정된 자세로 돌아온다."
+      },
+      "ambiguity_risk": "틈의 폭과 양쪽 경계가 흐리면 crouch나 crawl로 보일 수 있으므로 옆으로 선 어깨와 양쪽 접촉 여백을 분명히 해야 한다.",
+      "asset_scope": "composite: 옆으로 압축되는 전신 캐릭터 시트와 양쪽 벽·바위·출구 배경을 authoring해야 하며 파트너와 별도 소품은 필요하지 않다."
+    },
+    {
+      "key": "duck_under",
+      "korean_meaning": "낮은 장애물 아래로 몸을 숙여 지나가다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "requires_prop": true,
+        "requires_partner": false,
+        "requires_target": false,
+        "required_scene": "낮은 나뭇가지, 들보, 쓰러진 나무, 또는 문이 머리 위에 통과 공간을 만들어야 한다.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "next_asset",
+      "status": "candidate_prototype",
+      "review_status": "review_required",
+      "example_sentence": "The child ducks under the fallen tree in the forest.",
+      "required_assets": [
+        "머리와 어깨 높이 변화가 선명한 전신 캐릭터 시트",
+        "지면 위에 낮게 걸린 장애물 배경 또는 소품",
+        "장애물 아래 통과 높이를 검토할 합성 레이어"
+      ],
+      "positive_visual_cues": [
+        "캐릭터가 머리 위의 장애물을 먼저 보고 무릎과 어깨를 낮춘다.",
+        "발은 계속 앞으로 이동하고 몸 전체가 장애물 아래를 통과한다.",
+        "장애물을 완전히 지난 뒤에만 몸을 다시 세운다."
+      ],
+      "negative_cues": [
+        "장애물 없이 제자리에서 crouch 자세만 유지한다.",
+        "허리 굽히기처럼 보이지만 머리 위 높이 제한이나 전진이 없다.",
+        "손과 무릎을 바닥에 대어 crawl 동작으로 변한다."
+      ],
+      "four_phase_contract": {
+        "prepare": "낮은 장애물을 발견하고 발걸음을 늦추며 무릎을 풀어 통과 높이를 만든다.",
+        "act": "머리와 어깨를 낮춘 채 앞으로 이동해 장애물 아래를 통과한다.",
+        "hold": "장애물이 머리 위에 분명히 놓인 최저점 자세를 잠시 유지한다.",
+        "recover": "장애물을 빠져나온 뒤 몸을 세우고 안정된 이동 자세로 복귀한다."
+      },
+      "ambiguity_risk": "낮은 장애물의 높이 관계가 보이지 않으면 bow 또는 crouch로 오인될 수 있어 장애물과 머리 사이의 제한 공간을 반드시 노출해야 한다.",
+      "asset_scope": "composite: 높이 변화가 있는 전신 캐릭터 시트와 낮은 장애물·지면 배경 또는 소품을 authoring해야 하며 파트너는 필요하지 않다."
+    },
+    {
+      "key": "wade",
+      "korean_meaning": "얕은 물을 걸어서 건너다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "requires_prop": false,
+        "requires_partner": false,
+        "requires_target": false,
+        "required_scene": "물선과 얕은 수심, 발 주변의 저항과 물결, 반대편 마른 둑이 함께 보여야 한다.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "later_asset",
+      "status": "candidate_prototype",
+      "review_status": "review_required",
+      "example_sentence": "The child wades across the shallow stream to the hidden cave.",
+      "required_assets": [
+        "하체가 물에 잠기는 전신 캐릭터 시트",
+        "물선·얕은 수심·마른 둑이 포함된 배경",
+        "발 주변 물결과 물 튐 효과 레이어"
+      ],
+      "positive_visual_cues": [
+        "물선이 발목이나 종아리를 가로지르고 몸통은 수직으로 유지된다.",
+        "짧고 무거운 보폭이 물을 밀어 물결과 작은 물 튐을 만든다.",
+        "마른 둑에 올라온 뒤 물속 보폭을 멈추고 균형을 회복한다."
+      ],
+      "negative_cues": [
+        "물선과 물결 없이 마른 바닥을 걷는다.",
+        "몸이 수평이 되거나 팔을 젓는 swimming 자세를 취한다.",
+        "물 위를 걷거나 잠수해 수심이 얕다는 조건이 사라진다."
+      ],
+      "four_phase_contract": {
+        "prepare": "얕은 물과 반대편 둑을 확인하고 첫 발을 물속에 넣는다.",
+        "act": "물의 저항을 밀어내며 짧은 보폭으로 이동하고 다리 주변에 물결을 만든다.",
+        "hold": "물선이 하체를 가로지른 상태에서 한 발을 들어 저항을 보여 주는 자세를 잠시 유지한다.",
+        "recover": "마른 둑으로 올라와 물을 털어 내고 중립적인 균형을 되찾는다."
+      },
+      "ambiguity_risk": "물선과 하체 가림이 없으면 일반적인 walk로 보이고, 수영 포즈가 섞이면 wade의 얕은 수심 의미가 무너진다.",
+      "asset_scope": "composite: 물에 잠기는 전신 캐릭터 시트와 물길·물선·마른 둑 배경, 물결 효과 레이어를 authoring해야 하며 별도 파트너나 소품은 필요하지 않다."
+    },
+    {
+      "key": "row",
+      "korean_meaning": "작은 배에서 노를 저어 이동하다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_environment": true,
+        "requires_prop": true,
+        "requires_partner": false,
+        "requires_target": false,
+        "required_scene": "캐릭터가 작은 배 안에서 노를 잡고 노의 날이 물에 닿으며 배의 위치가 변해야 한다.",
+        "minimum_view": "wide_medium"
+      },
+      "priority": "later_asset",
+      "status": "candidate_prototype",
+      "review_status": "review_required",
+      "example_sentence": "The child rows across the moonlit lake toward the castle.",
+      "required_assets": [
+        "배 안에 앉거나 무릎을 꿇은 전신 캐릭터 시트",
+        "양손 그립과 반복적인 당김이 보이는 노 소품",
+        "작은 배와 물 표면, 이동 기준점이 포함된 배경",
+        "배와 물의 접촉 및 전진을 위한 합성 레이어"
+      ],
+      "positive_visual_cues": [
+        "두 손이 노를 잡고 노의 날이 물속으로 들어간다.",
+        "몸통이 노를 몸 쪽으로 당기는 반복적인 스트로크를 만든다.",
+        "배가 물결이나 먼 둑을 기준으로 실제로 전진한다."
+      ],
+      "negative_cues": [
+        "배와 노 없이 팔만 흔들어 wave처럼 보인다.",
+        "몸이 물속에 놓여 swimming 동작으로 변한다.",
+        "노가 물에 닿지 않거나 배와 배경의 상대 위치가 변하지 않는다."
+      ],
+      "four_phase_contract": {
+        "prepare": "작은 배 안에서 노를 양손으로 잡고 날을 물 쪽에 맞춘다.",
+        "act": "노의 날을 물에 넣은 뒤 몸 쪽으로 당겨 배를 앞으로 민다.",
+        "hold": "노가 물속에 잠긴 상태와 배의 전진 물결을 잠시 유지한다.",
+        "recover": "노의 날을 물에서 들어 올리고 손 위치를 되돌려 다음 스트로크를 준비한다."
+      },
+      "ambiguity_risk": "배·노·물 접촉이 선명하지 않으면 sitting, waving, 또는 swimming으로 오인될 수 있고, 배의 이동 기준점이 없으면 rowing 결과를 검증하기 어렵다.",
+      "asset_scope": "composite: 배 안 전신 캐릭터 시트, 노 prop, 작은 배와 물 배경, 배의 전진을 보여 주는 합성 레이어를 authoring해야 하며 파트너는 필요하지 않다."
+    }
+  ]
+}

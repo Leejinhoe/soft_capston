@@ -1,0 +1,210 @@
+{
+  "group": "인물 관계·구조",
+  "created_at": "2026-08-10",
+  "candidate_count": 5,
+  "candidates": [
+    {
+      "key": "shake_hands",
+      "korean_meaning": "악수하다",
+      "category": "partner-bound",
+      "condition": {
+        "requires_partner": true,
+        "requires_target": false,
+        "required_scene": "두 인물이 서로 마주 보고 한 걸음 정도의 거리를 유지하며 손을 맞잡을 공간이 있어야 한다.",
+        "minimum_view": "medium_two_shot",
+        "gaze_requirement": "두 인물의 시선이 서로를 향하고, 손 접점이 화면에서 동시에 보여야 한다."
+      },
+      "priority": "later_asset",
+      "status": "prototype",
+      "review_status": "review_only_later_asset",
+      "example_sentence": "왕자와 숲의 수호자는 약속을 지키기로 악수했다.",
+      "required_assets": [
+        "두 인물의 character sheet",
+        "서로 마주 볼 수 있는 partner 배치",
+        "두 손 접점과 팔 동작이 가리지 않는 단순 background"
+      ],
+      "asset_scope": "character_sheet + partner + background; 소품은 필요하지 않으며 2인 composite 검수가 필수다.",
+      "positive_visual_cues": [
+        "두 인물이 먼저 서로의 눈을 확인한 뒤 같은 높이로 손을 뻗는다.",
+        "두 손이 실제로 맞닿아 하나의 잡은 손 접점을 만들고, 상대 사이의 거리가 접촉 거리로 좁혀진다.",
+        "맞잡은 손이 짧게 한두 번 위아래로 움직인 뒤 두 인물이 다시 서로를 바라본다."
+      ],
+      "negative_cues": [
+        "손만 내밀고 실제 손 접점이 생기지 않는 offer/receive 포즈.",
+        "상대를 보지 않고 손을 좌우로 흔드는 wave.",
+        "손 사이로 물건이 지나가거나 한 인물이 상대 손을 잡지 않고 자기 손만 흔드는 장면."
+      ],
+      "ambiguity_risk": "중간. 손 접점이 작거나 상하 반복이 빠지면 손 내밀기, generic hold, wave로 오인될 수 있다."
+      ,"four_phase_contract": {
+        "prepare": "두 인물이 서로의 시선을 맞추고 한 걸음 거리에서 대응하는 손을 천천히 내민다.",
+        "act": "두 손이 같은 지점에서 접촉하고 손가락 또는 손바닥으로 shared grip을 만든다.",
+        "hold": "맞잡은 손 접점을 유지하며 짧게 한두 번 위아래로 흔들고 두 인물의 상호 시선을 보존한다.",
+        "recover": "손을 놓고 양팔을 중립으로 내린 뒤 두 인물이 서로 마주 보는 안정된 자세로 돌아간다."
+      }
+    },
+    {
+      "key": "beckon",
+      "korean_meaning": "손짓해 부르다",
+      "category": "target-bound",
+      "condition": {
+        "requires_partner": true,
+        "requires_target": true,
+        "required_scene": "신호를 받는 인물이 화면 안에 보이고, 신호자와 수신자 사이에 접근할 경로와 거리 변화가 있어야 한다.",
+        "minimum_view": "medium_two_shot",
+        "gaze_requirement": "신호자의 시선은 수신자에게 고정되고 손바닥 방향은 수신자에서 신호자 쪽이어야 한다."
+      },
+      "priority": "later_asset",
+      "status": "prototype",
+      "review_status": "review_only_later_asset",
+      "example_sentence": "요정은 멀리 있는 아이에게 숨은 오솔길로 오라고 손짓했다.",
+      "required_assets": [
+        "신호자 character sheet",
+        "화면 안에 식별 가능한 partner 수신자",
+        "두 인물의 거리와 접근 방향을 읽을 수 있는 background"
+      ],
+      "asset_scope": "character_sheet + partner + background; prop은 불필요하고 수신자의 접근 또는 반응을 포함한 2인 composite가 필요하다.",
+      "positive_visual_cues": [
+        "신호자가 멀리 있는 수신자를 바라보며 몸통과 어깨를 그 방향으로 정렬한다.",
+        "팔꿈치를 들고 손바닥을 안쪽으로 향한 채 손가락을 두 번 자기 쪽으로 당긴다.",
+        "수신자가 시선을 돌리거나 한 걸음 다가와 손짓이 특정 파트너를 향한 신호임을 확인한다."
+      ],
+      "negative_cues": [
+        "수신자 없이 허공에 손짓하거나 손바닥을 좌우로 흔드는 wave.",
+        "특정 장소만 가리키고 손을 안쪽으로 당기지 않는 point.",
+        "손 접점이나 수신자의 거리 변화 없이 신호자만 반복 동작하는 장면."
+      ],
+      "ambiguity_risk": "중간. 수신자와의 시선축, 손바닥 방향, 접근 응답이 빠지면 wave 또는 point로 읽힌다.",
+      "four_phase_contract": {
+        "prepare": "신호자가 수신자를 발견하고 시선을 고정한 뒤 수신자 쪽으로 몸을 돌려 한 손을 든다.",
+        "act": "손바닥을 안쪽으로 향하고 손가락을 신호자 쪽으로 두 번 분명하게 당긴다.",
+        "hold": "수신자를 계속 바라보며 손짓 직후의 짧은 대기와 두 인물 사이의 거리 관계를 유지한다.",
+        "recover": "수신자가 다가오거나 응답하면 손을 내리고 두 인물이 다음 상호작용을 준비하는 중립 자세로 돌아간다."
+      }
+    },
+    {
+      "key": "protect",
+      "korean_meaning": "지키다, 보호하다",
+      "category": "target-bound",
+      "condition": {
+        "requires_partner": true,
+        "requires_target": true,
+        "requires_threat": true,
+        "required_scene": "보호 대상인 인물과 식별 가능한 위협이 같은 시선축에 있고, 보호자가 둘 사이로 이동할 공간이 있어야 한다.",
+        "minimum_view": "wide_two_shot",
+        "prop_requirement": "맨몸의 팔 차단으로 가능하며, 방패나 망토를 쓰는 변형은 별도 prop이 필요하다."
+      },
+      "priority": "later_asset",
+      "status": "prototype",
+      "review_status": "rejected_as_standalone_review_only_scene_composite",
+      "example_sentence": "용사는 작은 여우 앞에 서서 폭풍의 돌멩이를 막아 주었다.",
+      "required_assets": [
+        "보호자 character sheet",
+        "보호받는 partner character sheet",
+        "방향과 속도를 읽을 수 있는 위협 대상 또는 위험 효과",
+        "보호자·대상·위협의 앞뒤 관계가 보이는 background",
+        "선택 사항: 방패 또는 망토 prop"
+      ],
+      "asset_scope": "composite: 보호자 character sheet + partner + threat target/effect + background; 방패·망토를 사용하면 prop authoring을 추가한다.",
+      "positive_visual_cues": [
+        "보호자가 위협을 응시하면서 보호 대상의 앞쪽으로 이동해 두 인물과 위협 사이에 선다.",
+        "보호 대상은 보호자의 뒤쪽에 남고, 보호자의 팔 또는 방패가 두 인물 사이에 명확한 차단선을 만든다.",
+        "한 손이 보호 대상의 어깨나 팔을 안전한 쪽으로 유도하거나 방패 손잡이에 실제 접촉한 채 위협이 지나갈 때까지 유지된다."
+      ],
+      "negative_cues": [
+        "보호 대상과 위협이 없이 보호자만 팔을 벌리는 stretch 또는 pose.",
+        "보호 대상을 두지 않고 자기 몸만 옆으로 피하는 dodge.",
+        "대상과 몸을 맞대기만 하는 hug, 또는 대상을 위험 밖으로 데리고 이동하는 rescue."
+      ],
+      "ambiguity_risk": "높음. 위협 방향과 보호 대상의 위치가 한 프레임에 없으면 dodge, hug, rescue로 축소되므로 standalone character sheet로 승인하지 않는다.",
+      "four_phase_contract": {
+        "prepare": "보호 대상이 위협의 접근축에 있고 보호자는 위협과 대상을 번갈아 보며 끼어들 위치를 잡는다.",
+        "act": "보호자가 대상과 위협 사이로 이동하고 팔, 방패, 또는 망토를 펼쳐 대상의 앞을 차단한다.",
+        "hold": "보호자는 위협을 계속 응시하고 보호 대상은 뒤에 머물며, 보호자의 손·팔 또는 prop 접점과 차단 거리를 유지한다.",
+        "recover": "위협이 지나가거나 사라진 뒤 보호자는 팔을 내리고 보호 대상과 함께 안전한 방향을 바라보며 안정된다."
+      }
+    },
+    {
+      "key": "catch",
+      "korean_meaning": "붙잡아 멈추게 하다",
+      "category": "target-bound",
+      "condition": {
+        "requires_partner": true,
+        "requires_target": true,
+        "requires_threat": true,
+        "required_scene": "움직이는 partner가 미끄러지거나 떨어지는 위험에 있고, 다른 인물이 닿아 이동을 멈출 수 있는 거리여야 한다.",
+        "minimum_view": "wide_two_shot",
+        "target_type": "moving_partner",
+        "prop_requirement": "파트너의 손목·팔을 잡는 버전은 prop이 없고, 밧줄이나 안전망 버전은 해당 prop이 필수다."
+      },
+      "priority": "later_asset",
+      "status": "prototype",
+      "review_status": "rejected_as_standalone_review_only_scene_composite",
+      "example_sentence": "왕자는 절벽에서 미끄러진 친구의 손목을 재빨리 붙잡았다.",
+      "required_assets": [
+        "구조하는 인물 character sheet",
+        "움직이는 partner character sheet",
+        "절벽, 구멍, 미끄러운 바닥 같은 위험 background",
+        "두 인물의 시선과 손목·팔 접점을 추적할 수 있는 넓은 composite"
+      ],
+      "asset_scope": "composite: 두 character sheet + 위험 background + 움직임을 보여 주는 target trajectory; 정적 prop만 있는 버전은 catch로 승인하지 않는다.",
+      "positive_visual_cues": [
+        "구조하는 인물이 위험과 미끄러지는 partner를 동시에 바라보고 손을 뻗으며 두 인물 사이 거리가 급격히 좁혀진다.",
+        "손이 움직이는 partner의 손목, 팔, 또는 몸에 실제로 닿는 순간이 보인다.",
+        "접촉 직후 partner의 이동이 멈추고 잡힌 손 접점과 위험 가장자리 사이의 안전 거리가 유지된다."
+      ],
+      "negative_cues": [
+        "가만히 있는 물체나 손을 잡는 grasp 또는 shake_hands.",
+        "바닥의 정적 물체를 주워 올리는 pick_up.",
+        "움직이는 partner, 위험 방향, 또는 실제 손 접점이 보이지 않는 빈손 뻗기."
+      ],
+      "ambiguity_risk": "매우 높음. 이동 표적의 전후 위치와 접촉 직후 정지가 보이지 않으면 grasp, pick_up, rescue로 오인되므로 scene composite 전용 prototype으로 둔다.",
+      "four_phase_contract": {
+        "prepare": "partner가 위험 가장자리 쪽으로 미끄러지거나 떨어지고, 구조자는 partner와 위험을 번갈아 보며 닿을 거리를 계산한다.",
+        "act": "구조자가 몸을 위험 쪽으로 뻗어 이동 중인 partner의 손목 또는 팔에 손을 맞댄다.",
+        "hold": "잡은 손 접점을 유지한 채 partner의 이동을 멈추고, 두 인물이 위험 가장자리에서 떨어진 위치를 안정적으로 유지한다.",
+        "recover": "구조자가 partner를 안전한 바닥 쪽으로 당기거나 둘 다 안정된 자세로 돌아가며 손을 천천히 놓는다."
+      }
+    },
+    {
+      "key": "release",
+      "korean_meaning": "놓아주다",
+      "category": "target-bound",
+      "condition": {
+        "requires_partner": true,
+        "requires_target": true,
+        "requires_restraint": true,
+        "required_scene": "partner가 손, 밧줄, 우리, 또는 문 안에 제한되어 있고 제한을 풀면 자유롭게 이동할 출구가 보여야 한다.",
+        "minimum_view": "medium_scene_composite",
+        "gaze_requirement": "놓아주는 인물은 제한 장치에서 partner로 시선을 옮기고, partner는 열린 출구 또는 안전한 방향을 바라본다."
+      },
+      "priority": "later_asset",
+      "status": "prototype",
+      "review_status": "rejected_as_standalone_review_only_scene_composite",
+      "example_sentence": "왕자는 밧줄을 풀고 작은 용을 숲으로 놓아주었다.",
+      "required_assets": [
+        "놓아주는 인물 character sheet",
+        "제한된 partner character sheet",
+        "밧줄, 새장, 손목 결박, 또는 닫힌 문 같은 restraint prop",
+        "제한 전후와 자유 이동 방향이 보이는 background 및 출구"
+      ],
+      "asset_scope": "composite: character sheet + partner + restraint prop + background/출구; 물체를 손에서 떨어뜨리는 단독 release는 제작 범위에 포함하지 않는다.",
+      "positive_visual_cues": [
+        "놓아주는 인물이 먼저 밧줄이나 잠금 지점을 보고 손을 그 접점으로 가져가며, partner와의 제한 거리가 읽힌다.",
+        "손이 매듭을 풀거나 제한 장치에서 분리되고 partner를 붙들던 접점이 실제로 끊어진다.",
+        "partner가 열린 출구나 안전한 방향으로 움직이기 시작하고, 놓아주는 인물은 빈손으로 남는다."
+      ],
+      "negative_cues": [
+        "손에서 작은 물체가 떨어지는 drop처럼 제한된 partner나 restraint가 없는 장면.",
+        "문만 열고 partner의 제한 상태나 자유 이동이 변하지 않는 open.",
+        "위험에서 partner를 데리고 나오는 rescue 또는 잠깐 잡았다가 다시 맞잡는 shake_hands."
+      ],
+      "ambiguity_risk": "높음. 제한 장치와 해제 전후의 자유 이동이 없으면 drop, open, 단순 손 놓기로 보이므로 restraint와 partner 반응을 함께 검수해야 한다.",
+      "four_phase_contract": {
+        "prepare": "partner가 밧줄, 우리, 손, 또는 문에 제한된 상태를 보여 주고 놓아주는 인물은 제한 장치와 partner를 차례로 바라본다.",
+        "act": "놓아주는 인물이 매듭을 풀거나 손을 떼어 제한 장치와 partner 사이의 접촉을 해제한다.",
+        "hold": "제한이 풀린 상태를 유지하며 열린 출구와 움직일 수 있게 된 partner를 한 화면에 보여 준다.",
+        "recover": "partner가 안전한 방향으로 이동하고 놓아주는 인물은 빈손을 내린 채 partner의 자유로운 이동을 확인한다."
+      }
+    }
+  ]
+}

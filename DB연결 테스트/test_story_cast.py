@@ -4,6 +4,7 @@ from story_cast import (
     build_story_cast,
     extract_character_name,
     normalize_story_characters,
+    select_scene_partner,
     select_story_cast_member,
 )
 
@@ -105,6 +106,58 @@ class StoryCastTests(unittest.TestCase):
         self.assertEqual(by_role["hero"]["character_key"], "user_selected_face")
         self.assertEqual(by_role["hero"]["selection_source"], "user")
         self.assertEqual(by_role["companion"]["selection_source"], "automatic")
+
+    def test_selects_antagonist_as_battle_partner_for_hero(self):
+        cast = [
+            {"role": "hero", "character_key": "hero-face"},
+            {"role": "antagonist", "character_key": "villain-face"},
+            {"role": "companion", "character_key": "friend-face"},
+        ]
+
+        partner = select_scene_partner(cast, cast[0], "battle")
+
+        self.assertEqual(partner["character_key"], "villain-face")
+
+    def test_selects_companion_for_partner_required_interaction(self):
+        cast = [
+            {"role": "hero", "character_key": "hero-face"},
+            {"role": "companion", "character_key": "friend-face"},
+            {"role": "guide", "character_key": "guide-face"},
+        ]
+
+        partner = select_scene_partner(
+            cast,
+            cast[0],
+            "interaction",
+            requires_partner=True,
+        )
+
+        self.assertEqual(partner["character_key"], "friend-face")
+
+    def test_does_not_add_partner_to_single_person_interaction(self):
+        cast = [
+            {"role": "hero", "character_key": "hero-face"},
+            {"role": "companion", "character_key": "friend-face"},
+        ]
+
+        partner = select_scene_partner(cast, cast[0], "interaction")
+
+        self.assertIsNone(partner)
+
+    def test_targeted_battle_does_not_force_character_opponent(self):
+        cast = [
+            {"role": "hero", "character_key": "hero-face"},
+            {"role": "antagonist", "character_key": "villain-face"},
+        ]
+
+        partner = select_scene_partner(
+            cast,
+            cast[0],
+            "battle",
+            requires_partner=False,
+        )
+
+        self.assertIsNone(partner)
 
 
 if __name__ == "__main__":

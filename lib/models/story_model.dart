@@ -1,3 +1,5 @@
+import 'character_profile.dart';
+
 class VocabWord {
   final String? id;
   final String? userId;
@@ -151,6 +153,9 @@ class SceneMediaResult {
   final String? jobId;
   final String? status;
   final String? statusUrl;
+  final String? error;
+  final bool includeVideoRequested;
+  final String? videoStatus;
 
   const SceneMediaResult({
     this.imageUrl,
@@ -161,16 +166,28 @@ class SceneMediaResult {
     this.jobId,
     this.status,
     this.statusUrl,
+    this.error,
+    this.includeVideoRequested = false,
+    this.videoStatus,
   });
 
   bool get hasMedia =>
       (imageUrl?.trim().isNotEmpty ?? false) ||
       (videoUrl?.trim().isNotEmpty ?? false);
+  bool get isPartial => status?.toLowerCase() == 'partial';
 
   factory SceneMediaResult.fromJson(Map<String, dynamic> json) {
     final rawResult = json['result'];
     final result = rawResult is Map
         ? Map<String, dynamic>.from(rawResult)
+        : <String, dynamic>{};
+    final rawRequest = json['request'];
+    final request = rawRequest is Map
+        ? Map<String, dynamic>.from(rawRequest)
+        : <String, dynamic>{};
+    final rawMetadata = result['metadata'] ?? json['result_metadata'];
+    final metadata = rawMetadata is Map
+        ? Map<String, dynamic>.from(rawMetadata)
         : <String, dynamic>{};
     String? readString(String key) {
       final nestedValue = result[key];
@@ -211,6 +228,9 @@ class SceneMediaResult {
       jobId: readString('job_id'),
       status: readString('status'),
       statusUrl: readString('status_url'),
+      error: readString('error') ?? metadata['video_error']?.toString(),
+      includeVideoRequested: request['include_video'] as bool? ?? false,
+      videoStatus: metadata['video_status']?.toString(),
     );
   }
 }
@@ -221,6 +241,9 @@ class StoryChapter {
   final String? choiceMade;
   String? imageUrl;
   String? videoUrl;
+  String? mediaJobId;
+  String? mediaStatus;
+  String? mediaError;
   final DateTime? createdAt;
   String? imageB64;
   EmotionAnalysis? storyEmotion;
@@ -232,6 +255,9 @@ class StoryChapter {
     this.choiceMade,
     this.imageUrl,
     this.videoUrl,
+    this.mediaJobId,
+    this.mediaStatus,
+    this.mediaError,
     this.createdAt,
     this.imageB64,
     this.storyEmotion,
@@ -338,15 +364,57 @@ class StorySession {
 
   String get fullStoryText => chapters.map((c) => c.text).join('\n\n');
 
+  String? get selectedHeroCharacterKey {
+    final override = characterOverrides['hero']?.trim() ?? '';
+    if (override.isNotEmpty) return override;
+    for (final member in storyCast) {
+      if (member.role.toLowerCase() == 'hero' &&
+          member.characterKey.trim().isNotEmpty) {
+        return member.characterKey.trim();
+      }
+    }
+    return null;
+  }
+
   List<StoryCastMember> get effectiveStoryCast {
-    if (storyCast.isNotEmpty) return storyCast;
+    final heroOverride = characterOverrides['hero']?.trim() ?? '';
+    if (storyCast.isNotEmpty) {
+      return storyCast
+          .map(
+            (member) =>
+                member.role.toLowerCase() == 'hero' && heroOverride.isNotEmpty
+                ? StoryCastMember(
+                    role: member.role,
+                    name: member.name,
+                    characterKey: heroOverride,
+                    profileName: CharacterProfileCatalog.defaultNameFor(
+                      heroOverride,
+                    ),
+                    sourceDescription: member.sourceDescription,
+                  )
+                : member,
+          )
+          .toList(growable: false);
+    }
     return characters.entries
         .where(
           (entry) =>
               entry.key.toLowerCase() != 'key_item' &&
               entry.value.trim().isNotEmpty,
         )
-        .map((entry) => StoryCastMember.fromCharacter(entry.key, entry.value))
+        .map((entry) {
+          final member = StoryCastMember.fromCharacter(entry.key, entry.value);
+          final override =
+              characterOverrides[entry.key.toLowerCase()]?.trim() ?? '';
+          if (override.isEmpty) return member;
+          return StoryCastMember(
+            role: member.role,
+            name: member.name,
+            characterKey: override,
+            profileName: CharacterProfileCatalog.defaultNameFor(override),
+            sourceDescription: member.sourceDescription,
+          );
+        })
         .toList(growable: false);
   }
 
@@ -374,6 +442,9 @@ class StorySession {
                 scene['user_choice']?.toString(),
             imageUrl: scene['image_url']?.toString(),
             videoUrl: scene['video_url']?.toString(),
+            mediaJobId: scene['media_job_id']?.toString(),
+            mediaStatus: scene['media_status']?.toString(),
+            mediaError: scene['media_error']?.toString(),
             createdAt: DateTime.tryParse(scene['created_at']?.toString() ?? ''),
           ),
         )
@@ -424,11 +495,7 @@ class StorySession {
         .map((chapter) => chapter.chapter)
         .toSet();
     final mediaGenerationChapterNumbers = chapters
-        .where(
-          (chapter) =>
-              (chapter.imageUrl?.trim().isNotEmpty ?? false) ||
-              (chapter.videoUrl?.trim().isNotEmpty ?? false),
-        )
+        .where((chapter) => chapter.videoUrl?.trim().isNotEmpty ?? false)
         .map((chapter) => chapter.chapter)
         .toSet();
 
