@@ -129,8 +129,11 @@ RUN_CYCLE_CYCLES_PER_SECOND = float(
     os.getenv("LOCAL_VIDEO_RUN_CYCLES_PER_SECOND", "1.0")
 )
 MOTION_FLOW_MIN_SILHOUETTE_IOU = 0.40
+GROUNDED_ACTION_FLOW_MIN_SILHOUETTE_IOU = 0.50
 RUN_CYCLE_LEG_LOCK_START = 0.58
 RUN_CYCLE_LEG_LOCK_END = 0.72
+GROUNDED_ACTION_LEG_LOCK_START = 0.62
+GROUNDED_ACTION_LEG_LOCK_END = 0.80
 ACTION_SHEET_ACTIONS = {
     "wave", "magic", "battle", "rescue", "investigate", "interaction",
 }
@@ -235,8 +238,8 @@ PRIMARY_MOTION_TIMELINES = {
     "investigate": (
         (0.0, 0),
         (0.18, 0),
-        (0.30, 7),
-        (0.76, 7),
+        (0.30, 6),
+        (0.76, 6),
         (0.88, 0),
         (1.0, 0),
     ),
@@ -288,12 +291,8 @@ SECONDARY_MOTION_TIMELINES = {
         (1.0, 0),
     ),
     "rescue": (
-        (0.0, 0),
-        (0.28, 7),
-        (0.48, 6),
-        (0.72, 6),
-        (0.88, 7),
-        (1.0, 0),
+        (0.0, 0), (0.24, 0), (0.42, 6),
+        (0.74, 6), (0.90, 0), (1.0, 0),
     ),
     "conversation": (
         (0.0, 0),
@@ -305,12 +304,8 @@ SECONDARY_MOTION_TIMELINES = {
         (1.0, 0),
     ),
     "interaction": (
-        (0.0, 0),
-        (0.18, 7),
-        (0.46, 7),
-        (0.66, 7),
-        (0.82, 0),
-        (1.0, 0),
+        (0.0, 0), (0.20, 0), (0.38, 6),
+        (0.72, 6), (0.88, 0), (1.0, 0),
     ),
 }
 
@@ -337,7 +332,7 @@ def get_hf_video_config() -> Dict[str, Any]:
             "sprite_run_cycle_road_v16_stride_amplified",
             "sprite_walk_cycle_road_v16_slow_stride",
             "motion_sheet_jump_v5",
-            "identity_locked_jump_cycle_v20_discrete",
+            "identity_locked_jump_cycle_v20_smoothed",
             "motion_sheet_wave_v5",
             "motion_sheet_magic_v5",
             "motion_sheet_investigate_v6",
@@ -346,16 +341,16 @@ def get_hf_video_config() -> Dict[str, Any]:
             "motion_sheet_battle_v6",
             "motion_sheet_rescue_v6",
             "motion_sheet_handoff_v6",
-            "identity_locked_action_sheet_v21_discrete",
-            "identity_locked_action_cycle_v22_hybrid",
-            "cinematic_action_compositor_v24_character_first",
+            "identity_locked_action_sheet_v21_grounded_smooth",
+            "identity_locked_action_cycle_v22_grounded_smooth",
+            "cinematic_action_compositor_v25_stable_motion",
             "target_journey_action_v4",
             "motion_sheet_action_v4",
             "motion_sheet_action",
             "layered_action",
             "camera_fallback",
         ],
-        "video_frame_interpolation": "action-aware-hybrid-optical-flow-and-pose-cuts",
+        "video_frame_interpolation": "stable-canvas-optical-flow-with-grounded-pose-locks",
         "video_pose_transition": "identity-locked-action-cycle-or-optical-flow-fallback",
         "video_effect_style": "action-anchored-subtle-v3",
         "video_render_scale": LOCAL_VIDEO_RENDER_SCALE,
@@ -1004,22 +999,9 @@ def _prepare_sprite_sheet(sprite_sheet_image, Image, *, columns: int, rows: int)
     return cells
 
 
-def _prepare_motion_sheet(motion_sheet_image, Image):
-    return _prepare_sprite_sheet(
-        motion_sheet_image,
-        Image,
-        columns=MOTION_SHEET_COLUMNS,
-        rows=MOTION_SHEET_ROWS,
-    )
-
-
-def _prepare_run_cycle_sheet(run_cycle_sheet_image, Image):
-    cells = _prepare_sprite_sheet(
-        run_cycle_sheet_image,
-        Image,
-        columns=RUN_CYCLE_SHEET_COLUMNS,
-        rows=RUN_CYCLE_SHEET_ROWS,
-    )
+def _normalize_motion_cells(cells, Image):
+    if not cells:
+        return []
     canvas_width = max(cell.width for cell in cells)
     canvas_height = max(cell.height for cell in cells)
     normalized_cells = []
@@ -1038,6 +1020,26 @@ def _prepare_run_cycle_sheet(run_cycle_sheet_image, Image):
         )
         normalized_cells.append(canvas)
     return normalized_cells
+
+
+def _prepare_motion_sheet(motion_sheet_image, Image, *, normalize=True):
+    cells = _prepare_sprite_sheet(
+        motion_sheet_image,
+        Image,
+        columns=MOTION_SHEET_COLUMNS,
+        rows=MOTION_SHEET_ROWS,
+    )
+    return _normalize_motion_cells(cells, Image) if normalize else cells
+
+
+def _prepare_run_cycle_sheet(run_cycle_sheet_image, Image):
+    cells = _prepare_sprite_sheet(
+        run_cycle_sheet_image,
+        Image,
+        columns=RUN_CYCLE_SHEET_COLUMNS,
+        rows=RUN_CYCLE_SHEET_ROWS,
+    )
+    return _normalize_motion_cells(cells, Image)
 
 
 def _select_run_cycle_pose(
@@ -1112,10 +1114,32 @@ def _select_jump_cycle_pose(
     first_index = JUMP_CYCLE_FRAME_SEQUENCE[sequence_index]
     if local >= 1.0:
         return motion_cells[JUMP_CYCLE_FRAME_SEQUENCE[-1]]
-    return motion_cells[first_index]
+    second_index = JUMP_CYCLE_FRAME_SEQUENCE[sequence_index + 1]
+    blend = position - math.floor(position)
+    if Image is None:
+        return motion_cells[first_index if blend < 0.5 else second_index]
+    return _optical_flow_interpolate(
+        motion_cells[first_index],
+        motion_cells[second_index],
+        _ease_in_out(blend),
+        Image=Image,
+        cv2=cv2,
+        np=np,
+        cache=interpolation_cache,
+        cache_key=(id(motion_cells), "jump", first_index, second_index),
+    )
 
 
-def _select_action_sheet_pose(motion_cells, *, action: str, progress: float):
+def _select_action_sheet_pose(
+    motion_cells,
+    *,
+    action: str,
+    progress: float,
+    Image=None,
+    cv2=None,
+    np=None,
+    interpolation_cache: Optional[Dict[Any, Any]] = None,
+):
     if not motion_cells or len(motion_cells) < MOTION_SHEET_CELL_COUNT:
         return None
     timeline = ACTION_SHEET_TIMELINES.get(action)
@@ -1130,7 +1154,25 @@ def _select_action_sheet_pose(motion_cells, *, action: str, progress: float):
         if first_index == second_index or end_time <= start_time:
             return motion_cells[first_index]
         local_progress = (normalized - start_time) / (end_time - start_time)
-        return motion_cells[first_index if local_progress < 0.5 else second_index]
+        if Image is None:
+            return motion_cells[first_index if local_progress < 0.5 else second_index]
+        interpolated = _optical_flow_interpolate(
+            motion_cells[first_index],
+            motion_cells[second_index],
+            _ease_in_out(local_progress),
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            cache=interpolation_cache,
+            cache_key=(id(motion_cells), "action-sheet", action, first_index, second_index),
+            min_silhouette_iou=GROUNDED_ACTION_FLOW_MIN_SILHOUETTE_IOU,
+        )
+        discrete = (
+            motion_cells[first_index]
+            if local_progress < 0.5
+            else motion_cells[second_index]
+        )
+        return _lock_grounded_action_legs(interpolated, discrete, Image)
     return motion_cells[timeline[-1][1]]
 
 
@@ -1162,18 +1204,24 @@ def _select_dedicated_action_cycle_pose(
     first_index = min(int(math.floor(position)), MOTION_SHEET_CELL_COUNT - 2)
     second_index = first_index + 1
     blend = position - first_index
-    if Image is None or action in {"battle", "rescue", "interaction"}:
+    if Image is None:
         return motion_cells[first_index if blend < 0.5 else second_index]
-    return _optical_flow_interpolate(
+    interpolated = _optical_flow_interpolate(
         motion_cells[first_index],
         motion_cells[second_index],
-        blend,
+        _ease_in_out(blend),
         Image=Image,
         cv2=cv2,
         np=np,
         cache=interpolation_cache,
         cache_key=(id(motion_cells), "action-cycle", action, first_index, second_index),
     )
+    discrete = (
+        motion_cells[first_index]
+        if blend < 0.5
+        else motion_cells[second_index]
+    )
+    return _lock_grounded_action_legs(interpolated, discrete, Image)
 
 
 def _blend_bottom_aligned(first, second, amount: float, Image):
@@ -1193,10 +1241,7 @@ def _blend_bottom_aligned(first, second, amount: float, Image):
         )
         return canvas
 
-    return _prepare_character(
-        Image.blend(on_canvas(first), on_canvas(second), blend),
-        Image,
-    )
+    return Image.blend(on_canvas(first), on_canvas(second), blend)
 
 
 def _bottom_aligned_canvases(first, second, Image):
@@ -1224,6 +1269,7 @@ def _optical_flow_interpolate(
     np,
     cache: Optional[Dict[Any, Any]],
     cache_key: Any,
+    min_silhouette_iou: float = MOTION_FLOW_MIN_SILHOUETTE_IOU,
 ):
     blend = min(max(float(amount), 0.0), 1.0)
     if blend <= 0.015:
@@ -1259,7 +1305,7 @@ def _optical_flow_interpolate(
             if union
             else 0.0
         )
-        if silhouette_iou < MOTION_FLOW_MIN_SILHOUETTE_IOU:
+        if silhouette_iou < min_silhouette_iou:
             prepared = ("pose_cut", silhouette_iou)
             flow_cache[cache_key] = prepared
         else:
@@ -1314,19 +1360,25 @@ def _optical_flow_interpolate(
         0,
         255,
     ).astype(np.uint8)
-    return _prepare_character(Image.fromarray(rgba, "RGBA"), Image)
+    return Image.fromarray(rgba, "RGBA")
 
 
-def _lock_run_cycle_legs(interpolated, discrete, Image):
-    """Keep articulated legs crisp while allowing the upper body to interpolate."""
+def _lock_lower_body(
+    interpolated,
+    discrete,
+    Image,
+    *,
+    start_ratio: float,
+    end_ratio: float,
+):
     interpolated_canvas, discrete_canvas = _bottom_aligned_canvases(
         interpolated,
         discrete,
         Image,
     )
     height = interpolated_canvas.height
-    start = max(0, min(height - 1, round(height * RUN_CYCLE_LEG_LOCK_START)))
-    end = max(start + 1, min(height, round(height * RUN_CYCLE_LEG_LOCK_END)))
+    start = max(0, min(height - 1, round(height * start_ratio)))
+    end = max(start + 1, min(height, round(height * end_ratio)))
     span = max(end - start, 1)
     mask_column = Image.new("L", (1, height), 0)
     mask_column.putdata(
@@ -1343,6 +1395,28 @@ def _lock_run_cycle_legs(interpolated, discrete, Image):
     # Run-cycle cells are normalized to one shared canvas. Keeping that canvas
     # prevents each pose from being cropped and rescaled independently.
     return Image.composite(discrete_canvas, interpolated_canvas, mask)
+
+
+def _lock_run_cycle_legs(interpolated, discrete, Image):
+    """Keep articulated legs crisp while allowing the upper body to interpolate."""
+    return _lock_lower_body(
+        interpolated,
+        discrete,
+        Image,
+        start_ratio=RUN_CYCLE_LEG_LOCK_START,
+        end_ratio=RUN_CYCLE_LEG_LOCK_END,
+    )
+
+
+def _lock_grounded_action_legs(interpolated, discrete, Image):
+    """Smooth upper-body action while retaining a readable grounded stance."""
+    return _lock_lower_body(
+        interpolated,
+        discrete,
+        Image,
+        start_ratio=GROUNDED_ACTION_LEG_LOCK_START,
+        end_ratio=GROUNDED_ACTION_LEG_LOCK_END,
+    )
 
 
 def _motion_timeline(
@@ -1386,13 +1460,13 @@ def _motion_timeline(
         return tuple(timeline)
     if action == "sit":
         return (
-            (0.00, 0), (0.18, 0), (0.32, 3),
-            (0.64, 3), (0.78, 0), (1.00, 0),
+            (0.00, 0), (0.20, 0), (0.48, 6),
+            (0.72, 6), (1.00, 6),
         )
     if action == "stand":
         return (
-            (0.00, 3), (0.18, 3), (0.36, 0),
-            (0.70, 0), (0.84, 0), (1.00, 0),
+            (0.00, 6), (0.28, 6), (0.58, 0),
+            (0.82, 0), (1.00, 0),
         )
     if role == "secondary" and action in SECONDARY_MOTION_TIMELINES:
         return SECONDARY_MOTION_TIMELINES[action]
@@ -1430,12 +1504,7 @@ def _select_motion_pose(
         if first_index == second_index or end_time <= start_time:
             return motion_cells[first_index]
         local_progress = (normalized - start_time) / (end_time - start_time)
-        if action in {
-            "jump", "magic", "battle", "rescue", "investigate",
-            "interaction", "conversation", "wave", "sit", "stand",
-        }:
-            return motion_cells[first_index if local_progress < 0.5 else second_index]
-        return _optical_flow_interpolate(
+        interpolated = _optical_flow_interpolate(
             motion_cells[first_index],
             motion_cells[second_index],
             _ease_in_out(local_progress),
@@ -1444,7 +1513,23 @@ def _select_motion_pose(
             np=np,
             cache=interpolation_cache,
             cache_key=(id(motion_cells), first_index, second_index),
+            min_silhouette_iou=(
+                GROUNDED_ACTION_FLOW_MIN_SILHOUETTE_IOU
+                if action != "journey"
+                else MOTION_FLOW_MIN_SILHOUETTE_IOU
+            ),
         )
+        if action in {
+            "magic", "battle", "rescue", "investigate",
+            "interaction", "conversation", "wave", "sit", "stand",
+        }:
+            discrete = (
+                motion_cells[first_index]
+                if local_progress < 0.5
+                else motion_cells[second_index]
+            )
+            return _lock_grounded_action_legs(interpolated, discrete, Image)
+        return interpolated
     return motion_cells[timeline[-1][1]]
 
 
@@ -1621,12 +1706,15 @@ def _character_motion_values(
         bob = -approach * height * 0.006 - contact * height * 0.008
         rotation = approach * 0.8 + contact * 1.8 - recover * 0.8
     elif action == "investigate":
-        lean = math.sin(progress * math.pi)
-        scale = 0.59 + lean * 0.06
-        center_x = width * (0.46 + lean * 0.05)
+        inspect = _phase_ease(normalized, 0.18, 0.42)
+        recover = _phase_ease(normalized, 0.68, 0.90)
+        focus = _action_pulse(progress, 0.54, 0.38)
+        scan = math.sin(progress * math.pi * 2.0) * focus
+        scale = 0.60 + focus * 0.018
+        center_x = width * (0.47 + 0.035 * inspect - 0.018 * recover)
         ground_y = height * 0.94
-        bob = -lean * height * 0.010
-        rotation = lean * 1.2
+        bob = -focus * height * 0.004
+        rotation = inspect * 0.7 - recover * 0.4 + scan * 0.45
     elif action == "interaction":
         approach = _phase_ease(normalized, 0.16, 0.44)
         contact = _action_pulse(progress, 0.54, 0.30)
@@ -1644,13 +1732,15 @@ def _character_motion_values(
         bob = pulse * height * 0.008
         rotation = pulse * 0.7
     elif action == "wave":
-        gesture = math.sin(progress * math.pi * 8)
-        envelope = math.sin(progress * math.pi) ** 2
-        scale = 0.60 + envelope * 0.012
+        gesture = math.sin(progress * math.pi * 6)
+        lift = _phase_ease(normalized, 0.10, 0.26)
+        lower = _phase_ease(normalized, 0.76, 0.92)
+        envelope = lift * (1.0 - lower)
+        scale = 0.60 + envelope * 0.005
         center_x = width * 0.50
         ground_y = height * 0.94
-        bob = gesture * envelope * height * 0.004
-        rotation = gesture * envelope * 1.0
+        bob = gesture * envelope * height * 0.0015
+        rotation = gesture * envelope * 0.55
     else:
         pulse = math.sin(progress * math.pi * 2)
         scale = 0.60 + pulse * 0.008
@@ -1744,8 +1834,12 @@ def _paste_character_layer(
         resample=getattr(Image, "Resampling", Image).BICUBIC,
         expand=True,
     )
-    x = int(center_x - rotated.width / 2)
-    y = int(ground_y - target_height)
+    visible_bounds = rotated.getchannel("A").getbbox()
+    if visible_bounds is None:
+        return target_width, target_height
+    visible_center_x = (visible_bounds[0] + visible_bounds[2]) / 2.0
+    x = int(round(center_x - visible_center_x))
+    y = int(round(ground_y - visible_bounds[3]))
     frame.alpha_composite(rotated, (x, y))
     return target_width, target_height
 
@@ -2380,6 +2474,10 @@ def _render_layered_frame(
             character_action_motion_cells,
             action=action,
             progress=progress,
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            interpolation_cache=interpolation_cache,
         ) or character_image
     else:
         active_character_motion_cells = (
@@ -2631,7 +2729,9 @@ def _generate_layered_video_bytes(
         )
         action_fx_motion_cells = (
             _prepare_motion_sheet(
-                Image.open(io.BytesIO(action_fx_sheet_bytes)), Image
+                Image.open(io.BytesIO(action_fx_sheet_bytes)),
+                Image,
+                normalize=False,
             )
             if action_fx_sheet_bytes
             else None
@@ -2659,12 +2759,15 @@ def _generate_layered_video_bytes(
         render_scale = (
             LOCAL_VIDEO_RENDER_SCALE
             if (
-                character_run_cycle_motion_cells is not None
+                character_motion_cells is not None
+                or character_target_journey_motion_cells is not None
+                or character_run_cycle_motion_cells is not None
                 or character_jump_cycle_motion_cells is not None
                 or character_action_motion_cells is not None
                 or character_battle_cycle_motion_cells is not None
                 or character_magic_cycle_motion_cells is not None
                 or character_interaction_cycle_motion_cells is not None
+                or secondary_character_motion_cells is not None
             )
             else 1
         )
@@ -2913,16 +3016,16 @@ async def generate_hf_fairytale_video(
             motion_plan=motion_plan,
         )
         animation_mode = (
-            "cinematic_action_compositor_v24_character_first"
+            "cinematic_action_compositor_v25_stable_motion"
             if use_cinematic_action
             else (
-            "identity_locked_jump_cycle_v20_discrete"
+            "identity_locked_jump_cycle_v20_smoothed"
             if use_jump_cycle_sheet
             else (
-                "identity_locked_action_cycle_v22_hybrid"
+                "identity_locked_action_cycle_v22_grounded_smooth"
                 if use_dedicated_action_cycle
                 else (
-                "identity_locked_action_sheet_v21_discrete"
+                "identity_locked_action_sheet_v21_grounded_smooth"
                 if use_action_sheet
                 else (
                 (
@@ -2974,8 +3077,10 @@ async def generate_hf_fairytale_video(
             "animation_mode": animation_mode,
             "render_scale": (
                 LOCAL_VIDEO_RENDER_SCALE
-                if use_run_cycle_sheet or use_jump_cycle_sheet or use_action_sheet
-                or use_dedicated_action_cycle
+                if use_motion_sheet or use_target_journey_sheet
+                or use_run_cycle_sheet or use_jump_cycle_sheet
+                or use_action_sheet or use_dedicated_action_cycle
+                or isinstance(secondary_character_motion_sheet_bytes, bytes)
                 else 1
             ),
             "motion_plan": motion_plan,

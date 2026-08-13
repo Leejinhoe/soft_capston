@@ -59,6 +59,74 @@ ACTIONS = {
         "modifiers": ["thinking"],
         "semantics": {"motion_mode": "stationary", "animation_action": "investigate", "body_focus": "gaze_and_hands"},
     },
+    "sit": {
+        "story_text": "The hero slowly sits down beside the castle road.",
+        "pose": "default",
+        "tags": ["sitting"],
+        "modifiers": ["slow_subtle"],
+        "semantics": {
+            "motion_mode": "stationary",
+            "animation_action": "sit",
+            "participant_count": 1,
+            "body_focus": "whole_body",
+        },
+    },
+    "stand": {
+        "story_text": "The hero rises from a seated position and stands steadily.",
+        "pose": "default",
+        "tags": ["standing"],
+        "modifiers": ["slow_subtle"],
+        "semantics": {
+            "motion_mode": "stationary",
+            "animation_action": "stand",
+            "participant_count": 1,
+            "body_focus": "whole_body",
+        },
+    },
+    "battle": {
+        "story_text": "The hero steps forward and swings his sword to stop an opponent.",
+        "pose": "angry",
+        "tags": ["fighting"],
+        "modifiers": ["sudden"],
+        "secondary_key": "male_06",
+        "semantics": {
+            "motion_mode": "stationary",
+            "animation_action": "battle",
+            "participant_count": 2,
+            "requires_partner": True,
+            "body_focus": "whole_body",
+        },
+    },
+    "rescue": {
+        "story_text": "The hero reaches out and helps a friend stand safely.",
+        "pose": "rescue",
+        "tags": ["helping"],
+        "modifiers": ["continuous"],
+        "secondary_key": "female_03",
+        "semantics": {
+            "motion_mode": "stationary",
+            "animation_action": "rescue",
+            "participant_count": 2,
+            "requires_partner": True,
+            "body_focus": "arms_and_gaze",
+        },
+    },
+    "interaction": {
+        "story_text": "A friend carefully hands the hero a small golden key.",
+        "pose": "talking",
+        "tags": ["interacting"],
+        "modifiers": ["slow_subtle"],
+        "secondary_key": "female_02",
+        "semantics": {
+            "motion_mode": "stationary",
+            "animation_action": "interaction",
+            "interaction_kind": "handoff_receive",
+            "participant_count": 2,
+            "requires_partner": True,
+            "requires_object": True,
+            "body_focus": "hands_and_gaze",
+        },
+    },
 }
 
 
@@ -161,7 +229,7 @@ async def _render_action(args: argparse.Namespace, action: str) -> Path:
         },
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    output = args.output_dir / f"{key}_{action}_v24.mp4"
+    output = args.output_dir / f"{key}_{action}_v25.mp4"
     await asyncio.to_thread(output.write_bytes, result["video_bytes"])
     print(output.resolve())
     print(json.dumps(result["parameters"], ensure_ascii=False))

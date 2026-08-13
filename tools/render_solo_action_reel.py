@@ -12,11 +12,11 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO_DIR = ROOT / "output" / "action_previews"
 SOLO_CLIPS = (
-    ("RUN", "male_01_run_v24.mp4"),
-    ("JUMP", "male_01_jump_v24.mp4"),
-    ("LOOK AROUND", "male_01_investigate_v24.mp4"),
-    ("CAST MAGIC", "male_01_magic_v24.mp4"),
-    ("WAVE", "male_01_wave_v24.mp4"),
+    ("RUN", "male_01_run_v25.mp4"),
+    ("JUMP", "male_01_jump_v25.mp4"),
+    ("LOOK AROUND", "male_01_investigate_v25.mp4"),
+    ("CAST MAGIC", "male_01_magic_v25.mp4"),
+    ("WAVE", "male_01_wave_v25.mp4"),
 )
 OUTPUT = VIDEO_DIR / "male_01_solo_action_reel_v25.mp4"
 FPS = 12

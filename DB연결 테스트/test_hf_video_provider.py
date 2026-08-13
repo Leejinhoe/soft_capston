@@ -12,6 +12,7 @@ from hf_video_provider import (
     _draw_action_effects,
     _fit_background,
     _journey_route_screen_position,
+    _lock_grounded_action_legs,
     _motion_timeline,
     _optical_flow_interpolate,
     _prepare_motion_sheet,
@@ -26,6 +27,7 @@ from hf_video_provider import (
     build_video_motion_plan,
     build_fairytale_video_prompt,
     _normalize_frame_count,
+    _paste_character_layer,
 )
 
 
@@ -57,6 +59,10 @@ class HfVideoProviderTests(unittest.TestCase):
 
         self.assertEqual(len(cells), 8)
         self.assertTrue(all(cell.getchannel("A").getbbox() for cell in cells))
+        self.assertEqual(len({cell.size for cell in cells}), 1)
+        self.assertTrue(
+            all(cell.getchannel("A").getbbox()[3] == cell.height for cell in cells)
+        )
 
     def test_idle_action_adds_no_unmotivated_particles(self):
         frame = Image.new("RGBA", (320, 180), (0, 0, 0, 0))
@@ -133,6 +139,22 @@ class HfVideoProviderTests(unittest.TestCase):
         self.assertIn(5, selected)
         self.assertEqual(selected[-1], 7)
 
+    def test_jump_cycle_smooths_adjacent_key_poses_on_the_shared_canvas(self):
+        cells = [Image.new("RGBA", (20, 24), (40, 80, 160, 255)) for _ in range(8)]
+        cells[7] = Image.new("RGBA", (20, 24), (220, 40, 40, 255))
+        cells[0] = Image.new("RGBA", (20, 24), (40, 80, 220, 255))
+
+        interpolated = _select_jump_cycle_pose(
+            cells,
+            progress=0.385,
+            Image=Image,
+            interpolation_cache={},
+        )
+
+        self.assertEqual(interpolated.size, (20, 24))
+        self.assertNotEqual(interpolated.tobytes(), cells[7].tobytes())
+        self.assertNotEqual(interpolated.tobytes(), cells[0].tobytes())
+
     def test_action_sheet_uses_distinct_semantic_pose_sequences(self):
         cells = [Image.new("RGBA", (10, 10), (index, 0, 0, 255)) for index in range(8)]
 
@@ -155,6 +177,32 @@ class HfVideoProviderTests(unittest.TestCase):
             }
             self.assertTrue(expected.issubset(selected))
             self.assertTrue(selected.issubset({0, *expected}))
+
+    def test_action_sheet_smooths_pose_changes_without_moving_the_feet(self):
+        cells = [Image.new("RGBA", (18, 24), (40, 80, 160, 255)) for _ in range(8)]
+        cells[1] = Image.new("RGBA", (18, 24), (220, 40, 40, 255))
+
+        interpolated = _select_action_sheet_pose(
+            cells,
+            action="wave",
+            progress=0.22,
+            Image=Image,
+            interpolation_cache={},
+        )
+
+        self.assertNotEqual(interpolated.getpixel((9, 2)), cells[0].getpixel((9, 2)))
+        self.assertNotEqual(interpolated.getpixel((9, 2)), cells[1].getpixel((9, 2)))
+        self.assertIn(
+            interpolated.getpixel((9, 23)),
+            {cells[0].getpixel((9, 23)), cells[1].getpixel((9, 23))},
+        )
+
+    def test_generic_investigate_uses_the_lower_reaching_pose(self):
+        timeline = _motion_timeline("investigate", "walk", "primary")
+        active_poses = {pose for time, pose in timeline if 0.2 < time < 0.9}
+
+        self.assertIn(6, active_poses)
+        self.assertNotIn(7, active_poses)
 
     def test_dedicated_action_cycle_visits_all_frames_in_order(self):
         cells = [Image.new("RGBA", (10, 10), (index, 0, 0, 255)) for index in range(8)]
@@ -284,6 +332,20 @@ class HfVideoProviderTests(unittest.TestCase):
 
         self.assertEqual(selected_sizes, {(40, 48)})
 
+    def test_grounded_action_interpolation_keeps_nearest_lower_body(self):
+        interpolated = Image.new("RGBA", (18, 24), (40, 80, 220, 255))
+        discrete = Image.new("RGBA", (18, 24), (220, 40, 40, 255))
+
+        grounded = _lock_grounded_action_legs(
+            interpolated,
+            discrete,
+            Image,
+        )
+
+        self.assertEqual(grounded.size, (18, 24))
+        self.assertEqual(grounded.getpixel((9, 2)), interpolated.getpixel((9, 2)))
+        self.assertEqual(grounded.getpixel((9, 23)), discrete.getpixel((9, 23)))
+
     def test_target_camera_keeps_fractional_pan_coordinates(self):
         plan = build_video_motion_plan(
             story_text="The child runs toward the castle.",
@@ -408,7 +470,38 @@ class HfVideoProviderTests(unittest.TestCase):
 
         self.assertNotEqual(sit_poses, stand_poses)
         self.assertEqual(sit_poses[0], 0)
-        self.assertEqual(stand_poses[0], 3)
+        self.assertEqual(sit_poses[-1], 6)
+        self.assertEqual(stand_poses[0], 6)
+        self.assertEqual(stand_poses[-1], 0)
+
+    def test_rotated_character_uses_visible_feet_as_the_ground_anchor(self):
+        frame = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        character = Image.new("RGBA", (24, 32), (0, 0, 0, 0))
+        ImageDraw.Draw(character).rectangle((5, 4, 18, 29), fill=(220, 80, 40, 255))
+
+        _paste_character_layer(
+            frame=frame,
+            character_image=character,
+            Image=Image,
+            ImageDraw=ImageDraw,
+            ImageFilter=ImageFilter,
+            center_x=50,
+            ground_y=80,
+            scale=0.32,
+            rotation=12.0,
+        )
+
+        character_mask = Image.new("L", frame.size, 0)
+        character_mask.putdata(
+            [
+                255 if red > 150 and green < 150 and blue < 120 else 0
+                for red, green, blue, _ in frame.getdata()
+            ]
+        )
+        bounds = character_mask.getbbox()
+        self.assertIsNotNone(bounds)
+        self.assertGreaterEqual(bounds[3], 78)
+        self.assertLessEqual(bounds[3], 80)
 
     def test_motion_prompt_carries_phase_and_alignment_contract(self):
         plan = build_video_motion_plan(
@@ -550,7 +643,11 @@ class HfVideoProviderTests(unittest.TestCase):
         self.assertNotEqual(base["rotation"], trembling["rotation"])
 
     def test_investigation_and_interaction_do_not_use_magic_pose(self):
-        for action in ("investigate", "interaction"):
+        expected_active_pose = {
+            "investigate": 6,
+            "interaction": 7,
+        }
+        for action, active_pose in expected_active_pose.items():
             with self.subTest(action=action):
                 poses = [
                     pose
@@ -563,7 +660,7 @@ class HfVideoProviderTests(unittest.TestCase):
 
                 self.assertNotIn(3, poses)
                 self.assertNotIn(4, poses)
-                self.assertIn(7, poses)
+                self.assertIn(active_pose, poses)
 
     def test_target_facing_run_cycles_all_rear_view_cells(self):
         timeline = _motion_timeline(
@@ -592,7 +689,7 @@ class HfVideoProviderTests(unittest.TestCase):
             "magic": {0, 4},
             "battle": {0, 5},
             "rescue": {0, 6},
-            "investigate": {0, 7},
+            "investigate": {0, 6},
             "interaction": {0, 7},
             "wave": {0, 7},
         }
