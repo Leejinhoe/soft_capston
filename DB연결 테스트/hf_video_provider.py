@@ -38,7 +38,7 @@ RUN_CHARACTER_SCALE_END = float(
 )
 RUN_CYCLE_BOB_SCALE = float(os.getenv("LOCAL_VIDEO_RUN_BOB_SCALE", "0.004"))
 RUN_CYCLE_CONTACT_MIN = min(
-    max(float(os.getenv("LOCAL_VIDEO_RUN_CONTACT_MIN", "0.0")), 0.0),
+    max(float(os.getenv("LOCAL_VIDEO_RUN_CONTACT_MIN", "0.30")), 0.0),
     1.0,
 )
 TARGET_JOURNEY_STAGE_WIDTH_SCALE = 1.48
@@ -126,7 +126,7 @@ RUN_CYCLE_FRAME_SEQUENCE = tuple(range(RUN_CYCLE_SHEET_CELL_COUNT))
 WALK_CYCLE_FRAME_SEQUENCE = (0, 1, 4, 5)
 JUMP_CYCLE_FRAME_SEQUENCE = (7, 0, 1, 2, 3, 4, 5, 6, 7)
 RUN_CYCLE_CYCLES_PER_SECOND = float(
-    os.getenv("LOCAL_VIDEO_RUN_CYCLES_PER_SECOND", "0.75")
+    os.getenv("LOCAL_VIDEO_RUN_CYCLES_PER_SECOND", "1.0")
 )
 MOTION_FLOW_MIN_SILHOUETTE_IOU = 0.40
 RUN_CYCLE_LEG_LOCK_START = 0.58
@@ -1340,10 +1340,9 @@ def _lock_run_cycle_legs(interpolated, discrete, Image):
         ]
     )
     mask = mask_column.resize((interpolated_canvas.width, height))
-    return _prepare_character(
-        Image.composite(discrete_canvas, interpolated_canvas, mask),
-        Image,
-    )
+    # Run-cycle cells are normalized to one shared canvas. Keeping that canvas
+    # prevents each pose from being cropped and rescaled independently.
+    return Image.composite(discrete_canvas, interpolated_canvas, mask)
 
 
 def _motion_timeline(

@@ -112,7 +112,7 @@ class HfVideoProviderTests(unittest.TestCase):
         )
         second = _select_run_cycle_pose(
             cells,
-            progress=0.04,
+            progress=0.035,
             pace="run",
             duration_seconds=8.0,
         )
@@ -181,7 +181,7 @@ class HfVideoProviderTests(unittest.TestCase):
         selected = [
             _select_run_cycle_pose(
                 cells,
-                progress=(index + 0.25) / 12.0,
+                progress=(index + 0.25) / 16.0,
                 pace="run",
                 duration_seconds=2.0,
             )
@@ -233,7 +233,7 @@ class HfVideoProviderTests(unittest.TestCase):
 
         interpolated = _select_run_cycle_pose(
             cells,
-            progress=1.0 / 48.0,
+            progress=1.0 / 64.0,
             pace="run",
             duration_seconds=2.0,
             Image=Image,
@@ -256,6 +256,33 @@ class HfVideoProviderTests(unittest.TestCase):
 
         self.assertNotEqual(interpolated.getpixel((8, 2)), cells[0].getpixel((8, 2)))
         self.assertEqual(interpolated.getpixel((8, 15)), cells[0].getpixel((8, 15)))
+
+    def test_run_cycle_interpolation_preserves_the_normalized_canvas(self):
+        cells = []
+        for index in range(8):
+            cell = Image.new("RGBA", (40, 48), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(cell)
+            width = 14 + index
+            height = 30 + (index % 3) * 4
+            draw.rectangle(
+                ((40 - width) // 2, 48 - height, (40 + width) // 2, 47),
+                fill=(40 + index * 15, 80, 180, 255),
+            )
+            cells.append(cell)
+
+        selected_sizes = {
+            _select_run_cycle_pose(
+                cells,
+                progress=index / 23,
+                pace="run",
+                duration_seconds=1.0,
+                Image=Image,
+                interpolation_cache={},
+            ).size
+            for index in range(24)
+        }
+
+        self.assertEqual(selected_sizes, {(40, 48)})
 
     def test_target_camera_keeps_fractional_pan_coordinates(self):
         plan = build_video_motion_plan(
