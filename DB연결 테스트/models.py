@@ -54,8 +54,12 @@ class CharacterAssetSchema(BaseModel):
     emotion: str = Field(default="neutral", min_length=1, max_length=40)
     image_file_id: Optional[str] = None
     image_url: Optional[str] = None
+    quality_tier: Optional[str] = Field(default=None, max_length=40)
     tags: List[str] = Field(default_factory=list)
     scene_keywords: List[str] = Field(default_factory=list)
+    sheet_columns: Optional[int] = Field(default=None, ge=1, le=8)
+    sheet_rows: Optional[int] = Field(default=None, ge=1, le=8)
+    motion_cells: Dict[str, List[int]] = Field(default_factory=dict)
 
 
 class CharacterProfileUpsertSchema(BaseModel):
@@ -68,9 +72,9 @@ class CharacterProfileUpsertSchema(BaseModel):
 
 
 class MediaGenerationSchema(BaseModel):
-    story_text: str
-    genre: Optional[str] = None
-    age: Optional[str] = None
+    story_text: str = Field(min_length=1, max_length=12000)
+    genre: Optional[str] = Field(default=None, max_length=80)
+    age: Optional[str] = Field(default=None, max_length=20)
     character_key: Optional[str] = Field(
         default=None,
         min_length=1,
@@ -81,11 +85,11 @@ class MediaGenerationSchema(BaseModel):
     width: int = Field(default=512, ge=256, le=1536)
     height: int = Field(default=512, ge=256, le=1536)
     flux_steps: int = Field(default=1, ge=1, le=8)
-    video_width: int = Field(default=512, ge=256, le=1280)
+    video_width: int = Field(default=768, ge=256, le=1280)
     video_height: int = Field(default=384, ge=256, le=768)
-    num_frames: int = Field(default=48, ge=9, le=240)
+    num_frames: int = Field(default=48, ge=9, le=450)
     video_steps: int = Field(default=2, ge=2, le=50)
-    frame_rate: Optional[int] = Field(default=12, ge=6, le=30)
+    frame_rate: Optional[int] = Field(default=30, ge=6, le=30)
     video_timeout: Optional[int] = Field(default=None, ge=30, le=1800)
 
 

@@ -1,4 +1,5 @@
 ﻿import asyncio
+from contextlib import suppress
 import hashlib
 import base64
 import hmac
@@ -9,6 +10,7 @@ import re
 import secrets
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from bson import ObjectId
@@ -18,6 +20,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from gridfs.errors import NoFile
 from pydantic import BaseModel
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from account_moderation import (
     DELETED_NICKNAME,
@@ -26,11 +29,21 @@ from account_moderation import (
     serialize_warning,
 )
 from background_assets import select_background_asset
-from character_assets import build_character_action_hint, select_character_asset
+from character_assets import (
+    build_character_action_hint,
+    select_character_asset,
+    select_character_motion_sheet,
+    select_character_action_sheet,
+    select_character_action_cycle_sheet,
+    select_character_jump_cycle_sheet,
+    select_character_run_cycle_sheet,
+    select_character_target_journey_sheet,
+)
 from character_seed import DEFAULT_CHARACTERS, seed_default_character_profiles
 from database import (
     character_profiles_collection,
     community_posts_collection,
+    fit_vocabulary_collection,
     init_database,
     media_files_bucket,
     media_jobs_collection,
@@ -50,9 +63,10 @@ from media_queue import (
     serialize_object_id,
     serialize_optional_datetime,
 )
-from media_compositor import compose_story_scene
+from media_compositor import compose_background_scene, compose_story_scene
 from hf_media_provider import (
     HfMediaError,
+    build_video_motion_plan,
     generate_hf_fairytale_image,
     generate_hf_fairytale_video,
     get_hf_media_config,
@@ -78,11 +92,49 @@ from models import (
 from story_cast import (
     build_story_cast,
     normalize_story_characters,
+    select_scene_partner,
     select_story_cast_member,
 )
 from visual_vocabulary_seed import load_visual_context, sync_visual_vocabulary
 
 logger = logging.getLogger(__name__)
+
+
+def configured_cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def route_access_policy(path: str, method: str) -> str:
+    normalized_method = method.upper()
+    if normalized_method == "OPTIONS":
+        return "public"
+    if path.startswith("/api/admin/"):
+        return "admin"
+    if normalized_method == "PUT" and re.fullmatch(
+        r"/api/media/characters/[a-zA-Z0-9_-]+", path
+    ):
+        return "admin"
+    if re.fullmatch(r"/api/users/by-account/[^/]+", path):
+        return "account_owner"
+    if re.fullmatch(r"/api/users/[^/]+/(?:stories|vocabularies)", path):
+        return "user_resource_owner"
+    if re.fullmatch(r"/api/users/[^/]+(?:/(?:profile|password))?", path) and (
+        normalized_method in {"DELETE", "PUT", "PATCH"}
+    ):
+        return "account_owner"
+    if path.startswith("/api/media/"):
+        return "authenticated"
+    if path == "/api/community/reports" and normalized_method == "POST":
+        return "authenticated"
+    if path.startswith("/api/stories/") and normalized_method in {
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+    }:
+        return "authenticated"
+    return "public"
 
 app = FastAPI(
     title="Fairytale Backend",
@@ -91,10 +143,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=configured_cors_origins(),
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -102,15 +155,15 @@ app.add_middleware(
 async def protect_sensitive_routes(request: Request, call_next):
     path = request.url.path
     method = request.method.upper()
-    is_admin_route = path.startswith("/api/admin/")
-    user_match = re.fullmatch(r"/api/users/([^/]+)(?:/(?:profile|password))?", path)
-    is_user_write = bool(user_match and method in {"DELETE", "PUT", "PATCH"})
-    is_cast_write = bool(
-        method == "PUT"
-        and re.fullmatch(r"/api/stories/[0-9a-fA-F]{24}/characters", path)
-    )
-    if not (is_admin_route or is_user_write or is_cast_write):
+    policy = route_access_policy(path, method)
+    if policy == "public":
         return await call_next(request)
+
+    user_match = re.fullmatch(r"/api/users/([^/]+)(?:/(?:profile|password))?", path)
+    account_lookup_match = re.fullmatch(r"/api/users/by-account/([^/]+)", path)
+    user_resource_match = re.fullmatch(
+        r"/api/users/([^/]+)/(?:stories|vocabularies)", path
+    )
 
     try:
         auth = verify_access_token(request.headers.get("authorization"))
@@ -120,17 +173,24 @@ async def protect_sensitive_routes(request: Request, call_next):
             content={"detail": "Authentication is required."},
         )
 
-    if is_admin_route and auth.get("account_id") != ADMIN_ACCOUNT_ID:
+    if policy == "admin" and not is_admin_account_id(auth.get("account_id")):
         return JSONResponse(
             status_code=403,
             content={"detail": "Administrator permission is required."},
         )
-    if is_user_write and user_match:
-        requested_account_id = user_match.group(1)
+    if policy == "account_owner" and (user_match or account_lookup_match):
+        requested_account_id = (user_match or account_lookup_match).group(1)
         if auth.get("account_id") != requested_account_id:
             return JSONResponse(
                 status_code=403,
                 content={"detail": "You can only modify your own account."},
+            )
+    if policy == "user_resource_owner" and user_resource_match:
+        requested_user_id = user_resource_match.group(1)
+        if str(auth.get("uid") or "") != requested_user_id:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "You can only access your own data."},
             )
     request.state.auth = auth
     return await call_next(request)
@@ -182,8 +242,7 @@ ADMIN_ACCOUNT_ID = "1111"
 AUTH_TOKEN_TTL_SECONDS = 24 * 60 * 60
 _auth_secret_source = (
     os.getenv("APP_AUTH_SECRET")
-    or os.getenv("MONGO_DETAILS")
-    or os.getenv("MONGO_URI")
+    or os.getenv("JWT_SECRET_KEY")
     or secrets.token_urlsafe(48)
 )
 AUTH_TOKEN_SECRET = hashlib.sha256(
@@ -192,9 +251,22 @@ AUTH_TOKEN_SECRET = hashlib.sha256(
 MEDIA_JOB_SYNC_INTERVAL_SECONDS = 5
 MEDIA_GENERATION_WORKER_INTERVAL_SECONDS = 2
 MEDIA_JOB_STALE_SECONDS = 15 * 60
+MEDIA_JOB_HEARTBEAT_SECONDS = max(
+    10,
+    int(os.getenv("MEDIA_JOB_HEARTBEAT_SECONDS", "30")),
+)
+MEDIA_MAX_ACTIVE_JOBS_PER_USER = max(
+    1,
+    int(os.getenv("MEDIA_MAX_ACTIVE_JOBS_PER_USER", "3")),
+)
 MEDIA_GENERATION_WORKER_ID = f"fastapi-{secrets.token_hex(4)}"
 media_job_sync_task: Optional[asyncio.Task] = None
 media_generation_worker_task: Optional[asyncio.Task] = None
+media_enqueue_locks: Dict[str, asyncio.Lock] = {}
+
+
+def is_admin_account_id(account_id: Optional[str]) -> bool:
+    return str(account_id or "").strip() == ADMIN_ACCOUNT_ID
 
 
 def hash_password(password: str) -> str:
@@ -276,6 +348,48 @@ def owner_matches(document_user_id, requested_user_id: Optional[str]) -> bool:
     if not requested_user_id:
         return True
     return str(document_user_id) == str(requested_user_id)
+
+
+def authenticated_user_id(request: Request) -> str:
+    auth = getattr(request.state, "auth", None) or {}
+    user_id = str(auth.get("uid") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication is required.")
+    return user_id
+
+
+def is_shared_character_asset(metadata: Dict[str, Any]) -> bool:
+    asset_role = str(metadata.get("asset_role") or "").strip().lower()
+    character_key = str(metadata.get("character_key") or "").strip()
+    return asset_role.startswith("character_") and bool(character_key)
+
+
+async def require_story_owner(story_id: str, request: Request) -> Dict[str, Any]:
+    story_object_id = require_object_id(story_id, "story_id")
+    story = await stories_collection.find_one({"_id": story_object_id})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found.")
+    if not owner_matches(story.get("user_id"), authenticated_user_id(request)):
+        raise HTTPException(status_code=403, detail="Only the story owner can modify it.")
+    return story
+
+
+async def require_media_job_owner(job: Dict[str, Any], request: Request) -> None:
+    user_id = authenticated_user_id(request)
+    owner_user_id = str(job.get("owner_user_id") or "").strip()
+    if owner_user_id:
+        if not owner_matches(owner_user_id, user_id):
+            raise HTTPException(status_code=403, detail="Media job access denied.")
+        return
+
+    story_id = serialize_object_id(job.get("story_id"))
+    if story_id:
+        await require_story_owner(story_id, request)
+        return
+
+    auth = getattr(request.state, "auth", None) or {}
+    if not is_admin_account_id(auth.get("account_id")):
+        raise HTTPException(status_code=403, detail="Legacy media job access denied.")
 
 
 def user_id_filter(user_id: str):
@@ -395,9 +509,53 @@ async def load_active_character_profile(
     return None
 
 
+async def load_semantic_partner_profile(
+    primary_character_key: Optional[str],
+    genre: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    query: Dict[str, Any] = {
+        "active": True,
+        "assets.0": {"$exists": True},
+    }
+    normalized_primary = str(primary_character_key or "").strip().lower()
+    if normalized_primary:
+        query["character_key"] = {"$ne": normalized_primary}
+
+    if genre and genre.strip():
+        genre_match = await character_profiles_collection.find_one(
+            {**query, "genres": genre.strip().lower()},
+            sort=[("updated_at", -1), ("character_key", 1)],
+        )
+        if genre_match:
+            return genre_match
+    return await character_profiles_collection.find_one(
+        query,
+        sort=[("updated_at", -1), ("character_key", 1)],
+    )
+
+
 async def ensure_active_character_profile(character_key: Optional[str]) -> None:
     if character_key and not await load_active_character_profile(character_key):
         raise HTTPException(status_code=404, detail="Active character profile not found.")
+
+
+async def ensure_story_character_profile(
+    story_id: Optional[str],
+    character_key: Optional[str],
+) -> None:
+    if not story_id or not character_key:
+        return
+    story_cast = await load_story_cast(story_id)
+    allowed_keys = {
+        str(member.get("character_key") or "").strip()
+        for member in story_cast
+        if isinstance(member, dict)
+    }
+    if character_key not in allowed_keys:
+        raise HTTPException(
+            status_code=409,
+            detail="Selected character does not belong to this story cast.",
+        )
 
 
 async def build_persistent_story_cast(
@@ -434,13 +592,60 @@ async def load_story_cast_member(
     story_id: Optional[str],
     story_text: str,
 ) -> Optional[Dict[str, Any]]:
+    story_cast = await load_story_cast(story_id)
+    return select_story_cast_member(story_cast, story_text)
+
+
+async def load_story_cast(story_id: Optional[str]) -> list:
     if not story_id or not ObjectId.is_valid(story_id):
-        return None
+        return []
     story = await stories_collection.find_one(
         {"_id": ObjectId(story_id)},
-        {"story_cast": 1},
+        {
+            "story_cast": 1,
+            "characters": 1,
+            "character_overrides": 1,
+            "genre": 1,
+        },
     )
-    return select_story_cast_member((story or {}).get("story_cast"), story_text)
+    if not story:
+        return []
+    story_cast = (story or {}).get("story_cast")
+    if isinstance(story_cast, list) and story_cast:
+        return story_cast
+
+    characters = normalize_story_characters((story or {}).get("characters"))
+    overrides = normalize_story_character_overrides(
+        (story or {}).get("character_overrides")
+    )
+    if not characters and overrides:
+        characters = {
+            role: "The selected story character"
+            for role in overrides
+            if role != "key_item"
+        }
+    if not characters:
+        characters = {"hero": "Legacy story hero"}
+
+    migrated_cast = await build_persistent_story_cast(
+        characters,
+        (story or {}).get("genre"),
+        overrides,
+    )
+    if migrated_cast:
+        await stories_collection.update_one(
+            {"_id": ObjectId(story_id)},
+            {
+                "$set": {
+                    "story_cast": migrated_cast,
+                    "characters": characters,
+                    "character_identity_locked": True,
+                    "schema_version": 2,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+    return migrated_cast
 
 
 async def ensure_story_scene_exists(story_id: str, step_number: int):
@@ -479,6 +684,7 @@ async def upload_generated_media_file(
     media_kind: str,
     job_id: Optional[str] = None,
     story_id: Optional[str] = None,
+    owner_user_id: Optional[str] = None,
     step_number: Optional[int] = None,
     provider: str = "huggingface",
     model: Optional[str] = None,
@@ -493,6 +699,7 @@ async def upload_generated_media_file(
         "model": model,
         "job_id": job_id,
         "story_id": story_id,
+        "owner_user_id": owner_user_id,
         "step_number": step_number,
         "created_at": datetime.utcnow().isoformat(),
     }
@@ -527,9 +734,126 @@ async def download_gridfs_file(file_id: str) -> bytes:
     return b"".join(chunks)
 
 
+async def download_profile_motion_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> tuple[Optional[Dict[str, Any]], Optional[bytes]]:
+    asset = select_character_motion_sheet(profile)
+    file_id = (asset or {}).get("image_file_id")
+    if not file_id:
+        return asset, None
+    try:
+        content = await download_gridfs_file(str(file_id))
+    except Exception as exc:
+        logger.warning(
+            "Character motion sheet download failed for %s: %s",
+            (profile or {}).get("character_key"),
+            exc,
+        )
+        return asset, None
+    return asset, content
+
+
+async def download_profile_target_journey_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> tuple[Optional[Dict[str, Any]], Optional[bytes]]:
+    asset = select_character_target_journey_sheet(profile)
+    file_id = (asset or {}).get("image_file_id")
+    if not file_id:
+        return asset, None
+    try:
+        content = await download_gridfs_file(str(file_id))
+    except Exception as exc:
+        logger.warning(
+            "Character target journey sheet download failed for %s: %s",
+            (profile or {}).get("character_key"),
+            exc,
+        )
+        return asset, None
+    return asset, content
+
+
+async def download_profile_run_cycle_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> tuple[Optional[Dict[str, Any]], Optional[bytes]]:
+    asset = select_character_run_cycle_sheet(profile)
+    file_id = (asset or {}).get("image_file_id")
+    if not file_id:
+        return asset, None
+    try:
+        content = await download_gridfs_file(str(file_id))
+    except Exception as exc:
+        logger.warning(
+            "Character run cycle sheet download failed for %s: %s",
+            (profile or {}).get("character_key"),
+            exc,
+        )
+        return asset, None
+    return asset, content
+
+
+async def download_profile_jump_cycle_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> tuple[Optional[Dict[str, Any]], Optional[bytes]]:
+    asset = select_character_jump_cycle_sheet(profile)
+    file_id = (asset or {}).get("image_file_id")
+    if not file_id:
+        return asset, None
+    try:
+        content = await download_gridfs_file(str(file_id))
+    except Exception as exc:
+        logger.warning(
+            "Character jump cycle sheet download failed for %s: %s",
+            (profile or {}).get("character_key"),
+            exc,
+        )
+        return asset, None
+    return asset, content
+
+
+async def download_profile_action_sheet(
+    profile: Optional[Dict[str, Any]],
+) -> tuple[Optional[Dict[str, Any]], Optional[bytes]]:
+    asset = select_character_action_sheet(profile)
+    file_id = (asset or {}).get("image_file_id")
+    if not file_id:
+        return asset, None
+    try:
+        content = await download_gridfs_file(str(file_id))
+    except Exception as exc:
+        logger.warning(
+            "Character action sheet download failed for %s: %s",
+            (profile or {}).get("character_key"),
+            exc,
+        )
+        return asset, None
+    return asset, content
+
+
+async def download_profile_action_cycle_sheet(
+    profile: Optional[Dict[str, Any]],
+    action: str,
+) -> tuple[Optional[Dict[str, Any]], Optional[bytes]]:
+    asset = select_character_action_cycle_sheet(profile, action)
+    file_id = (asset or {}).get("image_file_id")
+    if not file_id:
+        return asset, None
+    try:
+        content = await download_gridfs_file(str(file_id))
+    except Exception as exc:
+        logger.warning(
+            "Character %s cycle sheet download failed for %s: %s",
+            action,
+            (profile or {}).get("character_key"),
+            exc,
+        )
+        return asset, None
+    return asset, content
+
+
 async def generate_composite_scene(
     *,
     selected_character_asset: Dict[str, Any],
+    secondary_character_asset: Optional[Dict[str, Any]] = None,
     genre: Optional[str],
     story_text: str,
     width: int,
@@ -547,19 +871,37 @@ async def generate_composite_scene(
     if not background_asset:
         raise FileNotFoundError(f"No local background is available for genre: {genre}")
 
-    character_bytes, background_bytes = await asyncio.gather(
+    secondary_image_file_id = (
+        secondary_character_asset.get("image_file_id")
+        if secondary_character_asset
+        else None
+    )
+    downloads = [
         download_gridfs_file(str(image_file_id)),
         asyncio.to_thread(background_asset["path"].read_bytes),
-    )
+        asyncio.to_thread(background_asset["video_path"].read_bytes),
+    ]
+    if secondary_image_file_id:
+        downloads.append(download_gridfs_file(str(secondary_image_file_id)))
+    downloaded = await asyncio.gather(*downloads)
+    character_bytes, background_bytes, video_background_bytes = downloaded[:3]
+    secondary_character_bytes = downloaded[3] if len(downloaded) > 3 else None
     image_bytes = await asyncio.to_thread(
         compose_story_scene,
         background_bytes,
         character_bytes,
+        secondary_character_bytes=secondary_character_bytes,
+        effect_tags=(visual_context or {}).get("effect_tags", []),
+        prop_tags=(visual_context or {}).get("prop_tags", []),
         width=width,
         height=height,
     )
     return {
         "image_bytes": image_bytes,
+        "background_bytes": background_bytes,
+        "video_background_bytes": video_background_bytes,
+        "character_bytes": character_bytes,
+        "secondary_character_bytes": secondary_character_bytes,
         "content_type": "image/png",
         "provider": "local-composite",
         "model": "storybook-asset-compositor-v1",
@@ -568,6 +910,54 @@ async def generate_composite_scene(
         "image_mode": "local_composite",
         "background_key": background_asset["key"],
         "background_source": "bundled_asset",
+        "video_background_source": background_asset["video_source"],
+        "video_background_filename": background_asset["video_path"].name,
+    }
+
+
+async def generate_background_only_scene(
+    *,
+    genre: Optional[str],
+    story_text: str,
+    width: int,
+    height: int,
+    visual_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    background_asset = select_background_asset(
+        genre,
+        story_text,
+        visual_context=visual_context,
+    )
+    if not background_asset:
+        raise FileNotFoundError(f"No local background is available for genre: {genre}")
+
+    background_bytes, video_background_bytes = await asyncio.gather(
+        asyncio.to_thread(background_asset["path"].read_bytes),
+        asyncio.to_thread(background_asset["video_path"].read_bytes),
+    )
+    image_bytes = await asyncio.to_thread(
+        compose_background_scene,
+        background_bytes,
+        effect_tags=(visual_context or {}).get("effect_tags", []),
+        width=width,
+        height=height,
+    )
+    return {
+        "image_bytes": image_bytes,
+        "background_bytes": background_bytes,
+        "video_background_bytes": video_background_bytes,
+        "character_bytes": None,
+        "secondary_character_bytes": None,
+        "content_type": "image/png",
+        "provider": "local-background",
+        "model": "storybook-background-compositor-v1",
+        "inference_provider": "local",
+        "attempted_providers": [],
+        "image_mode": "local_background_only",
+        "background_key": background_asset["key"],
+        "background_source": "bundled_asset",
+        "video_background_source": background_asset["video_source"],
+        "video_background_filename": background_asset["video_path"].name,
     }
 
 
@@ -583,15 +973,17 @@ async def generate_and_store_backend_media(
     width: int = 512,
     height: int = 512,
     flux_steps: int = 1,
-    video_width: int = 512,
+    video_width: int = 768,
     video_height: int = 384,
     num_frames: int = 48,
     video_steps: int = 2,
     frame_rate: Optional[int] = None,
     seed: Optional[int] = None,
     job_id: Optional[str] = None,
+    owner_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     started_at = time.monotonic()
+    story_cast = await load_story_cast(story_id)
     visual_context: Dict[str, Any] = {}
     try:
         visual_context = await load_visual_context(story_text)
@@ -600,22 +992,121 @@ async def generate_and_store_backend_media(
             "Visual vocabulary matching failed for media job %s; using base selection.",
             job_id,
         )
-    story_cast_member = await load_story_cast_member(story_id, story_text)
+    action_semantics = visual_context.get("action_semantics") or {}
+    environment_only = action_semantics.get("participant_count") == 0
+    story_cast_member = None if environment_only else select_story_cast_member(
+        story_cast,
+        story_text,
+    )
+    if story_id and not environment_only and not story_cast:
+        raise HfMediaError(
+            "Story character selection is not initialized. Save the selected cast before generating media."
+        )
+    if story_id and not environment_only and (
+        not story_cast_member or not story_cast_member.get("character_key")
+    ):
+        raise HfMediaError(
+            "The story does not have a usable selected character profile."
+        )
     if story_cast_member and story_cast_member.get("character_key"):
         character_key = str(story_cast_member["character_key"])
-    character_profile = await load_active_character_profile(character_key, genre)
+    if not story_id and not character_key and not environment_only:
+        raise HfMediaError(
+            "Character scenes require a selected character profile when no story is provided."
+        )
+    character_profile = await load_active_character_profile(
+        character_key,
+        None if environment_only else genre,
+    )
     if character_key and not character_profile:
         raise HfMediaError(f"Active character profile not found: {character_key}")
+    asset_motion_plan = build_video_motion_plan(
+        story_text=story_text,
+        action_tags=visual_context.get("action_tags", []),
+        effect_tags=visual_context.get("effect_tags", []),
+        motion_modifier_tags=visual_context.get("motion_modifier_tags", []),
+        action_semantics=visual_context.get("action_semantics", {}),
+        ensemble_profile=visual_context.get("ensemble_profile") or {},
+    )
     selected_character_asset = select_character_asset(
         character_profile,
         story_text,
         visual_context=visual_context,
+        preferred_pose=asset_motion_plan.get("preferred_asset_pose"),
+        preferred_emotion=asset_motion_plan.get("preferred_asset_emotion"),
+        prefer_premium_reference=True,
+    )
+    if not environment_only and not selected_character_asset:
+        raise HfMediaError(
+            "The selected character profile has no usable scene asset. "
+            "Generation stopped to preserve character identity."
+        )
+    secondary_story_cast_member = select_scene_partner(
+        story_cast,
+        story_cast_member,
+        str(asset_motion_plan.get("action") or ""),
+        requires_partner=bool(asset_motion_plan.get("requires_partner")),
+    )
+    secondary_character_profile = None
+    secondary_character_asset = None
+    if selected_character_asset:
+        secondary_character_key = (secondary_story_cast_member or {}).get(
+            "character_key"
+        )
+        if secondary_character_key:
+            secondary_character_profile = await load_active_character_profile(
+                str(secondary_character_key),
+                genre,
+            )
+        if (
+            asset_motion_plan.get("requires_partner")
+            and not secondary_character_profile
+            and not story_id
+        ):
+            secondary_character_profile = await load_semantic_partner_profile(
+                (character_profile or {}).get("character_key"),
+                genre,
+            )
+            if secondary_character_profile:
+                secondary_story_cast_member = {
+                    "role": asset_motion_plan.get("partner_role") or "partner",
+                    "name": secondary_character_profile.get("name"),
+                    "character_key": secondary_character_profile.get(
+                        "character_key"
+                    ),
+                    "selection_source": "semantic_auto",
+                }
+        secondary_preferences = {
+            "battle": ("default", "angry"),
+            "rescue": ("default", "sad"),
+            "interaction": ("talking", "friendly"),
+            "conversation": ("talking", "friendly"),
+        }
+        secondary_pose, secondary_emotion = secondary_preferences.get(
+            str(asset_motion_plan.get("action") or ""),
+            (None, None),
+        )
+        secondary_character_asset = select_character_asset(
+            secondary_character_profile,
+            story_text,
+            visual_context=visual_context,
+            preferred_pose=secondary_pose,
+            preferred_emotion=secondary_emotion,
+            prefer_premium_reference=True,
+        )
+    if (
+        include_video
+        and asset_motion_plan.get("requires_partner")
+        and not secondary_character_asset
+    ):
+        source_word = asset_motion_plan.get("semantic_source_word") or "This action"
+        raise HfMediaError(
+            f"{source_word} requires two active character profiles for video generation."
     )
     composite_error = None
-    if selected_character_asset:
+    if environment_only:
         try:
-            generated = await generate_composite_scene(
-                selected_character_asset=selected_character_asset,
+            generated = await generate_background_only_scene(
                 genre=genre,
                 story_text=story_text,
                 width=width,
@@ -625,7 +1116,7 @@ async def generate_and_store_backend_media(
         except Exception as exc:
             composite_error = str(exc)
             logger.warning(
-                "Local scene composition failed for media job %s; using HF fallback: %s",
+                "Local environment composition failed for media job %s; using HF fallback: %s",
                 job_id,
                 composite_error,
             )
@@ -633,10 +1124,8 @@ async def generate_and_store_backend_media(
                 story_text=story_text,
                 genre=genre,
                 age=age,
-                character_description=(character_profile or {}).get("description"),
-                character_style_prompt=(character_profile or {}).get("style_prompt"),
                 character_action_hint=build_character_action_hint(
-                    selected_character_asset,
+                    None,
                     visual_context=visual_context,
                 ),
                 width=width,
@@ -644,29 +1133,109 @@ async def generate_and_store_backend_media(
                 steps=flux_steps,
                 seed=seed,
             )
-            generated["image_mode"] = "hf_fallback"
-    else:
-        generated = await generate_hf_fairytale_image(
-            story_text=story_text,
-            genre=genre,
-            age=age,
-            character_action_hint=build_character_action_hint(
-                None,
+            generated["image_mode"] = "hf_environment_fallback"
+    elif selected_character_asset:
+        try:
+            generated = await generate_composite_scene(
+                selected_character_asset=selected_character_asset,
+                secondary_character_asset=secondary_character_asset,
+                genre=genre,
+                story_text=story_text,
+                width=width,
+                height=height,
                 visual_context=visual_context,
-            ),
-            width=width,
-            height=height,
-            steps=flux_steps,
-            seed=seed,
+            )
+        except Exception as exc:
+            composite_error = str(exc)
+            logger.exception(
+                "Character-preserving composition failed for media job %s.",
+                job_id,
+            )
+            raise HfMediaError(
+                "Character-preserving scene composition failed; retry the media job."
+            ) from exc
+    else:
+        raise HfMediaError(
+            "Character-preserving image generation requires a selected scene asset."
         )
-        generated["image_mode"] = "hf_full_scene"
 
     video_generated = None
     video_error = None
     video_task = None
+    character_motion_sheet_asset = None
+    secondary_motion_sheet_asset = None
+    character_target_journey_sheet_asset = None
+    character_run_cycle_sheet_asset = None
+    character_jump_cycle_sheet_asset = None
+    character_action_sheet_asset = None
+    character_battle_cycle_sheet_asset = None
+    character_magic_cycle_sheet_asset = None
+    character_interaction_cycle_sheet_asset = None
+    character_motion_sheet_bytes = None
+    secondary_motion_sheet_bytes = None
+    character_target_journey_sheet_bytes = None
+    character_run_cycle_sheet_bytes = None
+    character_jump_cycle_sheet_bytes = None
+    character_action_sheet_bytes = None
+    character_battle_cycle_sheet_bytes = None
+    character_magic_cycle_sheet_bytes = None
+    character_interaction_cycle_sheet_bytes = None
+    action_fx_sheet_bytes = None
     if include_video:
+        action_fx_path = (
+            Path(__file__).resolve().parent.parent
+            / "assets"
+            / "effects"
+            / "action_fx_sheet_v23.png"
+        )
+        if action_fx_path.is_file():
+            action_fx_sheet_bytes = await asyncio.to_thread(action_fx_path.read_bytes)
+        motion_sheet_results = await asyncio.gather(
+            download_profile_motion_sheet(character_profile),
+            download_profile_motion_sheet(secondary_character_profile),
+            download_profile_target_journey_sheet(character_profile),
+            download_profile_run_cycle_sheet(character_profile),
+            download_profile_jump_cycle_sheet(character_profile),
+            download_profile_action_sheet(character_profile),
+            download_profile_action_cycle_sheet(character_profile, "battle"),
+            download_profile_action_cycle_sheet(character_profile, "magic"),
+            download_profile_action_cycle_sheet(character_profile, "interaction"),
+        )
+        character_motion_sheet_asset, character_motion_sheet_bytes = (
+            motion_sheet_results[0]
+        )
+        secondary_motion_sheet_asset, secondary_motion_sheet_bytes = (
+            motion_sheet_results[1]
+        )
+        (
+            character_target_journey_sheet_asset,
+            character_target_journey_sheet_bytes,
+        ) = motion_sheet_results[2]
+        character_run_cycle_sheet_asset, character_run_cycle_sheet_bytes = (
+            motion_sheet_results[3]
+        )
+        character_jump_cycle_sheet_asset, character_jump_cycle_sheet_bytes = (
+            motion_sheet_results[4]
+        )
+        character_action_sheet_asset, character_action_sheet_bytes = (
+            motion_sheet_results[5]
+        )
+        character_battle_cycle_sheet_asset, character_battle_cycle_sheet_bytes = (
+            motion_sheet_results[6]
+        )
+        character_magic_cycle_sheet_asset, character_magic_cycle_sheet_bytes = (
+            motion_sheet_results[7]
+        )
+        (
+            character_interaction_cycle_sheet_asset,
+            character_interaction_cycle_sheet_bytes,
+        ) = motion_sheet_results[8]
         video_task = asyncio.create_task(generate_hf_fairytale_video(
-            image_bytes=generated["image_bytes"],
+            image_bytes=(
+                generated.get("video_background_bytes")
+                if environment_only
+                else generated["image_bytes"]
+            ) or generated["image_bytes"],
             story_text=story_text,
             genre=genre,
             age=age,
@@ -676,6 +1245,46 @@ async def generate_and_store_backend_media(
             steps=video_steps,
             seed=seed,
             frame_rate=frame_rate,
+            motion_context={
+                "background_bytes": (
+                    generated.get("video_background_bytes")
+                    or generated.get("background_bytes")
+                ),
+                "character_bytes": generated.get("character_bytes"),
+                "secondary_character_bytes": generated.get("secondary_character_bytes"),
+                "character_motion_sheet_bytes": character_motion_sheet_bytes,
+                "secondary_character_motion_sheet_bytes": secondary_motion_sheet_bytes,
+                "character_target_journey_sheet_bytes": (
+                    character_target_journey_sheet_bytes
+                ),
+                "character_run_cycle_sheet_bytes": character_run_cycle_sheet_bytes,
+                "character_jump_cycle_sheet_bytes": character_jump_cycle_sheet_bytes,
+                "character_action_sheet_bytes": character_action_sheet_bytes,
+                "character_battle_cycle_sheet_bytes": character_battle_cycle_sheet_bytes,
+                "character_magic_cycle_sheet_bytes": character_magic_cycle_sheet_bytes,
+                "character_interaction_cycle_sheet_bytes": (
+                    character_interaction_cycle_sheet_bytes
+                ),
+                "action_fx_sheet_bytes": action_fx_sheet_bytes,
+                "character_key": (character_profile or {}).get("character_key"),
+                "secondary_character_key": (
+                    secondary_character_profile or {}
+                ).get("character_key"),
+                "character_pose": (
+                    selected_character_asset.get("pose")
+                    if selected_character_asset
+                    else None
+                ),
+                "action_tags": visual_context.get("action_tags", []),
+                "effect_tags": visual_context.get("effect_tags", []),
+                "motion_modifier_tags": visual_context.get(
+                    "motion_modifier_tags", []
+                ),
+                "action_semantics": visual_context.get("action_semantics", {}),
+                "ensemble_profile": visual_context.get("ensemble_profile") or {},
+                "background_key": generated.get("background_key"),
+                "motion_focus": visual_context.get("motion_focus", "character"),
+            },
         ))
 
     image_file = await upload_generated_media_file(
@@ -684,6 +1293,7 @@ async def generate_and_store_backend_media(
         media_kind="image",
         job_id=job_id,
         story_id=story_id,
+        owner_user_id=owner_user_id,
         step_number=step_number,
         provider=generated["provider"],
         model=generated["model"],
@@ -710,6 +1320,7 @@ async def generate_and_store_backend_media(
             media_kind="video",
             job_id=job_id,
             story_id=story_id,
+            owner_user_id=owner_user_id,
             step_number=step_number,
             provider=video_generated["provider"],
             model=video_generated["model"],
@@ -719,6 +1330,9 @@ async def generate_and_store_backend_media(
 
     scene_saved = False
     if story_id is not None and step_number is not None:
+        scene_media_status = (
+            "partial" if include_video and not video_url else "completed"
+        )
         scene_saved = await persist_scene_media(
             story_id=story_id,
             step_number=step_number,
@@ -726,6 +1340,10 @@ async def generate_and_store_backend_media(
             video_url=video_url,
             image_file_id=image_file_id,
             video_file_id=video_file_id,
+            media_job_id=job_id,
+            media_status=scene_media_status,
+            media_error=video_error if scene_media_status == "partial" else None,
+            expected_media_job_id=job_id,
         )
 
     elapsed_seconds = round(time.monotonic() - started_at, 2)
@@ -737,6 +1355,9 @@ async def generate_and_store_backend_media(
         "character_key": (character_profile or {}).get("character_key"),
         "character_name": (character_profile or {}).get("name"),
         "story_cast_role": (story_cast_member or {}).get("role"),
+        "character_selection_source": (
+            (story_cast_member or {}).get("selection_source")
+        ),
         "story_character_name": (story_cast_member or {}).get("name"),
         "story_character_description": (story_cast_member or {}).get(
             "source_description"
@@ -756,15 +1377,24 @@ async def generate_and_store_backend_media(
         "image_provider": generated.get("inference_provider"),
         "image_provider_attempts": generated.get("attempted_providers", []),
         "image_mode": generated.get("image_mode", "hf_full_scene"),
+        "environment_only": environment_only,
         "background_key": generated.get("background_key"),
         "background_source": generated.get("background_source"),
+        "video_background_source": generated.get("video_background_source"),
+        "video_background_filename": generated.get("video_background_filename"),
         "composite_fallback_error": composite_error,
         "visual_vocabulary": {
             "matched_words": visual_context.get("matched_words", []),
             "background_keys": visual_context.get("background_keys", []),
             "action_tags": visual_context.get("action_tags", []),
+            "action_semantics": visual_context.get("action_semantics", {}),
+            "ensemble_profile": visual_context.get("ensemble_profile") or {},
             "emotion_tags": visual_context.get("emotion_tags", []),
             "effect_tags": visual_context.get("effect_tags", []),
+            "prop_tags": visual_context.get("prop_tags", []),
+            "motion_modifier_tags": visual_context.get(
+                "motion_modifier_tags", []
+            ),
             "match_score": visual_context.get("match_score", 0),
         },
         "video_model": video_generated["model"] if video_generated else None,
@@ -787,6 +1417,84 @@ async def generate_and_store_backend_media(
         "video_status": video_status,
         "video_error": video_error,
         "video_parameters": video_generated.get("parameters") if video_generated else None,
+        "video_animation_mode": (
+            video_generated.get("parameters", {}).get("animation_mode")
+            if video_generated
+            else None
+        ),
+        "character_motion_sheet": (
+            {
+                "image_file_id": character_motion_sheet_asset.get("image_file_id"),
+                "image_url": character_motion_sheet_asset.get("image_url"),
+                "quality_tier": character_motion_sheet_asset.get("quality_tier"),
+            }
+            if character_motion_sheet_asset
+            else None
+        ),
+        "secondary_motion_sheet": (
+            {
+                "image_file_id": secondary_motion_sheet_asset.get("image_file_id"),
+                "image_url": secondary_motion_sheet_asset.get("image_url"),
+                "quality_tier": secondary_motion_sheet_asset.get("quality_tier"),
+            }
+            if secondary_motion_sheet_asset
+            else None
+        ),
+        "character_target_journey_sheet": (
+            {
+                "image_file_id": character_target_journey_sheet_asset.get(
+                    "image_file_id"
+                ),
+                "image_url": character_target_journey_sheet_asset.get("image_url"),
+                "quality_tier": character_target_journey_sheet_asset.get(
+                    "quality_tier"
+                ),
+            }
+            if character_target_journey_sheet_asset
+            else None
+        ),
+        "character_run_cycle_sheet": (
+            {
+                "image_file_id": character_run_cycle_sheet_asset.get(
+                    "image_file_id"
+                ),
+                "image_url": character_run_cycle_sheet_asset.get("image_url"),
+                "quality_tier": character_run_cycle_sheet_asset.get(
+                    "quality_tier"
+                ),
+            }
+            if character_run_cycle_sheet_asset
+            else None
+        ),
+        "character_action_sheet": (
+            {
+                "image_file_id": character_action_sheet_asset.get("image_file_id"),
+                "image_url": character_action_sheet_asset.get("image_url"),
+                "quality_tier": character_action_sheet_asset.get("quality_tier"),
+            }
+            if character_action_sheet_asset
+            else None
+        ),
+        "scene_partner_role": (secondary_story_cast_member or {}).get("role"),
+        "scene_partner_name": (secondary_story_cast_member or {}).get("name"),
+        "secondary_character_key": (
+            (secondary_character_profile or {}).get("character_key")
+        ),
+        "secondary_selected_character_asset": (
+            {
+                "pose": secondary_character_asset.get("pose"),
+                "emotion": secondary_character_asset.get("emotion"),
+                "image_file_id": secondary_character_asset.get("image_file_id"),
+                "image_url": secondary_character_asset.get("image_url"),
+            }
+            if secondary_character_asset
+            else None
+        ),
+        "video_motion_plan": (
+            video_generated.get("parameters", {}).get("motion_plan")
+            if video_generated
+            else None
+        ),
         "saved": scene_saved,
     }
     result = {
@@ -825,11 +1533,12 @@ async def execute_media_generation(
     width: int = 512,
     height: int = 512,
     flux_steps: int = 1,
-    video_width: int = 512,
+    video_width: int = 768,
     video_height: int = 384,
     num_frames: int = 48,
     video_steps: int = 2,
     frame_rate: Optional[int] = None,
+    owner_user_id: Optional[str] = None,
 ):
     media = await generate_and_store_backend_media(
         story_text=story_text,
@@ -847,9 +1556,31 @@ async def execute_media_generation(
         num_frames=num_frames,
         video_steps=video_steps,
         frame_rate=frame_rate,
+        owner_user_id=owner_user_id,
     )
     result = media["result"]
     return {**result, "saved": media["scene_saved"]}
+
+
+def build_active_media_job_key(
+    owner_user_id: str,
+    story_id: Optional[str],
+    step_number: Optional[int],
+) -> Optional[str]:
+    if not story_id or step_number is None:
+        return None
+    return f"{owner_user_id}:{story_id}:{step_number}"
+
+
+def media_job_request_matches(
+    job: Dict[str, Any],
+    payload: MediaGenerationWithStorySchema,
+) -> bool:
+    expected = payload.model_dump(exclude={"story_id", "step_number"})
+    return all(
+        _media_job_request_value(job, key) == value
+        for key, value in expected.items()
+    )
 
 
 def build_media_job_document(
@@ -857,6 +1588,7 @@ def build_media_job_document(
     *,
     story_id: Optional[str],
     step_number: Optional[int],
+    owner_user_id: str,
 ) -> Dict[str, Any]:
     now = datetime.utcnow()
     request_payload = {
@@ -877,8 +1609,9 @@ def build_media_job_document(
         "frame_rate": payload.frame_rate,
         "video_timeout": payload.video_timeout,
     }
-    return {
+    job = {
         "story_id": ObjectId(story_id) if story_id else None,
+        "owner_user_id": owner_user_id,
         "step_number": step_number,
         "story_text": payload.story_text,
         "genre": payload.genre,
@@ -912,6 +1645,10 @@ def build_media_job_document(
         "scene_synced_at": None,
         "schema_version": 2,
     }
+    active_key = build_active_media_job_key(owner_user_id, story_id, step_number)
+    if active_key:
+        job["active_key"] = active_key
+    return job
 
 
 async def enqueue_media_job(
@@ -919,17 +1656,106 @@ async def enqueue_media_job(
     *,
     story_id: Optional[str],
     step_number: Optional[int],
+    owner_user_id: str,
 ):
-    job = build_media_job_document(
-        payload,
-        story_id=story_id,
-        step_number=step_number,
-    )
-    result = await media_jobs_collection.insert_one(job)
-    created_job = await media_jobs_collection.find_one({"_id": result.inserted_id})
-    if not created_job:
-        raise HTTPException(status_code=500, detail="Media job could not be created.")
-    return serialize_media_job_document(created_job)
+    lock = media_enqueue_locks.setdefault(owner_user_id, asyncio.Lock())
+    async with lock:
+        active_key = build_active_media_job_key(
+            owner_user_id,
+            story_id,
+            step_number,
+        )
+        if active_key:
+            existing_job = await media_jobs_collection.find_one(
+                {
+                    "active_key": active_key,
+                    "status": {"$in": ["pending", "running"]},
+                }
+            )
+            if existing_job:
+                if not media_job_request_matches(existing_job, payload):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="A different media job is already active for this scene.",
+                    )
+                if story_id is not None and step_number is not None:
+                    await persist_scene_media(
+                        story_id=story_id,
+                        step_number=step_number,
+                        media_job_id=serialize_object_id(existing_job.get("_id")),
+                        media_status=str(existing_job.get("status") or "pending"),
+                    )
+                return serialize_media_job_document(existing_job)
+
+        active_count = await media_jobs_collection.count_documents(
+            {
+                "owner_user_id": owner_user_id,
+                "status": {"$in": ["pending", "running"]},
+            }
+        )
+        if active_count >= MEDIA_MAX_ACTIVE_JOBS_PER_USER:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many active media jobs. Wait for the current jobs to finish.",
+            )
+
+        job = build_media_job_document(
+            payload,
+            story_id=story_id,
+            step_number=step_number,
+            owner_user_id=owner_user_id,
+        )
+        try:
+            result = await media_jobs_collection.insert_one(job)
+        except DuplicateKeyError:
+            existing_job = await media_jobs_collection.find_one(
+                {"active_key": active_key}
+            )
+            if existing_job:
+                if not media_job_request_matches(existing_job, payload):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="A different media job is already active for this scene.",
+                    )
+                if story_id is not None and step_number is not None:
+                    await persist_scene_media(
+                        story_id=story_id,
+                        step_number=step_number,
+                        media_job_id=serialize_object_id(existing_job.get("_id")),
+                        media_status=str(existing_job.get("status") or "pending"),
+                    )
+                return serialize_media_job_document(existing_job)
+            raise HTTPException(status_code=409, detail="Media job is already active.")
+
+        created_job = await media_jobs_collection.find_one({"_id": result.inserted_id})
+        if not created_job:
+            raise HTTPException(status_code=500, detail="Media job could not be created.")
+
+        if story_id is not None and step_number is not None:
+            job_id = serialize_object_id(result.inserted_id)
+            scene_marked = await persist_scene_media(
+                story_id=story_id,
+                step_number=step_number,
+                media_job_id=job_id,
+                media_status="pending",
+            )
+            if not scene_marked:
+                now = datetime.utcnow()
+                await media_jobs_collection.update_one(
+                    {"_id": result.inserted_id},
+                    {
+                        "$set": {
+                            "status": "failed",
+                            "updated_at": now,
+                            "completed_at": now,
+                            "error": "Story scene disappeared before media generation.",
+                        },
+                        "$unset": {"active_key": ""},
+                    },
+                )
+                raise HTTPException(status_code=404, detail="Scene not found.")
+
+        return serialize_media_job_document(created_job)
 
 
 async def claim_pending_media_job() -> Optional[Dict[str, Any]]:
@@ -957,7 +1783,10 @@ async def reset_stale_running_media_jobs() -> int:
             "status": "running",
             "$or": [
                 {"updated_at": {"$lt": cutoff}},
-                {"started_at": {"$lt": cutoff}},
+                {
+                    "updated_at": None,
+                    "started_at": {"$lt": cutoff},
+                },
             ],
         },
         {
@@ -978,57 +1807,92 @@ async def reset_stale_running_media_jobs() -> int:
 async def mark_media_job_failed(job: Dict[str, Any], error_message: str) -> None:
     now = datetime.utcnow()
     await media_jobs_collection.update_one(
-        {"_id": job["_id"]},
+        {
+            "_id": job["_id"],
+            "status": "running",
+            "worker_id": MEDIA_GENERATION_WORKER_ID,
+        },
         {
             "$set": {
                 "status": "failed",
                 "updated_at": now,
                 "completed_at": now,
                 "error": error_message,
-            }
+            },
+            "$unset": {"active_key": ""},
         },
     )
+
+
+async def heartbeat_media_job(job: Dict[str, Any]) -> None:
+    while True:
+        await asyncio.sleep(MEDIA_JOB_HEARTBEAT_SECONDS)
+        result = await media_jobs_collection.update_one(
+            {
+                "_id": job["_id"],
+                "status": "running",
+                "worker_id": MEDIA_GENERATION_WORKER_ID,
+            },
+            {"$set": {"updated_at": datetime.utcnow()}},
+        )
+        if result.matched_count == 0:
+            return
 
 
 async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
     job_id = serialize_object_id(job["_id"])
     story_id = serialize_object_id(_media_job_request_value(job, "story_id"))
     step_number = _media_job_request_value(job, "step_number")
-    generated = await generate_and_store_backend_media(
-        story_text=str(_media_job_request_value(job, "story_text", "")),
-        story_id=story_id,
-        step_number=step_number,
-        genre=_media_job_request_value(job, "genre"),
-        age=_media_job_request_value(job, "age"),
-        character_key=_media_job_request_value(job, "character_key"),
-        include_video=bool(_media_job_request_value(job, "include_video", False)),
-        width=int(_media_job_request_value(job, "width", 512)),
-        height=int(_media_job_request_value(job, "height", 512)),
-        flux_steps=int(_media_job_request_value(job, "flux_steps", 1)),
-        video_width=int(_media_job_request_value(job, "video_width", 512)),
-        video_height=int(_media_job_request_value(job, "video_height", 384)),
-        num_frames=int(_media_job_request_value(job, "num_frames", 48)),
-        video_steps=int(_media_job_request_value(job, "video_steps", 2)),
-        frame_rate=(
-            int(_media_job_request_value(job, "frame_rate"))
-            if _media_job_request_value(job, "frame_rate") is not None
-            else None
-        ),
-        seed=_media_job_request_value(job, "seed"),
-        job_id=job_id,
-    )
+    include_video = bool(_media_job_request_value(job, "include_video", False))
+    heartbeat_task = asyncio.create_task(heartbeat_media_job(job))
+    try:
+        generated = await generate_and_store_backend_media(
+            story_text=str(_media_job_request_value(job, "story_text", "")),
+            story_id=story_id,
+            step_number=step_number,
+            genre=_media_job_request_value(job, "genre"),
+            age=_media_job_request_value(job, "age"),
+            character_key=_media_job_request_value(job, "character_key"),
+            include_video=include_video,
+            width=int(_media_job_request_value(job, "width", 512)),
+            height=int(_media_job_request_value(job, "height", 512)),
+            flux_steps=int(_media_job_request_value(job, "flux_steps", 1)),
+            video_width=int(_media_job_request_value(job, "video_width", 768)),
+            video_height=int(_media_job_request_value(job, "video_height", 384)),
+            num_frames=int(_media_job_request_value(job, "num_frames", 48)),
+            video_steps=int(_media_job_request_value(job, "video_steps", 2)),
+            frame_rate=(
+                int(_media_job_request_value(job, "frame_rate"))
+                if _media_job_request_value(job, "frame_rate") is not None
+                else None
+            ),
+            seed=_media_job_request_value(job, "seed"),
+            job_id=job_id,
+            owner_user_id=str(job.get("owner_user_id") or "") or None,
+        )
+    finally:
+        heartbeat_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_task
 
     now = datetime.utcnow()
     image_object_id = coerce_object_id(generated["image_file_id"])
     video_object_id = coerce_object_id(generated["video_file_id"])
-    await media_jobs_collection.update_one(
-        {"_id": job["_id"]},
+    video_failed = include_video and not generated.get("video_url")
+    final_status = "partial" if video_failed else "completed"
+    video_error = (generated.get("metadata") or {}).get("video_error")
+    result = await media_jobs_collection.update_one(
+        {
+            "_id": job["_id"],
+            "status": "running",
+            "worker_id": MEDIA_GENERATION_WORKER_ID,
+        },
         {
             "$set": {
-                "status": "completed",
+                "status": final_status,
                 "updated_at": now,
                 "completed_at": now,
-                "error": None,
+                "error": video_error if video_failed else None,
                 "image_file_id": image_object_id or generated["image_file_id"],
                 "video_file_id": video_object_id or generated["video_file_id"],
                 "image_url": generated["image_url"],
@@ -1037,9 +1901,12 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
                 "result_metadata": generated["metadata"],
                 "result": generated["result"],
                 "scene_synced_at": now if generated["scene_saved"] or story_id is None else None,
-            }
+            },
+            "$unset": {"active_key": ""},
         },
     )
+    if result.matched_count == 0:
+        logger.warning("Media job %s lost its worker lease before completion.", job_id)
 
 
 async def media_generation_worker_loop() -> None:
@@ -1071,7 +1938,7 @@ async def media_generation_worker_loop() -> None:
 
 
 async def sync_story_scene_for_job(job: Dict[str, Any]) -> Dict[str, Any]:
-    if job.get("status") != "completed":
+    if job.get("status") not in {"completed", "partial"}:
         return job
 
     media_result = extract_media_result(job) or {}
@@ -1106,9 +1973,14 @@ async def sync_story_scene_for_job(job: Dict[str, Any]) -> Dict[str, Any]:
             video_url=video_url,
             image_file_id=image_file_id,
             video_file_id=video_file_id,
+            media_job_id=serialize_object_id(job.get("_id")),
+            media_status=str(job.get("status") or "completed"),
+            media_error=job.get("error"),
+            expected_media_job_id=serialize_object_id(job.get("_id")),
         )
-        if scene_saved:
-            update_fields["scene_synced_at"] = datetime.utcnow()
+        update_fields["scene_synced_at"] = datetime.utcnow()
+        if not scene_saved:
+            update_fields["scene_sync_status"] = "skipped_superseded"
 
     if not update_fields:
         return job
@@ -1133,7 +2005,7 @@ async def load_media_job(job_id: str, *, sync_scene: bool = True) -> Dict[str, A
 async def sync_completed_media_jobs_batch(limit: int = 20) -> None:
     cursor = media_jobs_collection.find(
         {
-            "status": "completed",
+            "status": {"$in": ["completed", "partial"]},
             "$or": [
                 {"scene_synced_at": None},
                 {"scene_synced_at": {"$exists": False}},
@@ -1196,7 +2068,7 @@ async def shutdown_event():
 
 
 async def require_admin(account_id: Optional[str]):
-    if account_id != ADMIN_ACCOUNT_ID:
+    if not is_admin_account_id(account_id):
         raise HTTPException(status_code=403, detail="愿由ъ옄 沅뚰븳???꾩슂?⑸땲??")
 
     admin = await users_collection.find_one({"account_id": ADMIN_ACCOUNT_ID})
@@ -1349,6 +2221,11 @@ async def root():
 
 @app.post("/api/users/register", response_description="Register user")
 async def register_user(user: UserSchema):
+    if is_admin_account_id(user.account_id):
+        raise HTTPException(
+            status_code=403,
+            detail="The administrator account ID is reserved.",
+        )
     user_dict = user.model_dump()
     if user_dict.get("password"):
         user_dict["password"] = hash_password(user_dict["password"])
@@ -1460,7 +2337,7 @@ async def withdraw_user_account(
     user = await users_collection.find_one({"account_id": account_id})
     if not user:
         raise HTTPException(status_code=404, detail="가입된 계정을 찾을 수 없습니다.")
-    if user.get("account_id") == ADMIN_ACCOUNT_ID:
+    if is_admin_account_id(user.get("account_id")):
         raise HTTPException(status_code=400, detail="관리자 계정은 탈퇴할 수 없습니다.")
     if user.get("account_status") == "deleted":
         return {
@@ -1588,6 +2465,9 @@ def serialize_scene(scene: dict):
         "choice_made": choice_made,
         "video_url": scene.get("video_url"),
         "image_url": scene.get("image_url"),
+        "media_job_id": serialize_object_id(scene.get("media_job_id")),
+        "media_status": scene.get("media_status"),
+        "media_error": scene.get("media_error"),
         "created_at": serialize_datetime(scene.get("created_at")),
     }
 
@@ -1663,9 +2543,11 @@ async def list_user_stories(user_id: str):
 
 
 @app.post("/api/stories/create", response_description="?덈줈???숉솕 ?몄뀡 ?앹꽦")
-async def create_story(story: StorySchema):
+async def create_story(story: StorySchema, request: Request):
     if not ObjectId.is_valid(story.user_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?ъ슜??ID?낅땲??")
+    if story.user_id != authenticated_user_id(request):
+        raise HTTPException(status_code=403, detail="You can only create your own stories.")
 
     now = story.created_at or datetime.utcnow()
     user = await users_collection.find_one({"_id": ObjectId(story.user_id)})
@@ -1783,9 +2665,10 @@ async def save_story_characters(
 
 
 @app.post("/api/stories/{story_id}/scenes", response_description="?숉솕 ?섏쐞 ?λ㈃ 異붽?")
-async def push_scene(story_id: str, scene: SceneSchema):
+async def push_scene(story_id: str, scene: SceneSchema, request: Request):
     if not ObjectId.is_valid(story_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?몄뀡 ID?낅땲??")
+    await require_story_owner(story_id, request)
 
     scene_dict = {
         "step_number": scene.step_number,
@@ -1819,10 +2702,12 @@ async def update_scene_media(
     story_id: str,
     step_number: int,
     video_url: str,
+    request: Request,
     image_url: Optional[str] = None,
 ):
     if not ObjectId.is_valid(story_id):
         raise HTTPException(status_code=400, detail="Invalid story ID.")
+    await require_story_owner(story_id, request)
 
     update_data = {"scenes.$.video_url": video_url}
     if image_url:
@@ -1846,6 +2731,10 @@ async def persist_scene_media(
     video_url: Optional[str] = None,
     image_file_id: Optional[str] = None,
     video_file_id: Optional[str] = None,
+    media_job_id: Optional[str] = None,
+    media_status: Optional[str] = None,
+    media_error: Optional[str] = None,
+    expected_media_job_id: Optional[str] = None,
 ):
     update_data = {}
     if image_url:
@@ -1856,17 +2745,35 @@ async def persist_scene_media(
         update_data["scenes.$.image_file_id"] = image_file_id
     if video_file_id:
         update_data["scenes.$.video_file_id"] = video_file_id
+    if media_job_id:
+        update_data["scenes.$.media_job_id"] = media_job_id
+    if media_status:
+        update_data["scenes.$.media_status"] = media_status
+        update_data["scenes.$.media_error"] = media_error
     if not update_data:
         return False
 
+    query: Dict[str, Any] = {
+        "_id": ObjectId(story_id),
+        "scenes.step_number": step_number,
+    }
+    if expected_media_job_id:
+        query["scenes"] = {
+            "$elemMatch": {
+                "step_number": step_number,
+                "media_job_id": expected_media_job_id,
+            }
+        }
+        query.pop("scenes.step_number", None)
+
     result = await stories_collection.update_one(
-        {"_id": ObjectId(story_id), "scenes.step_number": step_number},
+        query,
         {"$set": {**update_data, "updated_at": datetime.utcnow()}},
     )
     return result.matched_count > 0
 
 
-async def stream_gridfs_file(file_id: str):
+async def stream_gridfs_file(file_id: str, request: Request):
     object_id = coerce_object_id(file_id)
     if object_id is None:
         raise HTTPException(status_code=400, detail="Invalid file_id.")
@@ -1877,6 +2784,29 @@ async def stream_gridfs_file(file_id: str):
         raise HTTPException(status_code=404, detail="Media file not found.")
 
     metadata = getattr(grid_out, "metadata", None) or {}
+    auth = getattr(request.state, "auth", None) or {}
+    is_admin = is_admin_account_id(auth.get("account_id"))
+    try:
+        if not is_admin and not is_shared_character_asset(metadata):
+            owner_user_id = str(metadata.get("owner_user_id") or "").strip()
+            story_id = serialize_object_id(metadata.get("story_id"))
+            job_id = serialize_object_id(metadata.get("job_id"))
+            if owner_user_id:
+                if not owner_matches(owner_user_id, authenticated_user_id(request)):
+                    raise HTTPException(status_code=403, detail="Media file access denied.")
+            elif story_id:
+                await require_story_owner(story_id, request)
+            elif job_id and ObjectId.is_valid(job_id):
+                job = await load_media_job(job_id, sync_scene=False)
+                await require_media_job_owner(job, request)
+            else:
+                raise HTTPException(status_code=403, detail="Legacy media file access denied.")
+    except HTTPException:
+        close = getattr(grid_out, "close", None)
+        if callable(close):
+            close()
+        raise
+
     content_type = (
         metadata.get("content_type")
         or getattr(grid_out, "content_type", None)
@@ -1983,8 +2913,34 @@ async def get_character_profile(character_key: str):
     return serialize_character_profile(profile)
 
 
+def build_usable_visual_vocabulary_filter(**conditions: Any) -> Dict[str, Any]:
+    """Build the shared Mongo filter for vocabulary usable by media generation."""
+    return {
+        "enabled": True,
+        "usable_for_image": True,
+        **conditions,
+    }
+
+
+def build_enabled_visual_vocabulary_filter(**conditions: Any) -> Dict[str, Any]:
+    """Build a filter for enabled derived vocabulary, including non-visual terms."""
+    return {
+        "enabled": True,
+        **conditions,
+    }
+
+
+def build_usable_visual_action_filter(**conditions: Any) -> Dict[str, Any]:
+    """Build the shared filter for usable, classified character-action verbs."""
+    return build_usable_visual_vocabulary_filter(
+        pos_group="verb",
+        primary_role="action",
+        **conditions,
+    )
+
+
 @app.get("/api/media/readiness", response_description="Media preparation progress")
-async def media_readiness():
+async def media_readiness(request: Request):
     target_asset_count = 8
     expected_characters = {
         character["character_key"]: character for character in DEFAULT_CHARACTERS
@@ -2019,17 +2975,33 @@ async def media_readiness():
     ready_units = ready_profile_count + ready_asset_count
     progress_percent = round((ready_units / target_units) * 100) if target_units else 100
 
-    pending_count = await media_jobs_collection.count_documents({"status": "pending"})
-    running_count = await media_jobs_collection.count_documents({"status": "running"})
-    completed_count = await media_jobs_collection.count_documents({"status": "completed"})
-    failed_count = await media_jobs_collection.count_documents({"status": "failed"})
+    auth = getattr(request.state, "auth", None) or {}
+    queue_owner_filter = (
+        {} if is_admin_account_id(auth.get("account_id"))
+        else {"owner_user_id": authenticated_user_id(request)}
+    )
+    pending_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "pending"}
+    )
+    running_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "running"}
+    )
+    completed_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "completed"}
+    )
+    partial_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "partial"}
+    )
+    failed_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "failed"}
+    )
     visual_total = await visual_vocabulary_collection.count_documents({})
     visual_enabled = await visual_vocabulary_collection.count_documents({"enabled": True})
     visual_usable = await visual_vocabulary_collection.count_documents(
-        {"enabled": True, "usable_for_image": True}
+        build_usable_visual_vocabulary_filter()
     )
     visual_ambiguous = await visual_vocabulary_collection.count_documents(
-        {"enabled": True, "ambiguous": True}
+        build_usable_visual_vocabulary_filter(ambiguous=True)
     )
 
     return {
@@ -2053,6 +3025,7 @@ async def media_readiness():
             "pending": pending_count,
             "running": running_count,
             "completed": completed_count,
+            "partial": partial_count,
             "failed": failed_count,
         },
         "visual_vocabulary": {
@@ -2072,23 +3045,19 @@ async def media_readiness():
 async def visual_vocabulary_readiness():
     total = await visual_vocabulary_collection.count_documents({})
     enabled = await visual_vocabulary_collection.count_documents({"enabled": True})
-    usable = await visual_vocabulary_collection.count_documents(
-        {"enabled": True, "usable_for_image": True}
-    )
+    usable_filter = build_usable_visual_vocabulary_filter()
+    usable = await visual_vocabulary_collection.count_documents(usable_filter)
     ambiguous = await visual_vocabulary_collection.count_documents(
-        {"enabled": True, "ambiguous": True}
+        build_usable_visual_vocabulary_filter(ambiguous=True)
     )
-    ambiguous_usable = await visual_vocabulary_collection.count_documents(
-        {"enabled": True, "usable_for_image": True, "ambiguous": True}
-    )
+    ambiguous_usable = ambiguous
     non_visual = await visual_vocabulary_collection.count_documents(
-        {"enabled": True, "primary_role": "non_visual"}
+        build_enabled_visual_vocabulary_filter(primary_role="non_visual")
     )
     role_pipeline = [
         {
             "$match": {
-                "enabled": True,
-                "usable_for_image": True,
+                **usable_filter,
             }
         },
         {"$group": {"_id": "$primary_role", "count": {"$sum": 1}}},
@@ -2097,6 +3066,117 @@ async def visual_vocabulary_readiness():
     role_counts = {
         item["_id"]: item["count"]
         async for item in visual_vocabulary_collection.aggregate(role_pipeline)
+    }
+    source_verbs = await fit_vocabulary_collection.count_documents(
+        {
+            "$or": [
+                {"pos_group": "동사"},
+                {"part_of_speech": "동사"},
+            ]
+        }
+    )
+    visualized_verbs = await visual_vocabulary_collection.count_documents(
+        build_usable_visual_vocabulary_filter(pos_group="verb")
+    )
+    character_action_verbs = await visual_vocabulary_collection.count_documents(
+        build_usable_visual_action_filter(
+            **{"$or": [
+                {"action_tags.0": {"$exists": True}},
+                {
+                    "action_semantics.animation_action": {
+                        "$exists": True,
+                        "$ne": "idle",
+                    }
+                },
+            ]},
+        )
+    )
+    solo_action_verbs = await visual_vocabulary_collection.count_documents(
+        build_usable_visual_action_filter(solo_action=True)
+    )
+    action_tag_pipeline = [
+        {
+            "$match": {
+                **build_usable_visual_vocabulary_filter(
+                    pos_group="verb",
+                ),
+                "action_tags.0": {"$exists": True},
+            }
+        },
+        {"$unwind": "$action_tags"},
+        {"$group": {"_id": "$action_tags", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+    ]
+    action_tag_counts = {
+        item["_id"]: item["count"]
+        async for item in visual_vocabulary_collection.aggregate(
+            action_tag_pipeline
+        )
+    }
+    motion_mode_pipeline = [
+        {
+            "$match": {
+                **build_usable_visual_vocabulary_filter(
+                    pos_group="verb",
+                ),
+                "action_semantics.motion_mode": {"$exists": True},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$action_semantics.motion_mode",
+                "count": {"$sum": 1},
+            }
+        },
+        {"$sort": {"count": -1, "_id": 1}},
+    ]
+    motion_mode_counts = {
+        item["_id"]: item["count"]
+        async for item in visual_vocabulary_collection.aggregate(
+            motion_mode_pipeline
+        )
+    }
+    partner_required_verbs = await visual_vocabulary_collection.count_documents(
+        build_usable_visual_action_filter(
+            **{"action_semantics.requires_partner": True},
+        )
+    )
+    object_required_verbs = await visual_vocabulary_collection.count_documents(
+        build_usable_visual_action_filter(
+            **{"action_semantics.requires_object": True},
+        )
+    )
+    target_required_verbs = await visual_vocabulary_collection.count_documents(
+        build_usable_visual_action_filter(
+            **{"action_semantics.requires_target": True},
+        )
+    )
+    semantic_feature_counts = {
+        "background_words": await visual_vocabulary_collection.count_documents(
+            build_usable_visual_vocabulary_filter(
+                **{"background_keys.0": {"$exists": True}}
+            )
+        ),
+        "prop_words": await visual_vocabulary_collection.count_documents(
+            build_usable_visual_vocabulary_filter(
+                **{"prop_tags.0": {"$exists": True}}
+            )
+        ),
+        "emotion_words": await visual_vocabulary_collection.count_documents(
+            build_usable_visual_vocabulary_filter(
+                **{"emotion_tags.0": {"$exists": True}}
+            )
+        ),
+        "environment_words": await visual_vocabulary_collection.count_documents(
+            build_usable_visual_vocabulary_filter(
+                **{"effect_tags.0": {"$exists": True}}
+            )
+        ),
+        "motion_modifier_words": await visual_vocabulary_collection.count_documents(
+            build_usable_visual_vocabulary_filter(
+                **{"motion_modifier_tags.0": {"$exists": True}}
+            )
+        ),
     }
     return {
         "status": "ok",
@@ -2108,31 +3188,63 @@ async def visual_vocabulary_readiness():
         "ambiguous": ambiguous,
         "ambiguous_usable": ambiguous_usable,
         "roles": role_counts,
+        "semantic_features": semantic_feature_counts,
+        "verbs": {
+            "source": source_verbs,
+            "visualized": visualized_verbs,
+            "character_actions": character_action_verbs,
+            "solo_actions": solo_action_verbs,
+            "coverage_percent": round(
+                visualized_verbs * 100 / max(source_verbs, 1),
+                1,
+            ),
+            "action_tags": action_tag_counts,
+            "motion_modes": motion_mode_counts,
+            "partner_required": partner_required_verbs,
+            "object_required": object_required_verbs,
+            "target_required": target_required_verbs,
+        },
     }
 
 
 @app.get("/api/media/files/{file_id}", response_description="Serve stored media file")
-async def get_media_file(file_id: str):
-    return await stream_gridfs_file(file_id)
+async def get_media_file(file_id: str, request: Request):
+    return await stream_gridfs_file(file_id, request)
 
 
 @app.get("/api/media/images/{file_id}", response_description="Serve stored generated image")
-async def get_media_image(file_id: str):
-    return await stream_gridfs_file(file_id)
+async def get_media_image(file_id: str, request: Request):
+    return await stream_gridfs_file(file_id, request)
 
 
 @app.get("/api/media/videos/{file_id}", response_description="Serve stored generated video")
-async def get_media_video(file_id: str):
-    return await stream_gridfs_file(file_id)
+async def get_media_video(file_id: str, request: Request):
+    return await stream_gridfs_file(file_id, request)
 
 
 @app.get("/api/media/health", response_description="Media queue health")
-async def media_health():
+async def media_health(request: Request):
     provider_config = get_hf_media_config()
-    pending_count = await media_jobs_collection.count_documents({"status": "pending"})
-    running_count = await media_jobs_collection.count_documents({"status": "running"})
-    failed_count = await media_jobs_collection.count_documents({"status": "failed"})
-    completed_count = await media_jobs_collection.count_documents({"status": "completed"})
+    auth = getattr(request.state, "auth", None) or {}
+    queue_owner_filter = (
+        {} if is_admin_account_id(auth.get("account_id"))
+        else {"owner_user_id": authenticated_user_id(request)}
+    )
+    pending_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "pending"}
+    )
+    running_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "running"}
+    )
+    failed_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "failed"}
+    )
+    completed_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "completed"}
+    )
+    partial_count = await media_jobs_collection.count_documents(
+        {**queue_owner_filter, "status": "partial"}
+    )
 
     return {
         "status": "ok",
@@ -2147,6 +3259,7 @@ async def media_health():
             "pending": pending_count,
             "running": running_count,
             "completed": completed_count,
+            "partial": partial_count,
             "failed": failed_count,
             "sync_loop": bool(media_job_sync_task and not media_job_sync_task.done()),
         },
@@ -2154,20 +3267,24 @@ async def media_health():
 
 
 @app.post("/api/media/jobs", status_code=202)
-async def create_media_job(payload: MediaGenerationWithStorySchema):
+async def create_media_job(payload: MediaGenerationWithStorySchema, request: Request):
+    owner_user_id = authenticated_user_id(request)
     story_id, step_number = normalize_media_story_target(
         payload.story_id,
         payload.step_number,
         require_positive_step=True,
     )
     if story_id is not None and step_number is not None:
+        await require_story_owner(story_id, request)
         await ensure_story_scene_exists(story_id, step_number)
     await ensure_active_character_profile(payload.character_key)
+    await ensure_story_character_profile(story_id, payload.character_key)
 
     return await enqueue_media_job(
         payload,
         story_id=story_id,
         step_number=step_number,
+        owner_user_id=owner_user_id,
     )
 
 
@@ -2176,14 +3293,18 @@ async def create_scene_media_job(
     story_id: str,
     step_number: int,
     payload: MediaGenerationSchema,
+    request: Request,
 ):
+    owner_user_id = authenticated_user_id(request)
     story_id, step_number = normalize_media_story_target(
         story_id,
         step_number,
         require_positive_step=True,
     )
+    await require_story_owner(story_id, request)
     await ensure_story_scene_exists(story_id, step_number)
     await ensure_active_character_profile(payload.character_key)
+    await ensure_story_character_profile(story_id, payload.character_key)
 
     job_payload = MediaGenerationWithStorySchema(
         story_text=payload.story_text,
@@ -2207,25 +3328,30 @@ async def create_scene_media_job(
         job_payload,
         story_id=story_id,
         step_number=step_number,
+        owner_user_id=owner_user_id,
     )
 
 
 @app.get("/api/media/jobs/{job_id}")
-async def get_media_job(job_id: str):
+async def get_media_job(job_id: str, request: Request):
     job = await load_media_job(job_id)
+    await require_media_job_owner(job, request)
     return serialize_media_job_document(job)
 
 
 @app.post("/api/media/generate", response_description="Generate fairytale scene media")
-async def generate_media(payload: MediaGenerationWithStorySchema):
+async def generate_media(payload: MediaGenerationWithStorySchema, request: Request):
+    owner_user_id = authenticated_user_id(request)
     story_id, step_number = normalize_media_story_target(
         payload.story_id,
         payload.step_number,
         require_positive_step=True,
     )
     if story_id is not None and step_number is not None:
+        await require_story_owner(story_id, request)
         await ensure_story_scene_exists(story_id, step_number)
     await ensure_active_character_profile(payload.character_key)
+    await ensure_story_character_profile(story_id, payload.character_key)
 
     try:
         return await execute_media_generation(
@@ -2244,6 +3370,7 @@ async def generate_media(payload: MediaGenerationWithStorySchema):
             num_frames=payload.num_frames,
             video_steps=payload.video_steps,
             frame_rate=payload.frame_rate,
+            owner_user_id=owner_user_id,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -2259,14 +3386,18 @@ async def generate_and_store_scene_media(
     story_id: str,
     step_number: int,
     payload: MediaGenerationSchema,
+    request: Request,
 ):
+    owner_user_id = authenticated_user_id(request)
     story_id, step_number = normalize_media_story_target(
         story_id,
         step_number,
         require_positive_step=True,
     )
+    await require_story_owner(story_id, request)
     await ensure_story_scene_exists(story_id, step_number)
     await ensure_active_character_profile(payload.character_key)
+    await ensure_story_character_profile(story_id, payload.character_key)
 
     try:
         media = await execute_media_generation(
@@ -2285,6 +3416,7 @@ async def generate_and_store_scene_media(
             num_frames=payload.num_frames,
             video_steps=payload.video_steps,
             frame_rate=payload.frame_rate,
+            owner_user_id=owner_user_id,
         )
     except HfMediaError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -2296,7 +3428,7 @@ async def generate_and_store_scene_media(
     return media
 
 @app.delete("/api/stories/{story_id}", response_description="?숉솕 ??젣")
-async def delete_story(story_id: str, owner: OwnerActionSchema):
+async def delete_story(story_id: str, owner: OwnerActionSchema, request: Request):
     if not ObjectId.is_valid(story_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?숉솕 ID?낅땲??")
 
@@ -2304,6 +3436,7 @@ async def delete_story(story_id: str, owner: OwnerActionSchema):
     story = await stories_collection.find_one({"_id": story_object_id})
     if not story:
         raise HTTPException(status_code=404, detail="?숉솕瑜?李얠쓣 ???놁뒿?덈떎.")
+    await require_story_owner(story_id, request)
 
     if owner.user_id:
         if not ObjectId.is_valid(owner.user_id):
@@ -2323,7 +3456,7 @@ async def delete_story(story_id: str, owner: OwnerActionSchema):
 
 
 @app.patch("/api/stories/{story_id}", response_description="?숉솕 硫뷀??곗씠???섏젙")
-async def update_story(story_id: str, update: StoryUpdateSchema):
+async def update_story(story_id: str, update: StoryUpdateSchema, request: Request):
     if not ObjectId.is_valid(story_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?숉솕 ID?낅땲??")
 
@@ -2331,6 +3464,7 @@ async def update_story(story_id: str, update: StoryUpdateSchema):
     story = await stories_collection.find_one({"_id": story_object_id})
     if not story:
         raise HTTPException(status_code=404, detail="?숉솕瑜?李얠쓣 ???놁뒿?덈떎.")
+    await require_story_owner(story_id, request)
 
     if update.user_id:
         if not ObjectId.is_valid(update.user_id):
@@ -2707,13 +3841,20 @@ async def resolve_report_target(payload: CommunityReportSchema) -> Dict[str, Any
 
 
 @app.post("/api/community/reports", response_description="Create community report")
-async def create_community_report(payload: CommunityReportSchema):
+async def create_community_report(payload: CommunityReportSchema, request: Request):
     target = await resolve_report_target(payload)
+    auth = getattr(request.state, "auth", None) or {}
+    authenticated_account_id = str(auth.get("account_id") or "").strip()
     reporter_account_id = (
         payload.reporter_account_id.strip()
         if payload.reporter_account_id
-        else None
+        else authenticated_account_id
     )
+    if reporter_account_id != authenticated_account_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only submit reports under your own account.",
+        )
     if reporter_account_id:
         reporter = await users_collection.find_one(
             {"account_id": reporter_account_id, "account_status": {"$ne": "deleted"}},
@@ -3058,7 +4199,7 @@ async def admin_delete_user(user_id: str, account_id: str):
     user = await users_collection.find_one({"_id": user_object_id})
     if not user:
         raise HTTPException(status_code=404, detail="?뚯썝??李얠쓣 ???놁뒿?덈떎.")
-    if user.get("account_id") == ADMIN_ACCOUNT_ID:
+    if is_admin_account_id(user.get("account_id")):
         raise HTTPException(status_code=400, detail="愿由ъ옄 怨꾩젙? ??젣?????놁뒿?덈떎.")
 
     if user.get("account_status") == "deleted":

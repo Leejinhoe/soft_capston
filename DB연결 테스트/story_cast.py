@@ -302,3 +302,71 @@ def select_story_cast_member(
         ),
         cast[0],
     )
+
+
+def select_scene_partner(
+    cast: Any,
+    primary_member: Optional[Dict[str, Any]],
+    action: str,
+    *,
+    requires_partner: Optional[bool] = None,
+) -> Optional[Dict[str, Any]]:
+    """Choose a persistent co-star when a scene needs an interaction."""
+
+    if not isinstance(cast, list) or not isinstance(primary_member, dict):
+        return None
+    normalized_action = str(action or "").strip().lower()
+    primary_key = str(primary_member.get("character_key") or "").strip()
+    primary_role = str(primary_member.get("role") or "").strip().lower()
+    if normalized_action == "battle" and requires_partner is not False:
+        preferred_roles = (
+            ("hero", "companion", "target")
+            if primary_role == "antagonist"
+            else ("antagonist", "companion", "target")
+        )
+    elif normalized_action == "rescue" and requires_partner is not False:
+        preferred_roles = (
+            ("hero", "companion", "guide")
+            if primary_role == "target"
+            else ("target", "companion", "guide")
+        )
+    elif normalized_action == "conversation" and requires_partner is not False:
+        preferred_roles = ("companion", "guide", "target", "hero")
+    elif normalized_action == "interaction" and requires_partner:
+        preferred_roles = (
+            "companion",
+            "target",
+            "guide",
+            "hero",
+            "antagonist",
+        )
+    elif requires_partner:
+        preferred_roles = (
+            "companion",
+            "target",
+            "guide",
+            "hero",
+            "antagonist",
+        )
+    else:
+        return None
+
+    candidates = [
+        member
+        for member in cast
+        if isinstance(member, dict)
+        and str(member.get("character_key") or "").strip()
+        and str(member.get("character_key") or "").strip() != primary_key
+    ]
+    for role in preferred_roles:
+        partner = next(
+            (
+                member
+                for member in candidates
+                if str(member.get("role") or "").strip().lower() == role
+            ),
+            None,
+        )
+        if partner:
+            return partner
+    return candidates[0] if candidates else None

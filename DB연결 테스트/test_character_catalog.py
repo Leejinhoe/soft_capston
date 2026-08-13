@@ -25,6 +25,12 @@ PREMIUM_REFERENCE_KEYS = {
     *(f"male_{index:02d}" for index in range(1, 9)),
     *(f"female_{index:02d}" for index in range(1, 9)),
 }
+MOTION_SHEET_KEYS = PREMIUM_REFERENCE_KEYS
+TARGET_JOURNEY_KEYS = PREMIUM_REFERENCE_KEYS
+RUN_CYCLE_KEYS = PREMIUM_REFERENCE_KEYS
+JUMP_CYCLE_KEYS = {"male_01"}
+ACTION_SHEET_KEYS = {"male_01"}
+ACTION_CYCLE_KEYS = {"male_01"}
 
 
 def _runtime_profile(profile):
@@ -84,6 +90,112 @@ class CharacterCatalogTests(unittest.TestCase):
                         "premium_reference",
                     )
                     filenames = filenames[1:]
+                if profile["character_key"] in MOTION_SHEET_KEYS:
+                    self.assertEqual(
+                        filenames[0],
+                        f"motion_sheets/{profile['character_key']}_motion_sheet_v3.png",
+                    )
+                    motion_asset = next(
+                        asset
+                        for asset in profile["assets"]
+                        if asset["quality_tier"] == "video_motion_sheet_v3"
+                    )
+                    self.assertEqual(motion_asset["sheet_columns"], 4)
+                    self.assertEqual(motion_asset["sheet_rows"], 2)
+                    self.assertEqual(motion_asset["motion_cells"]["walking"], [1, 2])
+                    filenames = filenames[1:]
+                if profile["character_key"] in TARGET_JOURNEY_KEYS:
+                    self.assertEqual(
+                        filenames[0],
+                        f"motion_sheets/{profile['character_key']}_target_journey_sheet_v4.png",
+                    )
+                    target_asset = next(
+                        asset
+                        for asset in profile["assets"]
+                        if asset["quality_tier"]
+                        == "video_target_journey_sheet_v4"
+                    )
+                    self.assertEqual(target_asset["sheet_columns"], 4)
+                    self.assertEqual(target_asset["sheet_rows"], 2)
+                    self.assertEqual(
+                        target_asset["motion_cells"]["target_running"],
+                        list(range(8)),
+                    )
+                    filenames = filenames[1:]
+                if profile["character_key"] in RUN_CYCLE_KEYS:
+                    self.assertEqual(
+                        filenames[0],
+                        f"motion_sheets/{profile['character_key']}_run_cycle_v16.png",
+                    )
+                    run_cycle_asset = next(
+                        asset
+                        for asset in profile["assets"]
+                        if asset["quality_tier"] == "video_run_cycle_v16"
+                    )
+                    self.assertEqual(run_cycle_asset["sheet_columns"], 4)
+                    self.assertEqual(run_cycle_asset["sheet_rows"], 2)
+                    self.assertEqual(
+                        run_cycle_asset["motion_cells"]["target_running"],
+                        list(range(8)),
+                    )
+                    self.assertEqual(
+                        run_cycle_asset["playback"],
+                        "discrete-frames",
+                    )
+                    filenames = filenames[1:]
+                if profile["character_key"] in JUMP_CYCLE_KEYS:
+                    self.assertEqual(
+                        filenames[0],
+                        f"motion_sheets/{profile['character_key']}_jump_cycle_v19.png",
+                    )
+                    jump_asset = next(
+                        asset
+                        for asset in profile["assets"]
+                        if asset["quality_tier"] == "video_jump_cycle_v20"
+                    )
+                    self.assertEqual(jump_asset["sheet_columns"], 4)
+                    self.assertEqual(jump_asset["sheet_rows"], 2)
+                    self.assertEqual(
+                        jump_asset["motion_cells"]["jumping"],
+                        list(range(8)),
+                    )
+                    filenames = filenames[1:]
+                if profile["character_key"] in ACTION_SHEET_KEYS:
+                    self.assertEqual(
+                        filenames[0],
+                        f"motion_sheets/{profile['character_key']}_action_sheet_v21.png",
+                    )
+                    action_asset = next(
+                        asset
+                        for asset in profile["assets"]
+                        if asset["quality_tier"] == "video_action_sheet_v21"
+                    )
+                    self.assertEqual(action_asset["sheet_columns"], 4)
+                    self.assertEqual(action_asset["sheet_rows"], 2)
+                    self.assertEqual(action_asset["motion_cells"]["magic"], [4, 5])
+                    self.assertEqual(action_asset["motion_cells"]["battle"], [6, 7])
+                    filenames = filenames[1:]
+                if profile["character_key"] in ACTION_CYCLE_KEYS:
+                    for action_name in ("battle", "magic", "interaction"):
+                        self.assertEqual(
+                            filenames[0],
+                            f"motion_sheets/{profile['character_key']}_{action_name}_cycle_v22.png",
+                        )
+                        cycle_asset = next(
+                            asset
+                            for asset in profile["assets"]
+                            if asset["quality_tier"]
+                            == f"video_{action_name}_cycle_v22"
+                        )
+                        self.assertEqual(
+                            cycle_asset["motion_cells"][action_name],
+                            list(range(8)),
+                        )
+                        self.assertEqual(
+                            cycle_asset["playback"],
+                            "optical-flow-adjacent-frames",
+                        )
+                        filenames = filenames[1:]
                 self.assertEqual(filenames, expected)
                 self.assertTrue(
                     all(

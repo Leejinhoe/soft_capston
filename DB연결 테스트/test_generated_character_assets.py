@@ -12,6 +12,7 @@ from PIL import Image, ImageColor
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = ROOT / "tools" / "generate_character_assets.py"
 ASSET_DIR = ROOT / "assets" / "characters"
+MOTION_SHEET_DIR = ASSET_DIR / "motion_sheets"
 POSES = ("default", "happy", "sad", "angry", "walking", "talking", "magic", "rescue")
 KEYS = tuple(
     [f"male_{index:02d}" for index in range(1, 9)]
@@ -30,6 +31,188 @@ spec.loader.exec_module(generator)
 
 
 class GeneratedCharacterAssetTests(unittest.TestCase):
+    def test_motion_sheet_matrix_has_eight_visible_transparent_cells(self):
+        expected = {f"{key}_motion_sheet_v3.png" for key in KEYS}
+        target_expected = {
+            f"{key}_target_journey_sheet_v4.png" for key in KEYS
+        }
+        legacy_run_cycle_assets = {
+            "male_01_run_cycle_v6.png",
+            "male_01_run_cycle_v9.png",
+            "male_01_run_cycle_v11.png",
+        }
+        run_cycle_expected = {
+            f"{key}_run_cycle_v12.png" for key in KEYS
+        }
+        run_cycle_v16_expected = {
+            f"{key}_run_cycle_v16.png" for key in KEYS
+        }
+        jump_cycle_expected = {"male_01_jump_cycle_v19.png"}
+        action_sheet_expected = {"male_01_action_sheet_v21.png"}
+        action_cycle_expected = {
+            "male_01_battle_cycle_v22.png",
+            "male_01_magic_cycle_v22.png",
+            "male_01_interaction_cycle_v22.png",
+        }
+        custom_action_cycle_expected = {
+            "male_01_sit_cycle_v1.png",
+            "male_01_stand_cycle_v1.png",
+            "male_01_crawl_cycle_v1.png",
+            "male_01_climb_cycle_v1.png",
+        }
+        actual = {path.name for path in MOTION_SHEET_DIR.glob("*.png")}
+        self.assertEqual(
+            actual,
+            expected
+            | target_expected
+            | legacy_run_cycle_assets
+            | run_cycle_expected
+            | run_cycle_v16_expected
+            | jump_cycle_expected
+            | action_sheet_expected
+            | action_cycle_expected
+            | custom_action_cycle_expected,
+        )
+
+        for filename in expected:
+            path = MOTION_SHEET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertGreaterEqual(image.width, 1600)
+                self.assertGreaterEqual(image.height, 800)
+                for row in range(2):
+                    top = round(row * image.height / 2)
+                    bottom = round((row + 1) * image.height / 2)
+                    for column in range(4):
+                        left = round(column * image.width / 4)
+                        right = round((column + 1) * image.width / 4)
+                        alpha = image.getchannel("A").crop(
+                            (left, top, right, bottom)
+                        )
+                        self.assertIsNotNone(alpha.getbbox())
+                        self.assertGreater(
+                            alpha.histogram()[0],
+                            alpha.width * alpha.height // 3,
+                        )
+
+        for filename in target_expected:
+            path = MOTION_SHEET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertGreaterEqual(image.width, 1400)
+                self.assertGreaterEqual(image.height, 850)
+                alpha = image.getchannel("A")
+                self.assertEqual(
+                    [
+                        alpha.getpixel((0, 0)),
+                        alpha.getpixel((image.width - 1, 0)),
+                        alpha.getpixel((0, image.height - 1)),
+                        alpha.getpixel((image.width - 1, image.height - 1)),
+                    ],
+                    [0, 0, 0, 0],
+                )
+                for row in range(2):
+                    top = round(row * image.height / 2)
+                    bottom = round((row + 1) * image.height / 2)
+                    for column in range(4):
+                        left = round(column * image.width / 4)
+                        right = round((column + 1) * image.width / 4)
+                        cell_alpha = alpha.crop((left, top, right, bottom))
+                        self.assertIsNotNone(cell_alpha.getbbox())
+                        self.assertGreater(
+                            cell_alpha.histogram()[0],
+                            cell_alpha.width * cell_alpha.height // 3,
+                        )
+
+        for filename in run_cycle_expected | run_cycle_v16_expected:
+            path = MOTION_SHEET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.size, (1536, 1024))
+                for row in range(2):
+                    top = round(row * image.height / 2)
+                    bottom = round((row + 1) * image.height / 2)
+                    for column in range(4):
+                        left = round(column * image.width / 4)
+                        right = round((column + 1) * image.width / 4)
+                        alpha = image.getchannel("A").crop(
+                            (left, top, right, bottom)
+                        )
+                        bounds = alpha.getbbox()
+                        self.assertIsNotNone(bounds)
+                        self.assertAlmostEqual(
+                            (bounds[0] + bounds[2]) / 2,
+                            alpha.width / 2,
+                            delta=2,
+                        )
+                        self.assertAlmostEqual(bounds[3], 480, delta=2)
+                        self.assertGreater(
+                            alpha.histogram()[0],
+                            alpha.width * alpha.height // 3,
+                        )
+
+        for filename in jump_cycle_expected:
+            path = MOTION_SHEET_DIR / filename
+            with Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.size, (1536, 1024))
+                self.assertEqual(
+                    [
+                        image.getchannel("A").getpixel((0, 0)),
+                        image.getchannel("A").getpixel((image.width - 1, 0)),
+                        image.getchannel("A").getpixel((0, image.height - 1)),
+                        image.getchannel("A").getpixel((image.width - 1, image.height - 1)),
+                    ],
+                    [0, 0, 0, 0],
+                )
+
+        for filename in action_sheet_expected | action_cycle_expected:
+            path = MOTION_SHEET_DIR / filename
+            with Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.size, (1536, 1024))
+                alpha = image.getchannel("A")
+                self.assertEqual(
+                    [
+                        alpha.getpixel((0, 0)),
+                        alpha.getpixel((image.width - 1, 0)),
+                        alpha.getpixel((0, image.height - 1)),
+                        alpha.getpixel((image.width - 1, image.height - 1)),
+                    ],
+                    [0, 0, 0, 0],
+                )
+                for row in range(2):
+                    for column in range(4):
+                        cell = alpha.crop(
+                            (
+                                column * image.width // 4,
+                                row * image.height // 2,
+                                (column + 1) * image.width // 4,
+                                (row + 1) * image.height // 2,
+                            )
+                        )
+                        self.assertIsNotNone(cell.getbbox())
+
+        for filename in custom_action_cycle_expected:
+            path = MOTION_SHEET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.size[0] % 4, 0)
+                self.assertEqual(image.size[1] % 2, 0)
+                alpha = image.getchannel("A")
+                self.assertEqual(alpha.getextrema()[0], 0)
+                for row in range(2):
+                    for column in range(4):
+                        cell = alpha.crop(
+                            (
+                                column * image.width // 4,
+                                row * image.height // 2,
+                                (column + 1) * image.width // 4,
+                                (row + 1) * image.height // 2,
+                            )
+                        )
+                        self.assertIsNotNone(cell.getbbox())
+
     def test_complete_asset_matrix_exists(self):
         expected = {f"{key}_{pose}.png" for key in KEYS for pose in POSES}
         actual = {

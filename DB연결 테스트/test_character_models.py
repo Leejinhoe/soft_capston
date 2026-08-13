@@ -31,6 +31,17 @@ class CharacterModelTests(unittest.TestCase):
                 character_key="Invalid Key",
             )
 
+    def test_media_request_defaults_to_smooth_thirty_fps_video(self):
+        request = MediaGenerationSchema(story_text="A child runs toward the castle.")
+
+        self.assertEqual(request.frame_rate, 30)
+
+    def test_media_request_rejects_empty_or_oversized_story_text(self):
+        for story_text in ("", "x" * 12001):
+            with self.subTest(length=len(story_text)):
+                with self.assertRaises(ValidationError):
+                    MediaGenerationSchema(story_text=story_text)
+
 
 if __name__ == "__main__":
     unittest.main()

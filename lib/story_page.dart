@@ -12,9 +12,12 @@ import 'package:record/record.dart';
 import 'main.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
+import 'models/story_video.dart';
 import 'psych_page.dart';
 import 'services/db_service.dart';
 import 'widgets/story_cast_widget.dart';
+import 'widgets/story_character_animation.dart';
+import 'widgets/story_video_player.dart';
 
 enum _NarrationTarget { currentChapter, fullStory }
 
@@ -1235,6 +1238,26 @@ class _StoryPageState extends State<StoryPage> {
     StoryChapter chapter,
     int totalChapters,
   ) {
+    final animationCharacterKey = story.selectedHeroCharacterKey;
+    final isLatestChapter = identical(chapter, story.chapters.last);
+    final remoteVideoUrl =
+        _isRemoteMediaUrl(chapter.videoUrl) ? chapter.videoUrl!.trim() : null;
+    final showLocalCharacterAnimation = isLatestChapter &&
+        remoteVideoUrl == null &&
+        animationCharacterKey != null &&
+        StoryCharacterAnimation.supports(
+          characterKey: animationCharacterKey,
+          storyText: chapter.text,
+        );
+    final selectedVideo = remoteVideoUrl != null || chapter.choiceMade == null
+        ? null
+        : StoryVideoCatalog.forChapter(
+            text: chapter.text,
+            choice: chapter.choiceMade,
+            chapter: chapter.chapter,
+            genre: story.genre,
+            characterKey: animationCharacterKey,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1278,11 +1301,42 @@ class _StoryPageState extends State<StoryPage> {
           _buildTemporaryStoryImage(chapter),
           const SizedBox(height: 12),
         ],
-        if (_isRemoteMediaUrl(chapter.videoUrl)) ...[
-          _buildGeneratedVideoCard(chapter.videoUrl!),
+        if (remoteVideoUrl != null && isLatestChapter) ...[
+          StoryVideoPlayer.network(
+            videoUrl: remoteVideoUrl,
+            httpHeaders: DbService.mediaHeaders,
+            autoplay: true,
+          ),
+          const SizedBox(height: 12),
+        ] else if (remoteVideoUrl != null) ...[
+          _buildArchivedVideoButton(
+            context,
+            videoUrl: remoteVideoUrl,
+          ),
+          const SizedBox(height: 12),
+        ] else if (selectedVideo != null && isLatestChapter) ...[
+          StoryVideoPlayer(
+            clip: selectedVideo,
+            autoplay: true,
+          ),
+          const SizedBox(height: 12),
+        ] else if (selectedVideo != null) ...[
+          _buildArchivedVideoButton(context, clip: selectedVideo),
+          const SizedBox(height: 12),
+        ] else if (showLocalCharacterAnimation) ...[
+          StoryCharacterAnimation(
+            characterKey: animationCharacterKey,
+            storyText: chapter.text,
+            genre: story.genre,
+          ),
           const SizedBox(height: 12),
         ] else if (chapter.videoUrl?.startsWith('mock://video/') == true) ...[
           _buildTemporaryVideoCard(chapter),
+          const SizedBox(height: 12),
+        ],
+        if (chapter.mediaStatus == 'partial' ||
+            chapter.mediaStatus == 'failed') ...[
+          _buildMediaRetryBanner(state, story, chapter),
           const SizedBox(height: 12),
         ],
         Container(
@@ -1436,6 +1490,7 @@ class _StoryPageState extends State<StoryPage> {
                   aspectRatio: 1.0,
                   child: Image.network(
                     imageUrl,
+                    headers: DbService.mediaHeaders,
                     fit: BoxFit.cover,
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) return child;
@@ -1674,65 +1729,104 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
-  Widget _buildGeneratedVideoCard(String videoUrl) {
+  Widget _buildArchivedVideoButton(
+    BuildContext context, {
+    StoryVideoClip? clip,
+    String? videoUrl,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.card2,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.p400.withValues(alpha: 0.35)),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.p600.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.movie_creation_outlined,
-              color: Colors.white,
-              size: 24,
+          const Icon(
+            Icons.movie_creation_outlined,
+            color: AppColors.p300,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              clip?.title ?? '이전 장면 영상',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          const SizedBox(width: 12),
+          IconButton(
+            tooltip: '영상 보기',
+            onPressed: () {
+              showDialog<void>(
+                context: context,
+                builder: (dialogContext) => Dialog(
+                  backgroundColor: AppColors.card2,
+                  insetPadding: const EdgeInsets.all(20),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: clip != null
+                        ? StoryVideoPlayer(clip: clip, autoplay: true)
+                        : StoryVideoPlayer.network(
+                            videoUrl: videoUrl!,
+                            httpHeaders: DbService.mediaHeaders,
+                            autoplay: true,
+                          ),
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.play_arrow_rounded),
+            color: AppColors.p300,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaRetryBanner(
+    AppState state,
+    StorySession story,
+    StoryChapter chapter,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: AppColors.pink.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.pink.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: AppColors.pink2),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '생성된 동영상',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '앱 안의 플레이어는 아직 없어서 URL만 표시해요.',
-                  style: TextStyle(
-                    color: AppColors.gray,
-                    fontSize: 11,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SelectableText(
-                  videoUrl,
-                  maxLines: 2,
-                  style: const TextStyle(
-                    color: AppColors.p300,
-                    fontSize: 11,
-                    height: 1.35,
-                  ),
-                ),
-              ],
+            child: Text(
+              chapter.mediaError ?? '영상 생성에 실패했습니다.',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                height: 1.35,
+              ),
             ),
+          ),
+          IconButton(
+            tooltip: '다시 생성',
+            onPressed: chapter.mediaStatus == 'running'
+                ? null
+                : () => state.retryMediaForChapter(story, chapter),
+            icon: const Icon(Icons.refresh_rounded),
+            color: AppColors.p300,
           ),
         ],
       ),

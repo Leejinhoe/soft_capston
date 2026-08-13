@@ -100,8 +100,22 @@ async def init_database() -> None:
         name="media_jobs_status_created_idx",
     )
     await media_jobs_collection.create_index(
+        [
+            ("owner_user_id", ASCENDING),
+            ("status", ASCENDING),
+            ("created_at", DESCENDING),
+        ],
+        name="media_jobs_owner_status_created_idx",
+    )
+    await media_jobs_collection.create_index(
         [("story_id", ASCENDING), ("step_number", ASCENDING), ("created_at", DESCENDING)],
         name="media_jobs_story_scene_created_idx",
+    )
+    await media_jobs_collection.create_index(
+        [("active_key", ASCENDING)],
+        name="media_jobs_active_key_unique_idx",
+        unique=True,
+        sparse=True,
     )
     await media_jobs_collection.create_index(
         [("scene_synced_at", ASCENDING), ("completed_at", ASCENDING)],

@@ -689,19 +689,30 @@ class AppState extends ChangeNotifier {
     if (dbStoryId == null || dbStoryId.isEmpty) return;
 
     session.mediaGenerationChapterNumbers.add(chapter.chapter);
+    chapter.mediaStatus = 'running';
+    chapter.mediaError = null;
+    notifyListeners();
     final media = await DbService.generateSceneMedia(
       storyId: dbStoryId,
       stepNumber: chapter.chapter,
       storyText: chapter.text,
       genre: session.genre,
       age: session.age,
+      characterKey: session.selectedHeroCharacterKey,
       includeVideo: needsVideo,
     );
 
-    if (media == null || !media.hasMedia) {
+    if (media == null) {
       session.mediaGenerationChapterNumbers.remove(chapter.chapter);
+      chapter.mediaStatus = 'failed';
+      chapter.mediaError = '미디어 생성 결과를 가져오지 못했습니다.';
+      notifyListeners();
       return;
     }
+
+    chapter.mediaJobId = media.jobId;
+    chapter.mediaStatus = media.status;
+    chapter.mediaError = media.error;
 
     if (media.imageUrl?.trim().isNotEmpty ?? false) {
       chapter.imageUrl = media.imageUrl;
@@ -709,7 +720,33 @@ class AppState extends ChangeNotifier {
     if (media.videoUrl?.trim().isNotEmpty ?? false) {
       chapter.videoUrl = media.videoUrl;
     }
+
+    final requestedVideoMissing =
+        needsVideo && !(media.videoUrl?.trim().isNotEmpty ?? false);
+    if (media.isPartial || media.status == 'failed' || requestedVideoMissing) {
+      session.mediaGenerationChapterNumbers.remove(chapter.chapter);
+      chapter.mediaStatus =
+          media.isPartial || requestedVideoMissing ? 'partial' : 'failed';
+      chapter.mediaError ??= requestedVideoMissing
+          ? '이미지는 생성됐지만 영상 생성에 실패했습니다.'
+          : '미디어 생성에 실패했습니다.';
+    } else if (!media.hasMedia) {
+      session.mediaGenerationChapterNumbers.remove(chapter.chapter);
+      chapter.mediaStatus = 'failed';
+      chapter.mediaError ??= '생성된 미디어가 없습니다.';
+    }
     notifyListeners();
+  }
+
+  Future<void> retryMediaForChapter(
+    StorySession session,
+    StoryChapter chapter,
+  ) async {
+    session.mediaGenerationChapterNumbers.remove(chapter.chapter);
+    chapter.mediaStatus = null;
+    chapter.mediaError = null;
+    notifyListeners();
+    await _generateMediaForChapter(session, chapter);
   }
 
   bool _isTemporaryStory(StorySession session) {

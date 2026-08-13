@@ -5,7 +5,8 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.0
+  sdk: ">=3.11.0 <4.0.0"
+  flutter: ">=3.41.0"
 
 dependencies:
   flutter:
@@ -16,6 +17,9 @@ dependencies:
   percent_indicator: ^4.2.3
   audioplayers: ^6.5.1
   record: ^6.1.1
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
 
   cupertino_icons: ^1.0.8
   http: ^1.6.0
@@ -34,4 +38,44 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/characters/
+    - assets/characters/female_01_reference_v2.png
+    - assets/characters/female_02_reference_v2.png
+    - assets/characters/female_03_reference_v2.png
+    - assets/characters/female_04_reference_v2.png
+    - assets/characters/female_05_reference_v2.png
+    - assets/characters/female_06_reference_v2.png
+    - assets/characters/female_07_reference_v2.png
+    - assets/characters/female_08_reference_v2.png
+    - assets/characters/male_01_reference_v2.png
+    - assets/characters/male_02_reference_v2.png
+    - assets/characters/male_03_reference_v2.png
+    - assets/characters/male_04_reference_v2.png
+    - assets/characters/male_05_reference_v2.png
+    - assets/characters/male_06_reference_v2.png
+    - assets/characters/male_07_reference_v2.png
+    - assets/characters/male_08_reference_v2.png
+    - assets/characters/motion_sheets/female_01_run_cycle_v16.png
+    - assets/characters/motion_sheets/female_02_run_cycle_v16.png
+    - assets/characters/motion_sheets/female_03_run_cycle_v16.png
+    - assets/characters/motion_sheets/female_04_run_cycle_v16.png
+    - assets/characters/motion_sheets/female_05_run_cycle_v16.png
+    - assets/characters/motion_sheets/female_06_run_cycle_v16.png
+    - assets/characters/motion_sheets/female_07_run_cycle_v16.png
+    - assets/characters/motion_sheets/female_08_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_01_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_02_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_03_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_04_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_05_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_06_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_07_run_cycle_v16.png
+    - assets/characters/motion_sheets/male_08_run_cycle_v16.png
+    - assets/backgrounds/adventure_ruins_wide_v2.png
+    - assets/backgrounds/fantasy_castle_wide_v2.png
+    - assets/backgrounds/friendship_square_wide_v2.png
+    - assets/backgrounds/mystery_library_wide_v2.png
+    - assets/backgrounds/nature_pond_wide_v2.png
+    - assets/story_videos/bridge_to_castle_15s.mp4
+    - assets/story_videos/forest_door_adventure_15s.mp4
+    - assets/story_videos/hidden_treasure_15s.mp4
+    - assets/story_videos/lantern_path_15s.mp4

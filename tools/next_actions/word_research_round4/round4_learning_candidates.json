@@ -1,0 +1,685 @@
+{
+  "schema_version": "round4_red_team_v1",
+  "created_at": "2026-08-10",
+  "candidate_count": 18,
+  "priority_counts": {
+    "next_asset": 6,
+    "later_asset": 8,
+    "scene_only": 4
+  },
+  "category_counts": {
+    "prop-bound": 7,
+    "environment-bound": 4,
+    "partner-bound": 3,
+    "target-bound": 4,
+    "solo": 0
+  },
+  "baseline_duplicate_actions": [
+    "walk",
+    "run",
+    "jump",
+    "investigate",
+    "magic",
+    "wave",
+    "sit",
+    "stand",
+    "stop",
+    "kneel",
+    "bow",
+    "crouch",
+    "stretch",
+    "clap",
+    "point",
+    "nod",
+    "dance",
+    "crawl",
+    "climb",
+    "slide",
+    "hide",
+    "fall_roll",
+    "salute",
+    "prone",
+    "stagger",
+    "wake",
+    "yawn",
+    "sneeze"
+  ],
+  "candidates": [
+    {
+      "key": "pull_lever",
+      "korean_meaning": "레버를 당겨 작동시키다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "required_scene": "A visible lever is linked to a door, bridge, lift, or machine that changes state.",
+        "minimum_view": "full_body_3_4"
+      },
+      "priority": "next_asset",
+      "example_sentence": "The child pulled the old lever, and the secret door opened.",
+      "positive_visual_cues": [
+        "The hand visibly grips a lever handle.",
+        "The lever rotates or travels to a new angle while the body leans into the pull.",
+        "The linked door, bridge, or mechanism changes state in the same shot."
+      ],
+      "negative_cues": [
+        "Pulling empty air or an invisible rope.",
+        "A door handle moves without a distinct lever.",
+        "The character strains but no prop or linked state changes."
+      ],
+      "four_phase_contract": {
+        "prepare": "Find the lever, look at the linked device, and place the hand on the handle.",
+        "act": "Pull the handle through a clear arc until the lever reaches its end position.",
+        "hold": "Keep the lowered lever and the newly opened or moved device visible together.",
+        "recover": "Release the handle, return the hand to neutral, and look toward the result."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/definition/english/pull_1",
+        "https://www.oxfordlearnersdictionaries.com/us/definition/english/lever_1",
+        "https://learnenglishkids.britishcouncil.org/listen-watch/short-stories/treasure-map"
+      ]
+    },
+    {
+      "key": "turn_dial",
+      "korean_meaning": "다이얼을 돌려 맞추다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "required_scene": "A marked dial has a visible starting symbol and a visible target mark or alignment.",
+        "minimum_view": "medium_full_body_3_4"
+      },
+      "priority": "next_asset",
+      "example_sentence": "Mina turned the golden dial until the moon symbol faced up.",
+      "positive_visual_cues": [
+        "Fingers hold the rim of a marked circular dial.",
+        "The dial rotates around its own center while the character stays grounded.",
+        "The target symbol stops aligned with a fixed indicator."
+      ],
+      "negative_cues": [
+        "The whole character rotates instead of the prop.",
+        "A key enters a lock, which is turn_key rather than a dial.",
+        "The dial jumps between symbols without continuous contact."
+      ],
+      "four_phase_contract": {
+        "prepare": "Inspect the starting symbol and the fixed target mark, then place fingers on the dial rim.",
+        "act": "Rotate the dial in a visible circular arc through one or more marked positions.",
+        "hold": "Keep the target symbol aligned with the fixed indicator.",
+        "recover": "Release the dial and look at the unlocked or activated device."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/definition/english/turn_1",
+        "https://www.oxfordlearnersdictionaries.com/us/definition/english/dial_1"
+      ]
+    },
+    {
+      "key": "place_gem",
+      "korean_meaning": "보석을 홈에 놓다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "required_scene": "A hand-held gem and a matching socket, crown, altar, or stone are both visible.",
+        "minimum_view": "medium_full_body_3_4"
+      },
+      "priority": "next_asset",
+      "example_sentence": "The princess placed the blue gem in the crown-shaped stone.",
+      "positive_visual_cues": [
+        "The gem is visibly held above a matching recess.",
+        "The gem leaves the hand and settles into the socket.",
+        "The gem remains fixed and the artifact may glow only after contact."
+      ],
+      "negative_cues": [
+        "A gem floats while still attached to the hand.",
+        "There is no socket or receiving surface.",
+        "The object disappears without a visible placement result."
+      ],
+      "four_phase_contract": {
+        "prepare": "Compare the gem with the visible socket and align the hand above it.",
+        "act": "Lower the gem into the recess until the hand can release it.",
+        "hold": "Show the gem fixed in the socket and the completed artifact state.",
+        "recover": "Withdraw the hand and look at the activated or completed object."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/definition/english/place_2",
+        "https://learnenglishkids.britishcouncil.org/listen-watch/short-stories/treasure-map"
+      ]
+    },
+    {
+      "key": "cross_bridge",
+      "korean_meaning": "다리를 건너다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "required_scene": "The bridge entrance, traversable span, and opposite ground are visible on one path axis.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "next_asset",
+      "example_sentence": "The child crosses the old bridge to reach the castle.",
+      "positive_visual_cues": [
+        "Feet move from the near bank onto the bridge surface.",
+        "The character traverses the span with the gap or water below visible.",
+        "Both feet reach the opposite ground before recovery."
+      ],
+      "negative_cues": [
+        "Walking on flat ground with no bridge endpoints.",
+        "A jump over a gap with both feet leaving the bridge path.",
+        "The character climbs the bridge rail instead of crossing it."
+      ],
+      "four_phase_contract": {
+        "prepare": "Face the bridge entrance, check the far side, and align both feet with the span.",
+        "act": "Take careful steps along the bridge while the bridge and gap remain visible.",
+        "hold": "Show the character mid-span with one foot placed on the bridge and the far side ahead.",
+        "recover": "Step onto the opposite ground, leave the bridge, and stabilize."
+      },
+      "source_urls": [
+        "https://dictionary.cambridge.org/dictionary/learner-english/cross",
+        "https://dictionary.cambridge.org/dictionary/english/bridge",
+        "https://learnenglishkids.britishcouncil.org/sites/kids/files/attachment/short-stories-the-treasure-map-worksheet.pdf"
+      ]
+    },
+    {
+      "key": "squeeze_through",
+      "korean_meaning": "좁은 틈을 비집고 지나가다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "required_scene": "Two close boundaries form a narrow gap with a visible far-side exit.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "next_asset",
+      "example_sentence": "The child squeezes through the crack in the ruined wall and finds a secret passage.",
+      "positive_visual_cues": [
+        "The character turns the shoulders sideways before entering the gap.",
+        "The arms and torso compress between two visible walls or rocks.",
+        "The full body emerges on the far side and the shoulders expand again."
+      ],
+      "negative_cues": [
+        "Four-limbed crawling on an open floor.",
+        "Stopping behind a cover without crossing the gap.",
+        "The character vanishes without boundary contact or an exit reveal."
+      ],
+      "four_phase_contract": {
+        "prepare": "Inspect the gap width, turn the body sideways, and draw the shoulders inward.",
+        "act": "Press one foot at a time through the narrow opening while keeping contact with the boundaries.",
+        "hold": "Maintain the compressed torso at the middle of the gap with both boundaries readable.",
+        "recover": "Clear the far side, straighten the shoulders, and return to a stable stance."
+      },
+      "source_urls": [
+        "https://www.merriam-webster.com/dictionary/squeeze",
+        "https://learnenglishkids.britishcouncil.org/read-write/writing-practice/level-3-writing/adventure-story"
+      ]
+    },
+    {
+      "key": "duck_under",
+      "korean_meaning": "몸을 숙여 아래로 지나가다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "required_scene": "A low branch, beam, fallen tree, or gate creates a passable space below it.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "next_asset",
+      "example_sentence": "The child ducks under the fallen tree in the forest.",
+      "positive_visual_cues": [
+        "The character looks at a low obstacle and lowers head and shoulders.",
+        "The body travels beneath the obstacle while the feet keep moving.",
+        "The character rises only after clearing the obstacle."
+      ],
+      "negative_cues": [
+        "A stationary crouch with no obstacle or forward passage.",
+        "A bow in open space without a height constraint.",
+        "Hands and knees touch the ground as in crawling."
+      ],
+      "four_phase_contract": {
+        "prepare": "Notice the low obstacle, slow the feet, and release the knees.",
+        "act": "Lower the head and shoulders and pass forward beneath the obstacle.",
+        "hold": "Keep the character at the lowest point under the obstacle with the obstacle visibly overhead.",
+        "recover": "Clear the obstacle, raise the body, and resume a stable path stance."
+      },
+      "source_urls": [
+        "https://www.merriam-webster.com/dictionary/duck",
+        "https://learnenglishkids.britishcouncil.org/read-write/writing-practice/level-3-writing/adventure-story"
+      ]
+    },
+    {
+      "key": "knock_on_door",
+      "korean_meaning": "문을 두드리다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "required_scene": "A closed door or other vertical surface is directly in front of the character.",
+        "minimum_view": "medium_full_body_3_4"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The little knight knocked on the castle door three times.",
+      "positive_visual_cues": [
+        "A closed door remains fixed in front of the character.",
+        "A closed fist contacts the same door area repeatedly.",
+        "The hand lowers and the character waits before the door changes state."
+      ],
+      "negative_cues": [
+        "Knocking empty air.",
+        "A single push that opens the door immediately.",
+        "A large weapon swing or side-to-side wave."
+      ],
+      "four_phase_contract": {
+        "prepare": "Face the closed door, raise a closed hand, and choose the contact point.",
+        "act": "Tap the same door area three clear times with the fist.",
+        "hold": "Lower the hand and wait while the closed door remains visible.",
+        "recover": "Turn toward the opening door or return to neutral after the response."
+      },
+      "source_urls": [
+        "https://dictionary.cambridge.org/us/dictionary/learner-english/knock",
+        "https://learnenglishkids.britishcouncil.org/listen-watch/short-stories/treasure-map"
+      ]
+    },
+    {
+      "key": "press_seal",
+      "korean_meaning": "봉인을 눌러 찍다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_target": true,
+        "required_scene": "A distinct seal or stamp and wax, clay, or marked surface are visible together.",
+        "minimum_view": "medium_close"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The wizard pressed the star seal onto the red wax.",
+      "positive_visual_cues": [
+        "The seal is held above the wax or receiving surface.",
+        "The seal moves vertically into firm surface contact.",
+        "A star or other mark remains after the seal is lifted."
+      ],
+      "negative_cues": [
+        "A finger pressing an invisible button.",
+        "No seal, wax, or lasting surface mark.",
+        "A floating magic symbol with no object contact."
+      ],
+      "four_phase_contract": {
+        "prepare": "Align the seal face with the visible wax or surface.",
+        "act": "Press the seal straight down until it contacts the surface.",
+        "hold": "Keep pressure briefly and show the imprint forming.",
+        "recover": "Lift the seal and reveal the completed mark."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/definition/american_english/press_2",
+        "https://www.oxfordlearnersdictionaries.com/us/definition/english/press_2"
+      ]
+    },
+    {
+      "key": "light_lantern",
+      "korean_meaning": "등불에 불을 붙이다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "required_scene": "A lantern with a visible wick and a separate flame source is present in a dim setting.",
+        "minimum_view": "medium_full_body_3_4"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The girl lit the lantern, and the dark cave became bright.",
+      "positive_visual_cues": [
+        "The flame source approaches and touches the wick.",
+        "The flame remains attached to the lantern rather than the hand.",
+        "The lantern and nearby cave visibly become the stable light source."
+      ],
+      "negative_cues": [
+        "Light emitted from an empty hand.",
+        "A flame that floats separately from the wick.",
+        "No change in the lantern or surrounding illumination."
+      ],
+      "four_phase_contract": {
+        "prepare": "Bring the flame source to the lantern and locate the wick.",
+        "act": "Touch the flame source to the wick until a small flame appears.",
+        "hold": "Keep the flame on the wick and the lantern illuminating the nearby space.",
+        "recover": "Remove the flame source and hold or set down the lit lantern."
+      },
+      "source_urls": [
+        "https://www.merriam-webster.com/dictionary/light",
+        "https://learnenglishkids.britishcouncil.org/sites/kids/files/attachment/LearnEnglishKids-Writing-practice-Level-3-An-adventure-story.pdf"
+      ]
+    },
+    {
+      "key": "wade",
+      "korean_meaning": "얕은 물을 헤치며 걷다",
+      "category": "environment-bound",
+      "condition": {
+        "requires_environment": true,
+        "required_scene": "Shallow water has a visible waterline, resistance, ripples, and a dry bank for recovery.",
+        "minimum_view": "wide_full_body"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The child wades across the shallow stream to the hidden cave.",
+      "positive_visual_cues": [
+        "The waterline crosses the lower legs while the torso stays upright.",
+        "Short heavy steps displace water and create ripples.",
+        "The character reaches dry ground and shakes off or stabilizes."
+      ],
+      "negative_cues": [
+        "Walking on a dry floor.",
+        "A horizontal body and arm strokes of swimming.",
+        "Diving into water or walking on top of the surface."
+      ],
+      "four_phase_contract": {
+        "prepare": "Check the shallow water and place the first foot into it.",
+        "act": "Push through the water with short steps while ripples follow the legs.",
+        "hold": "Keep one leg raised against visible water resistance with the waterline stable.",
+        "recover": "Step onto the dry bank, clear the water, and regain neutral balance."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/definition/english/wade",
+        "https://www.merriam-webster.com/dictionary/wade"
+      ]
+    },
+    {
+      "key": "row",
+      "korean_meaning": "노를 저어 배를 움직이다",
+      "category": "prop-bound",
+      "condition": {
+        "requires_object": true,
+        "requires_environment": true,
+        "required_scene": "The character sits or kneels in a boat, holds an oar, contacts water, and the boat moves.",
+        "minimum_view": "wide_medium"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The child rows across the moonlit lake toward the castle.",
+      "positive_visual_cues": [
+        "Both hands grip an oar with the blade entering the water.",
+        "The body pulls the oar through a repeatable stroke.",
+        "The boat changes position relative to the water or shore."
+      ],
+      "negative_cues": [
+        "Arm waving without an oar or boat.",
+        "Swimming with the body in the water.",
+        "A stationary boat with no water contact or displacement."
+      ],
+      "four_phase_contract": {
+        "prepare": "Grip the oar in the boat and aim the blade toward the water.",
+        "act": "Place the blade in the water and pull it toward the body.",
+        "hold": "Show the oar in the water while the boat advances against the surface.",
+        "recover": "Lift the blade clear, reset the hands, and prepare the next stroke."
+      },
+      "source_urls": [
+        "https://dictionary.cambridge.org/dictionary/english/row",
+        "https://dictionary.cambridge.org/dictionary/learner-english/row"
+      ]
+    },
+    {
+      "key": "shake_hands",
+      "korean_meaning": "악수하다",
+      "category": "partner-bound",
+      "condition": {
+        "requires_partner": true,
+        "required_scene": "Two visible characters face each other with enough room for hand contact and a short shake.",
+        "minimum_view": "medium_two_shot"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The two young travelers shook hands when they reached the castle gate.",
+      "positive_visual_cues": [
+        "The two characters approach and extend corresponding hands.",
+        "Hands visibly meet and remain joined for a short vertical shake.",
+        "Both characters release and face each other in a stable hold."
+      ],
+      "negative_cues": [
+        "One character offers a hand but no contact occurs.",
+        "Side-to-side waving without a partner hand.",
+        "An object passes between the hands."
+      ],
+      "four_phase_contract": {
+        "prepare": "Place the two characters face to face and extend their hands toward the same point.",
+        "act": "Make the hands contact and close into a shared grip.",
+        "hold": "Perform one or two short up-and-down shakes while maintaining the hand contact.",
+        "recover": "Release the grip and return both characters to a relaxed facing stance."
+      },
+      "source_urls": [
+        "https://dictionary.cambridge.org/us/dictionary/english/shake-hands",
+        "https://learnenglishkids.britishcouncil.org/listen-watch/video-zone/reach-out"
+      ]
+    },
+    {
+      "key": "beckon",
+      "korean_meaning": "손짓해 부르다",
+      "category": "target-bound",
+      "condition": {
+        "requires_target": true,
+        "required_scene": "A visible person or animal is positioned as the receiver and can respond by approaching.",
+        "minimum_view": "medium_two_shot"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The fairy beckoned the child to come closer to the lantern.",
+      "positive_visual_cues": [
+        "The signaling character fixes the gaze on a visible receiver.",
+        "The palm faces inward and the fingers repeat a clear come-here motion.",
+        "The receiver begins to approach or visibly acknowledges the signal."
+      ],
+      "negative_cues": [
+        "Side-to-side waving with no invitation direction.",
+        "Pointing at a location without an inward hand path.",
+        "Hand motion in empty space with no receiver."
+      ],
+      "four_phase_contract": {
+        "prepare": "Find the visible receiver, orient the torso toward it, and raise the signaling hand.",
+        "act": "Curl the palm or fingers inward twice to invite the receiver closer.",
+        "hold": "Keep the receiver in view and maintain the invitation gaze after the signal.",
+        "recover": "Lower the hand as the receiver approaches or the scene transitions."
+      },
+      "source_urls": [
+        "https://dictionary.cambridge.org/dictionary/learner-english/beckon",
+        "https://dictionary.cambridge.org/us/dictionary/english/beckon"
+      ]
+    },
+    {
+      "key": "cower",
+      "korean_meaning": "웅크리며 겁내다",
+      "category": "target-bound",
+      "condition": {
+        "requires_target": true,
+        "required_scene": "A visible threat or frightening event is placed on the gaze axis and remains identifiable.",
+        "minimum_view": "medium_full_body_3_4"
+      },
+      "priority": "later_asset",
+      "example_sentence": "The little fox cowered behind the stone when the dragon roared.",
+      "positive_visual_cues": [
+        "The character keeps looking toward the visible threat.",
+        "The body lowers while taking one or two steps backward.",
+        "Arms protect the chest or head without fully disappearing behind cover."
+      ],
+      "negative_cues": [
+        "A neutral crouch with no threat or backward movement.",
+        "A one-frame shoulder flinch.",
+        "The character vanishes behind a cover as in hiding."
+      ],
+      "four_phase_contract": {
+        "prepare": "Face the threat and begin raising the shoulders in fear.",
+        "act": "Lower the body, retreat slightly, and raise protective arms.",
+        "hold": "Maintain the low protective posture while keeping the threat in the gaze axis.",
+        "recover": "After the threat passes, raise the head and return slowly to neutral."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/us/definition/english/cower",
+        "https://www.merriam-webster.com/dictionary/cower"
+      ]
+    },
+    {
+      "key": "meet",
+      "korean_meaning": "만나다",
+      "category": "partner-bound",
+      "condition": {
+        "requires_partner": true,
+        "required_scene": "Two characters enter the same place, face each other, and stop close enough for a relationship event.",
+        "minimum_view": "wide_two_shot"
+      },
+      "priority": "scene_only",
+      "example_sentence": "The child met a friendly fox at the edge of the enchanted forest.",
+      "positive_visual_cues": [
+        "Two roots approach from different sides or routes.",
+        "They share the same location and face each other in a mutual hold.",
+        "The scene leaves room for the next handshake, conversation, or shared journey."
+      ],
+      "negative_cues": [
+        "One character merely follows another.",
+        "The characters pass without stopping or facing each other.",
+        "Only one character is present."
+      ],
+      "four_phase_contract": {
+        "prepare": "Place both characters at separate approach points with their attention oriented toward one another.",
+        "act": "Move both characters toward the shared meeting point.",
+        "hold": "Stop both characters in the same location and show mutual facing and eye-line.",
+        "recover": "Leave them in a neutral relationship pose ready for the next story beat."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/definition/english/meet_1",
+        "https://learnenglishkids.britishcouncil.org/sites/kids/files/attachment/yourturn-traditional%20stories-worksheet.pdf"
+      ]
+    },
+    {
+      "key": "eavesdrop",
+      "korean_meaning": "몰래 엿듣다",
+      "category": "partner-bound",
+      "condition": {
+        "requires_partner": true,
+        "requires_environment": true,
+        "required_scene": "A private speaker is separated by a door, wall, window, or other cover, and the listener remains partly concealed.",
+        "minimum_view": "medium_scene_composite"
+      },
+      "priority": "scene_only",
+      "example_sentence": "The princess eavesdropped outside the wizard's door.",
+      "positive_visual_cues": [
+        "The speaker's face or mouth is visible on the far side of a cover.",
+        "The listener places the ear and one side of the face close to the boundary while most of the body stays hidden.",
+        "The listener withdraws quickly after the private exchange."
+      ],
+      "negative_cues": [
+        "Open public listening with no cover or private speaker.",
+        "A hand placed on the ear with no spatial relationship.",
+        "Full-body peeking without an identifiable conversation."
+      ],
+      "four_phase_contract": {
+        "prepare": "Notice the covered speaker area and move beside the door, wall, or window.",
+        "act": "Lean the ear and face toward the boundary while keeping most of the body concealed.",
+        "hold": "Maintain the hidden listening position with the speaker and cover visible in the composite scene.",
+        "recover": "Pull the head back, leave the cover, and return to a neutral path or hiding position."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/definition/english/eavesdrop",
+        "https://www.merriam-webster.com/dictionary/eavesdrop",
+        "https://learnenglishkids.britishcouncil.org/read-write/reading-practice/level-2-reading/echo-hera"
+      ]
+    },
+    {
+      "key": "spot",
+      "korean_meaning": "숨은 것을 발견하다",
+      "category": "target-bound",
+      "condition": {
+        "requires_target": true,
+        "required_scene": "A hard-to-see person or object has a defined position and appears at a known discovery moment.",
+        "minimum_view": "medium_scene_composite"
+      },
+      "priority": "scene_only",
+      "example_sentence": "At last, Hana spotted the silver key under the leaf.",
+      "positive_visual_cues": [
+        "The character searches before the hidden target becomes visible.",
+        "The head and gaze make one sharp switch toward the target.",
+        "The discovery hold leads to pointing, approaching, or picking up the target."
+      ],
+      "negative_cues": [
+        "Continuous broad scanning with no discovery moment.",
+        "A pointing gesture without a hidden target.",
+        "The target position or reveal timing is not specified."
+      ],
+      "four_phase_contract": {
+        "prepare": "Search the defined area while the target remains hidden or unnoticed.",
+        "act": "At the reveal moment, stop the gaze and orient the head and torso toward the target.",
+        "hold": "Keep the target and the newly fixed discovery gaze visible together.",
+        "recover": "Begin the next action toward the target or return the hands to neutral."
+      },
+      "source_urls": [
+        "https://dictionary.cambridge.org/us/dictionary/english/spot",
+        "https://www.oxfordlearnersdictionaries.com/us/definition/english/spot_2",
+        "https://learnenglishkids.britishcouncil.org/listen-watch/short-stories/treasure-map"
+      ]
+    },
+    {
+      "key": "hesitate",
+      "korean_meaning": "망설이다",
+      "category": "target-bound",
+      "condition": {
+        "requires_target": true,
+        "required_scene": "A visible door, bridge, choice, or tool is approached but must not change state during the hesitation.",
+        "minimum_view": "medium_scene_composite"
+      },
+      "priority": "scene_only",
+      "example_sentence": "Mina hesitated before opening the dark castle door.",
+      "positive_visual_cues": [
+        "The character approaches a specific goal and raises a hand toward it.",
+        "The hand stops short or pauses before contact, with a visible incomplete state.",
+        "The hand withdraws and the body makes a small retreat or turns toward another choice."
+      ],
+      "negative_cues": [
+        "A completed opening, unlocking, or pressing action.",
+        "Standing still with no goal or unfinished approach.",
+        "Cowering or hiding behind a cover instead of making an incomplete attempt."
+      ],
+      "four_phase_contract": {
+        "prepare": "Approach the visible goal and prepare the hand or foot for the intended action.",
+        "act": "Move toward the contact point, then stop just before changing the target state.",
+        "hold": "Keep the unfinished reach and uncertain gaze for a short readable pause.",
+        "recover": "Withdraw the hand, step back, or turn toward an alternative path without completing the goal."
+      },
+      "source_urls": [
+        "https://www.oxfordlearnersdictionaries.com/us/definition/english/hesitate",
+        "https://learnenglishkids.britishcouncil.org/sites/kids/files/attachment/LearnEnglishKids-Writing-practice-Level-3-An-adventure-story.pdf"
+      ]
+    }
+  ],
+  "rejected": [
+    {"key":"carry_treasure","reason":"Requires long prop continuity and screen travel; otherwise reads as hold, lift, pick_up, or journey.","duplicate_mapping":["hold","journey"]},
+    {"key":"drop_clue","reason":"Tiny-object release and landing are fragile at small scale and can read as fall or throw.","duplicate_mapping":["fall","throw"]},
+    {"key":"stir_potion","reason":"Liquid and vessel effects carry the meaning and need a later effects composite.","duplicate_mapping":["magic","wave"]},
+    {"key":"pour_potion","reason":"A continuous liquid stream between two vessels is hard to preserve in a general motion sheet.","duplicate_mapping":["place","magic"]},
+    {"key":"draw_sword","reason":"Sheath occlusion, weapon safety, and combat adjacency make it production-specific.","duplicate_mapping":["magic","battle"]},
+    {"key":"ring_bell","reason":"Silent playback cannot rely on sound and rope variants resemble pull_lever or wave.","duplicate_mapping":["pull_lever","wave"]},
+    {"key":"mark_map","reason":"The decisive evidence is a tiny written mark and readable map content.","duplicate_mapping":["read","investigate"]},
+    {"key":"stamp_seal","reason":"Same seal, surface, and imprint as press_seal; only timing differs.","duplicate_mapping":["press_seal"]},
+    {"key":"vault","reason":"Without an explicit hand-planted obstacle it is an embellished jump; with one it needs a later safety test.","duplicate_mapping":["jump"]},
+    {"key":"emerge","reason":"Lighting, occlusion, and camera reveal carry more meaning than the character motion.","duplicate_mapping":["enter","scene_reveal"]},
+    {"key":"board","reason":"Vehicle type, step height, and camera placement vary too much for one stable action.","duplicate_mapping":["climb","enter"]},
+    {"key":"disembark","reason":"The reverse vehicle transition is equally vehicle- and camera-specific.","duplicate_mapping":["journey","enter"]},
+    {"key":"backtrack","reason":"Needs route history or markers; body motion alone is ordinary journey.","duplicate_mapping":["journey"]},
+    {"key":"detour","reason":"Choosing a longer route is scene/map information rather than a stable body motion.","duplicate_mapping":["journey"]},
+    {"key":"retreat","reason":"Without a visible threat it is backward journey; the threat relation belongs in scene metadata.","duplicate_mapping":["journey"]},
+    {"key":"cough","reason":"Repeated torso contractions are too close to the implemented sneeze at low resolution.","duplicate_mapping":["sneeze"]},
+    {"key":"faint","reason":"Controlled collapse overlaps fall_roll and has a high safety/grounding risk.","duplicate_mapping":["fall_roll"]},
+    {"key":"flinch","reason":"Needs an initiating event and reads as a short reaction close to stagger.","duplicate_mapping":["stagger","stop"]},
+    {"key":"freeze","reason":"Needs an initiating threat and is visually indistinguishable from stop without context.","duplicate_mapping":["stop"]},
+    {"key":"meditate","reason":"Hand-together stillness is close to sit, pray, and magic and needs belief context.","duplicate_mapping":["sit","magic"]},
+    {"key":"pray","reason":"Hand-together posture is not enough to distinguish it from magic or other posture scenes.","duplicate_mapping":["magic","sit"]},
+    {"key":"cry","reason":"Emotion and facial effects dominate; no stable action silhouette passes silently.","duplicate_mapping":["emotion"]},
+    {"key":"sing","reason":"Without audio or an audience it is hard to distinguish from talking.","duplicate_mapping":["conversation"]},
+    {"key":"whistle","reason":"Audio is the decisive cue; an empty-mouth body sheet is not reliable.","duplicate_mapping":["conversation"]},
+    {"key":"shiver","reason":"Micro vibration is too small and overlaps fear/freeze state cues.","duplicate_mapping":["freeze","emotion"]},
+    {"key":"blink","reason":"Natural blink is not a reliable canonical action without a light or target scene.","duplicate_mapping":["scene_only"]},
+    {"key":"peek","reason":"Needs a clear cover and target or collapses into hide or investigate; already reviewed.","duplicate_mapping":["hide","investigate"]},
+    {"key":"listen","reason":"Needs sound direction or a speaker; the hand-to-ear pose is not sufficiently distinct.","duplicate_mapping":["investigate"]},
+    {"key":"overhear","reason":"The difference from eavesdrop is event timing and accident, which needs editing/audio context.","duplicate_mapping":["eavesdrop","scene_only"]},
+    {"key":"whisper_to_ear","reason":"Needs a partner, ear proximity, and speech context; preserve as a scene label.","duplicate_mapping":["conversation","scene_only"]},
+    {"key":"hold_hands","reason":"Continuous partner hand contact overlaps hug/generic hold and needs two-person tracking.","duplicate_mapping":["hug","hold"]},
+    {"key":"protect","reason":"Requires a protected target and a threat direction; build as a composite scene first.","duplicate_mapping":["target_scene"]},
+    {"key":"catch","reason":"Requires a moving target and a timed hand contact; static props read as grasp or pick_up.","duplicate_mapping":["pick_up","target_scene"]},
+    {"key":"release","reason":"Requires a restraint and a target that becomes free; object-only release can read as drop.","duplicate_mapping":["drop","target_scene"]},
+    {"key":"surrender","reason":"Requires an opponent or threat plus a weapon or authority relationship.","duplicate_mapping":["target_scene"]},
+    {"key":"gasp","reason":"Needs visible face and a revealed target; otherwise it is only a surprise emotion.","duplicate_mapping":["emotion","scene_only"]},
+    {"key":"wince","reason":"Needs a visible pain source and face resolution; otherwise it is flinch.","duplicate_mapping":["flinch","scene_only"]},
+    {"key":"squint","reason":"Face micro-change needs a small target or bright light and a medium close view.","duplicate_mapping":["scene_only"]},
+    {"key":"shush","reason":"Needs a listener and a nearby sound/risk; finger-to-lips alone is ambiguous.","duplicate_mapping":["conversation","scene_only"]},
+    {"key":"argue","reason":"Alternating speech and conflict require two characters, voice, and before/after context.","duplicate_mapping":["conversation","scene_only"]},
+    {"key":"reconcile","reason":"Its meaning is the before/after relationship change, not one stable pose.","duplicate_mapping":["shake_hands","scene_only"]},
+    {"key":"apologize","reason":"A bowed head without the wronged partner and cause is just bow.","duplicate_mapping":["bow","scene_only"]},
+    {"key":"salute","reason":"Already represented by the Round 3 generated cycle and conflicts with the old investigate-like pose.","duplicate_mapping":["salute","investigate"]},
+    {"key":"prone","reason":"Already represented by the Round 3 generated cycle.","duplicate_mapping":["prone"]},
+    {"key":"stagger","reason":"Already represented by the Round 3 generated cycle.","duplicate_mapping":["stagger"]},
+    {"key":"wake","reason":"Already represented by the Round 3 generated cycle and is a state transition.","duplicate_mapping":["wake","stand"]},
+    {"key":"yawn","reason":"Already represented by the Round 3 generated cycle.","duplicate_mapping":["yawn"]},
+    {"key":"sneeze","reason":"Already represented by the Round 3 generated cycle.","duplicate_mapping":["sneeze"]}
+  ]
+}

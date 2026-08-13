@@ -1,0 +1,282 @@
+{
+  "round": 5,
+  "status": "researched",
+  "source": "five-agent vocabulary review",
+  "notes": [
+    "Existing actions were checked before selecting candidates.",
+    "shake_hands is excluded because it already exists as the social rescue action.",
+    "hesitate is excluded because it already exists in the reaction group.",
+    "MongoDB live vocabulary lookup was unavailable during one agent review; run a DB duplicate check before seeding."
+  ],
+  "recommended_first_batch": [
+    "plant_flag",
+    "put_on_crown",
+    "point_out",
+    "touch_probe",
+    "stack_stones"
+  ],
+  "candidates": [
+    {
+      "key": "plant_flag",
+      "ko": "깃발을 꽂다",
+      "agent": "prop_interactions/red_team",
+      "participants": 1,
+      "priority": "P0",
+      "score": 4.0,
+      "solo": true,
+      "visual_anchor": "large flagpole inserted into a marked ground point",
+      "needs": ["flag", "ground anchor"],
+      "risks": ["hand-pole contact", "pole-ground contact", "flag consistency"]
+    },
+    {
+      "key": "put_on_crown",
+      "ko": "왕관을 쓰다",
+      "agent": "prop_interactions/red_team",
+      "participants": 1,
+      "priority": "P0",
+      "score": 3.8,
+      "solo": true,
+      "visual_anchor": "crown moves from chest height to the head and remains there",
+      "needs": ["crown", "stable head anchor"],
+      "risks": ["hand-head-crown alignment", "face occlusion", "crown shape drift"]
+    },
+    {
+      "key": "point_out",
+      "ko": "가리키다",
+      "agent": "reaction_observation",
+      "participants": 1,
+      "priority": "P0",
+      "score": 4.2,
+      "solo": true,
+      "visual_anchor": "index finger and gaze stay locked on the same clue",
+      "needs": ["visible clue or danger target"],
+      "risks": ["can read as waving or beckoning", "target must remain in frame"]
+    },
+    {
+      "key": "touch_probe",
+      "ko": "만져보다",
+      "agent": "reaction_observation",
+      "participants": 1,
+      "priority": "P0",
+      "score": 4.0,
+      "solo": true,
+      "visual_anchor": "fingertips make brief contact without lifting the object",
+      "needs": ["wall mark, ice, stone, or key"],
+      "risks": ["can read as grabbing", "requires a medium shot for fingertip contact"]
+    },
+    {
+      "key": "stack_stones",
+      "ko": "돌을 쌓다",
+      "agent": "prop_interactions",
+      "participants": 1,
+      "priority": "P0",
+      "score": 3.8,
+      "solo": true,
+      "visual_anchor": "multiple stones are placed one above another and remain standing",
+      "needs": ["two or more stones", "flat ground"],
+      "risks": ["stone contact and occlusion", "final stable result must remain visible"]
+    },
+    {
+      "key": "hang_sign",
+      "ko": "표지판을 걸다",
+      "agent": "prop_interactions",
+      "participants": 1,
+      "priority": "P1",
+      "score": 3.5,
+      "solo": true,
+      "visual_anchor": "sign loop aligns with a hook, then the sign hangs after hands release",
+      "needs": ["sign", "hook or beam"],
+      "risks": ["depth alignment", "release moment", "swing must be subtle"]
+    },
+    {
+      "key": "tie_string",
+      "ko": "끈을 묶다",
+      "agent": "prop_interactions",
+      "participants": 1,
+      "priority": "P2",
+      "score": 2.8,
+      "solo": true,
+      "visual_anchor": "two ends cross, form a loop, and tighten into a visible knot",
+      "needs": ["thick rope", "post or ring"],
+      "risks": ["fine hand detail", "knot may disappear", "requires a close medium shot"]
+    },
+    {
+      "key": "sweep_floor",
+      "ko": "바닥을 쓸다",
+      "agent": "prop_interactions",
+      "participants": 1,
+      "priority": "P1",
+      "score": 3.3,
+      "solo": true,
+      "visual_anchor": "broom head stays on the floor while leaves gather to one side",
+      "needs": ["broom", "leaves or dust", "floor contact"],
+      "risks": ["broom endpoint drift", "dust movement may need a controlled effect"]
+    },
+    {
+      "key": "weave_through",
+      "ko": "누비다",
+      "agent": "terrain_traversal",
+      "participants": 1,
+      "priority": "P1",
+      "score": 3.5,
+      "solo": true,
+      "visual_anchor": "character moves through at least three fixed trees with visible side-to-side path",
+      "needs": ["three fixed obstacles", "clear destination"],
+      "risks": ["can read as ordinary walking", "obstacles must stay fixed across frames"]
+    },
+    {
+      "key": "swim",
+      "ko": "헤엄치다",
+      "agent": "terrain_traversal",
+      "participants": 1,
+      "priority": "P1",
+      "score": 3.4,
+      "solo": true,
+      "visual_anchor": "horizontal body, alternating arm strokes, and arrival at the opposite bank",
+      "needs": ["water surface", "opposite bank or rock"],
+      "risks": ["can read as wading or floating", "waterline and displacement must be clear"]
+    },
+    {
+      "key": "clamber_over",
+      "ko": "기어넘다",
+      "agent": "terrain_traversal",
+      "participants": 1,
+      "priority": "P2",
+      "score": 3.0,
+      "solo": true,
+      "visual_anchor": "hands and boots alternate across two or three low rubble levels",
+      "needs": ["low rubble", "stable landing surface"],
+      "risks": ["can read as climbing or crawling", "requires consistent hand and foot supports"]
+    },
+    {
+      "key": "vault_over",
+      "ko": "타넘다",
+      "agent": "terrain_traversal",
+      "participants": 1,
+      "priority": "P2",
+      "score": 2.9,
+      "solo": true,
+      "visual_anchor": "hands touch a low wall while both legs pass over to the far side",
+      "needs": ["low wall or gate debris", "visible far-side landing"],
+      "risks": ["can read as jumping or climbing", "hand-wall contact is fragile"]
+    },
+    {
+      "key": "dive",
+      "ko": "잠수하다",
+      "agent": "terrain_traversal",
+      "participants": 1,
+      "priority": "P3",
+      "score": 2.5,
+      "solo": true,
+      "visual_anchor": "head-first entry through a visible water surface followed by underwater alignment",
+      "needs": ["water surface", "underwater depth cue"],
+      "risks": ["can read as jumping or falling", "water mask and depth continuity"]
+    },
+    {
+      "key": "present_gift",
+      "ko": "선물하다",
+      "agent": "social_rescue",
+      "participants": 2,
+      "priority": "P1",
+      "score": 3.7,
+      "solo": false,
+      "visual_anchor": "large ribboned gift moves from giver's two hands to receiver's hands",
+      "needs": ["giver", "receiver", "large gift"],
+      "risks": ["two-person hand alignment", "can read as generic handing over"]
+    },
+    {
+      "key": "shoulder_link",
+      "ko": "어깨동무하다",
+      "agent": "social_rescue",
+      "participants": 2,
+      "priority": "P1",
+      "score": 3.8,
+      "solo": false,
+      "visual_anchor": "one arm rests around the partner's shoulder while both face the same direction",
+      "needs": ["two characters", "aligned standing pose"],
+      "risks": ["arm can look like choking", "character scale and shoulder height must match"]
+    },
+    {
+      "key": "apologize",
+      "ko": "사과하다",
+      "agent": "social_rescue",
+      "participants": 2,
+      "priority": "P2",
+      "score": 2.9,
+      "solo": false,
+      "visual_anchor": "one character makes a clear 30-45 degree bow and waits for the other's softened response",
+      "needs": ["two characters", "facial reaction"],
+      "risks": ["can read as greeting", "requires expression and partner reaction"]
+    },
+    {
+      "key": "warn",
+      "ko": "경고하다",
+      "agent": "social_rescue",
+      "participants": 2,
+      "priority": "P2",
+      "score": 3.3,
+      "solo": false,
+      "visual_anchor": "open palm faces the approaching partner and the partner stops",
+      "needs": ["approaching partner", "visible danger or direction"],
+      "risks": ["can read as waving", "requires a clear stop reaction"]
+    },
+    {
+      "key": "flinch",
+      "ko": "움찔하다",
+      "agent": "reaction_observation",
+      "participants": 1,
+      "priority": "P1",
+      "score": 3.4,
+      "solo": true,
+      "visual_anchor": "brief shoulder and head jolt, followed by a cautious look toward the stimulus",
+      "needs": ["falling twig, sudden lamp, or moving door"],
+      "risks": ["can read as jumping", "timed stimulus must be visible"]
+    },
+    {
+      "key": "nod_confirm",
+      "ko": "끄덕이다",
+      "agent": "reaction_observation",
+      "participants": 1,
+      "priority": "P1",
+      "score": 3.0,
+      "solo": true,
+      "visual_anchor": "two small deliberate nods after looking at a clue",
+      "needs": ["map, rune, key, or footprint clue"],
+      "risks": ["can read as greeting or sleepiness", "needs a visible clue"]
+    },
+    {
+      "key": "look_into_mirror",
+      "ko": "마법 거울을 들여다보다",
+      "agent": "red_team",
+      "participants": 1,
+      "priority": "P3",
+      "score": 3.0,
+      "solo": true,
+      "visual_anchor": "character leans toward a framed mirror with synchronized reflection",
+      "needs": ["mirror", "synchronized reflection"],
+      "risks": ["reflection drift", "overlaps with investigate", "scene-composite only"]
+    }
+  ],
+  "deferred_candidates": [
+    {
+      "key": "feed_dragon",
+      "ko": "용에게 먹이를 주다",
+      "reason": "high two-entity mouth, scale, gaze, and hand-food alignment risk"
+    },
+    {
+      "key": "sprinkle_fairy_dust",
+      "ko": "요정 가루를 뿌리다",
+      "reason": "meaning depends too heavily on particles and target reaction"
+    },
+    {
+      "key": "shake_hands",
+      "ko": "악수하다",
+      "reason": "duplicate of existing shake_hands asset"
+    },
+    {
+      "key": "hesitate",
+      "ko": "망설이다",
+      "reason": "duplicate of existing hesitate asset"
+    }
+  ]
+}

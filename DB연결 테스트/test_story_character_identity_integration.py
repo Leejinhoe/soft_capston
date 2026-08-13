@@ -3,7 +3,7 @@ import json
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -277,6 +277,25 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_legacy_story_without_cast_is_migrated_on_first_use(self):
+        with (
+            patch.object(main, "stories_collection", self.stories),
+            patch.object(
+                main,
+                "character_profiles_collection",
+                self.profiles,
+            ),
+        ):
+            migrated_cast = await main.load_story_cast(self.story_id)
+
+        self.assertEqual(len(migrated_cast), 1)
+        self.assertEqual(migrated_cast[0]["role"], "hero")
+        self.assertTrue(migrated_cast[0]["character_key"])
+        saved_fields = self.stories.update_calls[0][1]["$set"]
+        self.assertEqual(saved_fields["characters"], {"hero": "Legacy story hero"})
+        self.assertTrue(saved_fields["character_identity_locked"])
+        self.assertEqual(saved_fields["schema_version"], 2)
+
     async def test_main_save_and_load_lock_real_function_flow(self):
         payload = main.StoryCharactersSchema(
             characters=self.characters,
@@ -439,6 +458,194 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(selected)
         self.assertEqual(self.stories.find_queries, [])
+
+    async def test_media_generation_rejects_story_without_locked_cast(self):
+        with (
+            patch.object(main, "load_story_cast", return_value=[]),
+            patch.object(main, "load_visual_context", AsyncMock(return_value={})),
+        ):
+            with self.assertRaises(main.HfMediaError) as raised:
+                await main.generate_and_store_backend_media(
+                    story_id=str(ObjectId()),
+                    story_text="Arin walks toward the castle.",
+                    include_video=True,
+                )
+
+        self.assertIn("character selection", str(raised.exception).lower())
+
+    async def test_character_scene_without_profile_never_uses_flux_fallback(self):
+        generate_flux = AsyncMock()
+        with (
+            patch.object(main, "load_story_cast", return_value=[]),
+            patch.object(main, "load_visual_context", AsyncMock(return_value={})),
+            patch.object(main, "generate_hf_fairytale_image", generate_flux),
+        ):
+            with self.assertRaises(main.HfMediaError) as raised:
+                await main.generate_and_store_backend_media(
+                    story_text="A child walks toward the castle.",
+                    include_video=False,
+                )
+
+        self.assertIn("selected character profile", str(raised.exception).lower())
+        generate_flux.assert_not_awaited()
+
+    async def test_profile_without_scene_asset_never_uses_flux_fallback(self):
+        selected_cast = [
+            {
+                "role": "hero",
+                "name": "Arin",
+                "character_key": "female_04",
+                "selection_source": "user",
+                "source_description": "Hero 'Arin'",
+            }
+        ]
+        generate_flux = AsyncMock()
+        with (
+            patch.object(main, "load_story_cast", return_value=selected_cast),
+            patch.object(main, "load_visual_context", AsyncMock(return_value={})),
+            patch.object(
+                main,
+                "load_active_character_profile",
+                AsyncMock(
+                    return_value={
+                        "character_key": "female_04",
+                        "name": "Selected Hero",
+                        "assets": [],
+                    }
+                ),
+            ),
+            patch.object(main, "generate_hf_fairytale_image", generate_flux),
+        ):
+            with self.assertRaises(main.HfMediaError) as raised:
+                await main.generate_and_store_backend_media(
+                    story_id=str(ObjectId()),
+                    story_text="Arin walks toward the castle.",
+                    include_video=False,
+                )
+
+        self.assertIn("preserve character identity", str(raised.exception).lower())
+        generate_flux.assert_not_awaited()
+
+    async def test_media_generation_uses_the_locked_user_selected_profile(self):
+        selected_profile = {
+            "character_key": "female_04",
+            "name": "Selected Hero",
+            "description": "The profile chosen in the story start screen.",
+            "style_prompt": "storybook",
+            "assets": [
+                {
+                    "pose": "walking",
+                    "emotion": "determined",
+                    "image_file_id": "selected-walking-file",
+                    "image_url": "/api/media/images/selected-walking-file",
+                    "scene_keywords": ["walk"],
+                },
+                {
+                    "pose": "motion-sheet",
+                    "emotion": "dynamic",
+                    "quality_tier": "video_motion_sheet_v3",
+                    "image_file_id": "selected-motion-file",
+                    "image_url": "/api/media/images/selected-motion-file",
+                },
+                {
+                    "pose": "target-journey-sheet",
+                    "emotion": "determined",
+                    "quality_tier": "video_target_journey_sheet_v4",
+                    "image_file_id": "selected-target-motion-file",
+                    "image_url": "/api/media/images/selected-target-motion-file",
+                },
+            ],
+        }
+        selected_cast = [
+            {
+                "role": "hero",
+                "name": "Arin",
+                "character_key": "female_04",
+                "selection_source": "user",
+                "source_description": "Hero 'Arin'",
+            }
+        ]
+        composite_result = {
+            "image_bytes": b"image",
+            "background_bytes": b"background",
+            "character_bytes": b"selected-character-body",
+            "secondary_character_bytes": None,
+            "content_type": "image/png",
+            "provider": "local-composite",
+            "model": "storybook-asset-compositor-v1",
+            "inference_provider": "local",
+            "attempted_providers": [],
+            "image_mode": "local_composite",
+            "background_key": "fantasy_castle",
+            "background_source": "bundled_asset",
+        }
+        generated_video = {
+            "video_bytes": b"video",
+            "content_type": "video/mp4",
+            "provider": "local-animation",
+            "model": "storybook-layered-action-v2",
+            "parameters": {
+                "animation_mode": "layered_action",
+                "motion_plan": {"action": "journey"},
+            },
+        }
+        load_profile = AsyncMock(return_value=selected_profile)
+        generate_video = AsyncMock(return_value=generated_video)
+        upload_media = AsyncMock(
+            side_effect=[
+                {"file_id": "image-file", "url": "/api/media/images/image-file"},
+                {"file_id": "video-file", "url": "/api/media/videos/video-file"},
+            ]
+        )
+
+        with (
+            patch.object(main, "load_story_cast", return_value=selected_cast),
+            patch.object(main, "load_visual_context", AsyncMock(return_value={})),
+            patch.object(main, "load_active_character_profile", load_profile),
+            patch.object(
+                main,
+                "generate_composite_scene",
+                AsyncMock(return_value=composite_result),
+            ),
+            patch.object(main, "generate_hf_fairytale_video", generate_video),
+            patch.object(
+                main,
+                "download_gridfs_file",
+                AsyncMock(
+                    side_effect=[
+                        b"selected-motion-sheet",
+                        b"selected-target-motion-sheet",
+                    ]
+                ),
+            ),
+            patch.object(main, "upload_generated_media_file", upload_media),
+        ):
+            result = await main.generate_and_store_backend_media(
+                story_id=str(ObjectId()),
+                story_text="Arin walks toward the castle.",
+                include_video=True,
+            )
+
+        self.assertEqual(load_profile.await_args.args[0], "female_04")
+        self.assertEqual(result["metadata"]["character_key"], "female_04")
+        self.assertEqual(
+            result["metadata"]["character_selection_source"],
+            "user",
+        )
+        motion_context = generate_video.await_args.kwargs["motion_context"]
+        self.assertEqual(
+            motion_context["character_bytes"],
+            b"selected-character-body",
+        )
+        self.assertEqual(
+            motion_context["character_motion_sheet_bytes"],
+            b"selected-motion-sheet",
+        )
+        self.assertEqual(
+            motion_context["character_target_journey_sheet_bytes"],
+            b"selected-target-motion-sheet",
+        )
+        self.assertEqual(motion_context["character_key"], "female_04")
 
 
 class StoryCastSelectionEdgeCaseTests(unittest.TestCase):
