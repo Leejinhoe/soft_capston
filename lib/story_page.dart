@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
 import 'main.dart';
+import 'character_chat_page.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'models/story_video.dart';
@@ -250,6 +251,18 @@ class _StoryPageState extends State<StoryPage> {
         SnackBar(
           content: Text(cleaned.isEmpty ? '읽을 내용이 아직 없어요.' : '낭독을 준비하지 못했어요.'),
           backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
+    if (_recordedVoiceWav == null) {
+      if (!mounted) return;
+      setState(() {
+        _ttsStatus = '내 목소리로 읽으려면 먼저 3초 이상 녹음해 주세요';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('먼저 "내 목소리 녹음"으로 3초 이상 녹음해 주세요.'),
         ),
       );
       return;
@@ -513,6 +526,17 @@ class _StoryPageState extends State<StoryPage> {
                 ),
               ),
             ),
+          IconButton(
+            tooltip: '등장인물과 대화',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CharacterChatPage(story: story),
+              ),
+            ),
+            icon: const Icon(Icons.forum_outlined),
+            color: AppColors.p300,
+          ),
           const SizedBox(width: 8),
           IconButton(
             onPressed: () async {

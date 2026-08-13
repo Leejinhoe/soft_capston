@@ -5,6 +5,7 @@ import 'community_page.dart';
 import 'create_page.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
+import 'notice_page.dart';
 import 'profile_page.dart';
 import 'psych_page.dart';
 import 'story_page.dart';
@@ -375,17 +376,30 @@ class _HomePageState extends State<HomePage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () => widget.onSelectTab(5),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF140028),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: Colors.white10),
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: '공지사항',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const NoticePage()),
+                        ),
+                        icon: const Icon(Icons.notifications_none_rounded,
+                            color: Colors.white),
                       ),
-                      child: const Icon(Icons.person, color: Colors.white),
-                    ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: () => widget.onSelectTab(5),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF140028),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: const Icon(Icons.person, color: Colors.white),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -6,6 +6,7 @@ import 'models/admin_model.dart';
 import 'models/app_state.dart';
 import 'models/media_readiness.dart';
 import 'models/moderation_model.dart';
+import 'models/notice_model.dart';
 import 'models/story_model.dart';
 import 'services/db_service.dart';
 import 'widgets/media_readiness_widget.dart';
@@ -31,7 +32,7 @@ class _AdminPageState extends State<AdminPage> {
   int _selectedTab = 0;
   String _query = '';
 
-  final _tabs = const ['개요', '회원', '동화', '게시판', '신고', '경고', '단어장'];
+  final _tabs = const ['개요', '회원', '동화', '게시판', '신고', '경고', '공지', '단어장'];
 
   @override
   void initState() {
@@ -366,6 +367,7 @@ class _AdminPageState extends State<AdminPage> {
       3 => _buildPosts(dashboard.communityPosts),
       4 => _buildReports(),
       5 => _buildWarnings(dashboard.users),
+      6 => _buildNotices(dashboard.notices),
       _ => _buildVocabularies(dashboard.vocabularies),
     };
   }
@@ -402,6 +404,7 @@ class _AdminPageState extends State<AdminPage> {
                   stats.vocabularyCount,
                   Icons.menu_book_rounded,
                 ),
+                _buildStatCard('공지', stats.noticeCount, Icons.campaign_rounded),
               ],
             );
           },
@@ -586,13 +589,13 @@ class _AdminPageState extends State<AdminPage> {
           onPressed: isAdmin
               ? null
               : () => _runAdminAction(
-                  title: '회원 삭제',
-                  message: '${user.nickname} 회원과 연결된 동화/단어장/게시글을 삭제할까요?',
-                  action: () => DbService.deleteAdminUser(
-                    adminAccountId: widget.adminAccountId,
-                    userId: user.id,
+                    title: '회원 삭제',
+                    message: '${user.nickname} 회원과 연결된 동화/단어장/게시글을 삭제할까요?',
+                    action: () => DbService.deleteAdminUser(
+                      adminAccountId: widget.adminAccountId,
+                      userId: user.id,
+                    ),
                   ),
-                ),
           icon: const Icon(Icons.delete_outline_rounded),
         ),
       ],
@@ -709,6 +712,215 @@ class _AdminPageState extends State<AdminPage> {
         ),
       ],
     );
+  }
+
+  Widget _buildNotices(List<Notice> notices) {
+    final filtered = notices.where((notice) {
+      final haystack = '${notice.title} ${notice.content}'.toLowerCase();
+      return haystack.contains(_query.toLowerCase());
+    }).toList();
+
+    return _buildAdminPanel(
+      title: '공지사항 관리',
+      subtitle: '공개 공지 ${filtered.length}개 · 메일은 회원별 개별 수신으로 발송됩니다.',
+      child: Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => _showNoticeEditor(),
+              icon: const Icon(Icons.add_alert_rounded),
+              label: const Text('새 공지 작성'),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildListOrEmpty(filtered, _buildNoticeCard),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoticeCard(Notice notice) {
+    final sending = {'queued', 'sending'}.contains(notice.emailDeliveryStatus);
+    return _buildItemCard(
+      leading:
+          notice.isPinned ? Icons.push_pin_rounded : Icons.campaign_rounded,
+      title: notice.title,
+      subtitle: notice.content,
+      badges: [
+        notice.isPinned ? '상단 고정' : '일반 공지',
+        '게시 ${_formatDate(notice.publishedAt ?? notice.createdAt)}',
+        if (notice.emailRequested)
+          _noticeEmailStatus(notice.emailDeliveryStatus),
+        if (notice.emailRequested)
+          '메일 ${notice.emailSentCount}/${notice.emailRecipientCount}',
+        if (notice.emailFailedCount > 0) '실패 ${notice.emailFailedCount}',
+      ],
+      actions: [
+        IconButton(
+          tooltip: '공지 수정',
+          onPressed: () => _showNoticeEditor(existing: notice),
+          icon: const Icon(Icons.edit_outlined),
+        ),
+        IconButton(
+          tooltip: '전체 회원에게 이메일 발송',
+          onPressed: sending
+              ? null
+              : () => _runAdminAction(
+                    title: '공지 이메일 발송',
+                    message: '"${notice.title}" 공지를 이메일 등록 회원에게 개별 발송할까요?',
+                    action: () => DbService.sendAdminNoticeEmail(
+                      adminAccountId: widget.adminAccountId,
+                      noticeId: notice.id,
+                    ),
+                  ),
+          icon: const Icon(Icons.mark_email_read_outlined),
+        ),
+        IconButton(
+          tooltip: '공지 삭제',
+          onPressed: () => _runAdminAction(
+            title: '공지사항 삭제',
+            message: '"${notice.title}" 공지사항을 삭제할까요?',
+            action: () => DbService.deleteAdminNotice(
+              adminAccountId: widget.adminAccountId,
+              noticeId: notice.id,
+            ),
+          ),
+          icon: const Icon(Icons.delete_outline_rounded),
+        ),
+      ],
+    );
+  }
+
+  String _noticeEmailStatus(String status) => switch (status) {
+        'queued' => '메일 대기 중',
+        'sending' => '메일 발송 중',
+        'completed' => '메일 발송 완료',
+        'completed_with_failures' => '일부 메일 실패',
+        'failed' => '메일 발송 실패',
+        _ => '메일 미발송',
+      };
+
+  Future<void> _showNoticeEditor({Notice? existing}) async {
+    final titleController = TextEditingController(text: existing?.title ?? '');
+    final contentController =
+        TextEditingController(text: existing?.content ?? '');
+    var isPinned = existing?.isPinned ?? false;
+    var sendEmail = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: Text(existing == null ? '새 공지 작성' : '공지 수정'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleController,
+                    maxLength: 120,
+                    decoration: const InputDecoration(labelText: '제목'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: contentController,
+                    maxLength: 5000,
+                    minLines: 6,
+                    maxLines: 12,
+                    decoration: const InputDecoration(
+                      labelText: '내용',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: isPinned,
+                    onChanged: (value) =>
+                        setDialogState(() => isPinned = value),
+                    title: const Text('상단 고정'),
+                  ),
+                  if (existing == null)
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: sendEmail,
+                      onChanged: (value) =>
+                          setDialogState(() => sendEmail = value),
+                      title: const Text('전체 회원에게 이메일 발송'),
+                      subtitle: const Text(
+                        '이메일이 등록된 회원에게 한 명씩 개별 발송합니다.',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final title = titleController.text.trim();
+                final content = contentController.text.trim();
+                if (title.length < 2 || content.length < 2) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('제목과 내용을 2글자 이상 입력해 주세요.')),
+                  );
+                  return;
+                }
+                try {
+                  if (existing == null) {
+                    await DbService.createAdminNotice(
+                      adminAccountId: widget.adminAccountId,
+                      title: title,
+                      content: content,
+                      isPinned: isPinned,
+                      sendEmail: sendEmail,
+                    );
+                  } else {
+                    await DbService.updateAdminNotice(
+                      adminAccountId: widget.adminAccountId,
+                      noticeId: existing.id,
+                      title: title,
+                      content: content,
+                      isPinned: isPinned,
+                    );
+                  }
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  await _loadDashboard();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        sendEmail && existing == null
+                            ? '공지 등록 후 이메일 발송을 시작했습니다.'
+                            : '공지사항이 저장되었습니다.',
+                      ),
+                    ),
+                  );
+                } catch (error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(
+                            error.toString().replaceFirst('Exception: ', ''))),
+                  );
+                }
+              },
+              child: Text(existing == null ? '등록' : '저장'),
+            ),
+          ],
+        ),
+      ),
+    );
+    titleController.dispose();
+    contentController.dispose();
   }
 
   Widget _buildReports() {
@@ -950,26 +1162,26 @@ class _AdminPageState extends State<AdminPage> {
   }
 
   String _targetTypeLabel(String value) => switch (value) {
-    'post' => '게시물',
-    'comment' => '댓글',
-    'user' => '사용자',
-    _ => value,
-  };
+        'post' => '게시물',
+        'comment' => '댓글',
+        'user' => '사용자',
+        _ => value,
+      };
 
   String _reportStatusLabel(String value) => switch (value) {
-    'pending' => '대기',
-    'reviewed' => '검토됨',
-    'resolved' => '처리됨',
-    'dismissed' => '기각',
-    _ => value,
-  };
+        'pending' => '대기',
+        'reviewed' => '검토됨',
+        'resolved' => '처리됨',
+        'dismissed' => '기각',
+        _ => value,
+      };
 
   String _severityLabel(String value) => switch (value) {
-    'notice' => '안내',
-    'caution' => '주의',
-    'final' => '최종 경고',
-    _ => value,
-  };
+        'notice' => '안내',
+        'caution' => '주의',
+        'final' => '최종 경고',
+        _ => value,
+      };
 
   Widget _buildVocabularies(List<VocabWord> words) {
     final filtered = words.where((word) {
@@ -1004,13 +1216,13 @@ class _AdminPageState extends State<AdminPage> {
           onPressed: word.id == null
               ? null
               : () => _runAdminAction(
-                  title: '단어 삭제',
-                  message: '"${word.hard}" 단어를 삭제할까요?',
-                  action: () => DbService.deleteAdminVocabulary(
-                    adminAccountId: widget.adminAccountId,
-                    vocabId: word.id!,
+                    title: '단어 삭제',
+                    message: '"${word.hard}" 단어를 삭제할까요?',
+                    action: () => DbService.deleteAdminVocabulary(
+                      adminAccountId: widget.adminAccountId,
+                      vocabId: word.id!,
+                    ),
                   ),
-                ),
           icon: const Icon(Icons.delete_outline_rounded),
         ),
       ],
@@ -1295,18 +1507,16 @@ class _AdminPageState extends State<AdminPage> {
     final dashboard = _dashboard;
     final userStories =
         dashboard?.stories.where((story) => story.userId == user.id).toList() ??
-        <AdminStory>[];
+            <AdminStory>[];
     final accountId = user.accountId.trim();
-    final userPosts =
-        dashboard?.communityPosts.where((post) {
+    final userPosts = dashboard?.communityPosts.where((post) {
           if (accountId.isNotEmpty && post.authorAccountId == accountId) {
             return true;
           }
           return post.authorName == user.nickname;
         }).toList() ??
         <AdminCommunityPost>[];
-    final userWords =
-        dashboard?.vocabularies
+    final userWords = dashboard?.vocabularies
             .where((word) => word.userId == user.id)
             .toList() ??
         <VocabWord>[];

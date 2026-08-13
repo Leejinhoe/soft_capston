@@ -39,6 +39,8 @@ class AppState extends ChangeNotifier {
 
   PsychResult? psychResult;
   bool isPsychLoading = false;
+  String? psychAnalysisNotice;
+  String? _psychResultStoryIdentity;
 
   bool get hasSignedInUser =>
       (currentAccountId != null && currentAccountId!.isNotEmpty) ||
@@ -50,6 +52,14 @@ class AppState extends ChangeNotifier {
     }
     if (completedStories.isNotEmpty) return completedStories.first;
     return null;
+  }
+
+  bool canAnalyzeStory(StorySession story) =>
+      story.hasReachedEnding && !isLoading;
+
+  PsychResult? psychResultFor(StorySession story) {
+    if (_psychResultStoryIdentity != _storyIdentity(story)) return null;
+    return psychResult;
   }
 
   String get currentDisplayName {
@@ -117,7 +127,7 @@ class AppState extends ChangeNotifier {
     currentStory = null;
     completedStories = [];
     savedVocabulary = [];
-    psychResult = null;
+    _clearPsychResult();
     userDataErrorMessage = null;
     notifyListeners();
   }
@@ -307,21 +317,32 @@ class AppState extends ChangeNotifier {
   Future<void> loadPsychAnalysis() async {
     final story = activePsychStory;
     if (story == null) return;
-    if (_isTemporaryStory(story) || story.allChoicesMade.isEmpty) {
-      psychResult = _buildPsychResultFromStory(story);
+    if (!canAnalyzeStory(story)) {
+      psychAnalysisNotice = '모든 선택을 마치고 엔딩을 본 뒤 분석할 수 있어요.';
       notifyListeners();
       return;
     }
     isPsychLoading = true;
+    psychAnalysisNotice = null;
+    psychResult = null;
+    _psychResultStoryIdentity = null;
     notifyListeners();
     try {
       final data = await ApiService.analyzePsychology(
         storyId: story.storyId,
+        storyTitle: story.initialPrompt,
         choicesMade: story.allChoicesMade,
+        choiceEmotions: story.choiceEmotionHistory
+            .map((record) => record.toJson())
+            .toList(),
+        completed: true,
       );
       psychResult = PsychResult.fromJson(data);
+      _psychResultStoryIdentity = _storyIdentity(story);
     } catch (e) {
       psychResult = _buildPsychResultFromStory(story);
+      _psychResultStoryIdentity = _storyIdentity(story);
+      psychAnalysisNotice = 'AI 서버에 연결하지 못해 저장된 선택과 감정 점수로 기기에서 분석했어요.';
       errorMessage = null;
     } finally {
       isPsychLoading = false;
@@ -336,7 +357,7 @@ class AppState extends ChangeNotifier {
         (item) => _storyIdentity(item) == _storyIdentity(story),
       );
       completedStories.insert(0, story);
-      psychResult = _buildPsychResultFromStory(story);
+      _clearPsychResult();
     }
     currentStory = null;
     notifyListeners();
@@ -344,7 +365,7 @@ class AppState extends ChangeNotifier {
 
   void resetCurrentStory() {
     currentStory = null;
-    psychResult = null;
+    _clearPsychResult();
     errorMessage = null;
     notifyListeners();
   }
@@ -556,6 +577,12 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  void _clearPsychResult() {
+    psychResult = null;
+    psychAnalysisNotice = null;
+    _psychResultStoryIdentity = null;
+  }
+
   Map<String, String> _parseStoryCharacters(Map<String, dynamic> data) {
     dynamic raw = data['characters'] ?? data['story_characters'];
     final storyPlan = data['story_plan'];
@@ -656,6 +683,8 @@ class AppState extends ChangeNotifier {
       stepNumber: chapter.chapter,
       storyText: chapter.text,
       choiceMade: chapter.choiceMade,
+      selectedChoiceEmotion: chapter.selectedChoiceEmotion?.toJson(),
+      storyEmotion: chapter.storyEmotion?.toJson(),
       imageUrl: chapter.imageUrl,
       videoUrl: chapter.videoUrl,
     );
