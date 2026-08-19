@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
@@ -27,13 +28,12 @@ class StoryStreamUnavailableException implements Exception {
 }
 
 class ApiService {
-  static const String _definedBaseUrl =
-      String.fromEnvironment('AI_API_BASE_URL');
-  static const String _legacyDefinedBaseUrl =
-      String.fromEnvironment('STORY_API_BASE_URL');
-  static const String _fallbackBaseUrl =
-      'https://restaurant-reward-himself-vbulletin.trycloudflare.com';
-
+  static const String _definedBaseUrl = String.fromEnvironment(
+    'AI_API_BASE_URL',
+  );
+  static const String _legacyDefinedBaseUrl = String.fromEnvironment(
+    'STORY_API_BASE_URL',
+  );
   static String get baseUrl {
     final defined = _definedBaseUrl.trim();
     if (defined.isNotEmpty) return _withoutTrailingSlash(defined);
@@ -43,13 +43,13 @@ class ApiService {
 
     final configured = dotenv.isInitialized
         ? dotenv.env['AI_API_BASE_URL']?.trim() ??
-            dotenv.env['STORY_API_BASE_URL']?.trim() ??
-            dotenv.env['LLM_API_BASE_URL']?.trim() ??
-            ''
+              dotenv.env['STORY_API_BASE_URL']?.trim() ??
+              dotenv.env['LLM_API_BASE_URL']?.trim() ??
+              ''
         : '';
     if (configured.isNotEmpty) return _withoutTrailingSlash(configured);
 
-    return _fallbackBaseUrl;
+    throw StateError('AI_API_BASE_URL이 설정되지 않았습니다. 프로젝트 루트의 .env를 확인하세요.');
   }
 
   static String _withoutTrailingSlash(String value) =>
@@ -73,6 +73,70 @@ class ApiService {
     return '$fallback (${response.statusCode})';
   }
 
+  static const List<String> _safeFallbackChoices = [
+    '주변의 단서를 자세히 살펴본다',
+    '숲속 친구에게 도움을 청한다',
+    '빛나는 길을 따라 조심스럽게 나아간다',
+  ];
+
+  static bool _isUsableChoice(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    final lower = text.toLowerCase();
+    const blocked = [
+      'javascript',
+      'typescript',
+      'python',
+      'codeblock',
+      'description',
+      'language',
+      'choices',
+      'undefined',
+      'null',
+    ];
+    return text.length >= 4 &&
+        text.length <= 40 &&
+        RegExp(r'[가-힣]').hasMatch(text) &&
+        !blocked.any(lower.contains) &&
+        !RegExp(r'[{}\[\]`:]').hasMatch(text);
+  }
+
+  static Map<String, dynamic> _normalizeStoryResponse(dynamic decoded) {
+    final result = Map<String, dynamic>.from(decoded as Map);
+    final chapter = int.tryParse(result['chapter']?.toString() ?? '');
+    final completed =
+        result['completed'] == true || (chapter != null && chapter >= 8);
+    if (completed) {
+      // An eight-stage server ends with no next choices. Do not replace that
+      // intentional empty list with offline fallback choices.
+      result['choices'] = const <String>[];
+      result['choice_emotions'] = const <dynamic>[];
+      return result;
+    }
+    final rawChoices = result['choices'] as List? ?? const [];
+    final rawEmotions = result['choice_emotions'] as List? ?? const [];
+    final choices = <String>[];
+    final emotions = <dynamic>[];
+
+    for (var index = 0; index < rawChoices.length; index++) {
+      final choice = rawChoices[index];
+      if (!_isUsableChoice(choice)) continue;
+      final text = choice.toString().trim();
+      if (choices.contains(text)) continue;
+      choices.add(text);
+      if (index < rawEmotions.length) emotions.add(rawEmotions[index]);
+      if (choices.length == 3) break;
+    }
+
+    if (choices.length < 3) {
+      result['choices'] = _safeFallbackChoices;
+      result['choice_emotions'] = const [];
+    } else {
+      result['choices'] = choices;
+      result['choice_emotions'] = emotions;
+    }
+    return result;
+  }
+
   static Future<Map<String, dynamic>> startStory({
     required String genre,
     required String age,
@@ -92,7 +156,9 @@ class ApiService {
         .timeout(const Duration(seconds: 600));
 
     if (response.statusCode == 200) {
-      return json.decode(utf8.decode(response.bodyBytes));
+      return _normalizeStoryResponse(
+        json.decode(utf8.decode(response.bodyBytes)),
+      );
     }
     throw Exception('동화 생성 실패: ${response.statusCode}');
   }
@@ -103,6 +169,7 @@ class ApiService {
     required String choice,
     required String genre,
     required String age,
+    String? runtimeState,
   }) async {
     final response = await http
         .post(
@@ -114,15 +181,46 @@ class ApiService {
             'choice': choice,
             'genre': genre,
             'age': age,
+            if (runtimeState != null && runtimeState.trim().isNotEmpty)
+              'runtime_state': runtimeState,
             'include_image': false,
           }),
         )
         .timeout(const Duration(seconds: 600));
 
     if (response.statusCode == 200) {
-      return json.decode(utf8.decode(response.bodyBytes));
+      return _normalizeStoryResponse(
+        json.decode(utf8.decode(response.bodyBytes)),
+      );
     }
     throw Exception('이어쓰기 실패: ${response.statusCode}');
+  }
+
+  /// Converts a Flutter-recorded WAV to Korean text on the Colab GPU.
+  static Future<String> transcribeKoreanSpeech(Uint8List wavBytes) async {
+    if (wavBytes.length < 800) {
+      throw const FormatException('녹음이 너무 짧아요. 다시 말씀해 주세요.');
+    }
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/stt'))
+      ..fields['language'] = 'ko'
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'audio',
+          wavBytes,
+          filename: 'character-chat.wav',
+        ),
+      );
+    final streamed = await request.send().timeout(const Duration(seconds: 120));
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode != 200) {
+      throw Exception(_responseError(response, '음성을 글자로 바꾸지 못했어요'));
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    final text = decoded is Map ? decoded['text']?.toString().trim() ?? '' : '';
+    if (text.isEmpty) {
+      throw const FormatException('말한 내용을 알아듣지 못했어요. 조금 더 또렷하게 말씀해 주세요.');
+    }
+    return text;
   }
 
   static Future<Map<String, dynamic>> analyzePsychology({
@@ -218,8 +316,9 @@ class ApiService {
             'age': age,
             'user_name': userName,
             'character': character.toJson(),
-            'messages':
-                recentMessages.map((message) => message.toJson()).toList(),
+            'messages': recentMessages
+                .map((message) => message.toJson())
+                .toList(),
             'user_message': userMessage,
           }),
         )

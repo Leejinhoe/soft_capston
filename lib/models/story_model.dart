@@ -27,12 +27,14 @@ class VocabWord {
       id: json['id']?.toString(),
       userId: json['user_id']?.toString(),
       originStoryId: json['origin_story_id']?.toString(),
-      sourceStoryTitle: json['source_story_title']?.toString() ??
+      sourceStoryTitle:
+          json['source_story_title']?.toString() ??
           json['origin_story_title']?.toString(),
       hard: json['hard']?.toString() ?? json['word']?.toString() ?? '',
       easy: json['easy']?.toString() ?? meaning.toString(),
       definition: meaning.toString(),
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.tryParse(json['saved_at']?.toString() ?? ''),
     );
   }
@@ -83,11 +85,11 @@ class EmotionScoreItem {
   }
 
   Map<String, dynamic> toJson() => {
-        'label_index': labelIndex,
-        'label': label,
-        'label_display': labelDisplay,
-        'score': score,
-      };
+    'label_index': labelIndex,
+    'label': label,
+    'label_display': labelDisplay,
+    'score': score,
+  };
 }
 
 class EmotionAnalysis {
@@ -149,19 +151,19 @@ class EmotionAnalysis {
   }
 
   Map<String, dynamic> toJson() => {
-        'emotion_label_source': emotionLabelSource,
-        'emotion_labels_are_generic': emotionLabelsAreGeneric,
-        'primary_emotion_index': primaryEmotionIndex,
-        'primary_emotion': primaryEmotion,
-        'primary_emotion_display': primaryEmotionDisplay,
-        'primary_score': primaryScore,
-        'top_emotions': topEmotions.map((item) => item.toJson()).toList(),
-        'active_emotions': activeEmotions.map((item) => item.toJson()).toList(),
-        'scores': scores,
-        'scores_by_index': scoresByIndex.map(
-          (key, value) => MapEntry(key.toString(), value),
-        ),
-      };
+    'emotion_label_source': emotionLabelSource,
+    'emotion_labels_are_generic': emotionLabelsAreGeneric,
+    'primary_emotion_index': primaryEmotionIndex,
+    'primary_emotion': primaryEmotion,
+    'primary_emotion_display': primaryEmotionDisplay,
+    'primary_score': primaryScore,
+    'top_emotions': topEmotions.map((item) => item.toJson()).toList(),
+    'active_emotions': activeEmotions.map((item) => item.toJson()).toList(),
+    'scores': scores,
+    'scores_by_index': scoresByIndex.map(
+      (key, value) => MapEntry(key.toString(), value),
+    ),
+  };
 }
 
 class StoryChoiceEmotion {
@@ -184,7 +186,7 @@ class StoryChoiceEmotion {
       'primary_score': analysis?.primaryScore ?? 0.0,
       'top_emotions':
           analysis?.topEmotions.map((item) => item.toJson()).toList() ??
-              const [],
+          const [],
       'scores': analysis?.scores ?? const <String, double>{},
     };
   }
@@ -216,12 +218,12 @@ class StoryCharacter {
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'role': role,
-        'personality': personality,
-        'greeting': greeting,
-        'avatar_emoji': avatarEmoji,
-      };
+    'name': name,
+    'role': role,
+    'personality': personality,
+    'greeting': greeting,
+    'avatar_emoji': avatarEmoji,
+  };
 }
 
 class CharacterChatMessage {
@@ -444,6 +446,9 @@ class StoryCastMember {
 class StorySession {
   String storyId;
   String? dbStoryId;
+
+  /// AI 서버가 재시작된 뒤에도 이어 쓰기에 사용하는 직렬화된 게임 상태입니다.
+  String? runtimeState;
   String genre;
   String age;
   String initialPrompt;
@@ -457,6 +462,7 @@ class StorySession {
   List<StoryCastMember> storyCast;
   List<String> allChoicesMade;
   int currentChapter;
+  int readProgress;
   final DateTime? createdAt;
   final Set<String> syncedVocabKeys;
   final Set<int> syncedChapterNumbers;
@@ -465,6 +471,7 @@ class StorySession {
   StorySession({
     required this.storyId,
     this.dbStoryId,
+    this.runtimeState,
     required this.genre,
     required this.age,
     required this.initialPrompt,
@@ -478,14 +485,14 @@ class StorySession {
     this.storyCast = const [],
     this.allChoicesMade = const [],
     this.currentChapter = 1,
+    this.readProgress = 1,
     this.createdAt,
     Set<String>? syncedVocabKeys,
     Set<int>? syncedChapterNumbers,
     Set<int>? mediaGenerationChapterNumbers,
-  })  : syncedVocabKeys = syncedVocabKeys ?? <String>{},
-        syncedChapterNumbers = syncedChapterNumbers ?? <int>{},
-        mediaGenerationChapterNumbers =
-            mediaGenerationChapterNumbers ?? <int>{};
+  }) : syncedVocabKeys = syncedVocabKeys ?? <String>{},
+       syncedChapterNumbers = syncedChapterNumbers ?? <int>{},
+       mediaGenerationChapterNumbers = mediaGenerationChapterNumbers ?? <int>{};
 
   String get fullStoryText => chapters.map((c) => c.text).join('\n\n');
 
@@ -524,8 +531,9 @@ class StorySession {
     for (var index = history.length; index < allChoicesMade.length; index++) {
       final choice = allChoicesMade[index].trim();
       if (choice.isNotEmpty) {
-        history
-            .add(StoryChoiceEmotion(step: history.length + 1, choice: choice));
+        history.add(
+          StoryChoiceEmotion(step: history.length + 1, choice: choice),
+        );
       }
     }
     return history;
@@ -538,38 +546,39 @@ class StorySession {
           .map(
             (member) =>
                 member.role.toLowerCase() == 'hero' && heroOverride.isNotEmpty
-                    ? StoryCastMember(
-                        role: member.role,
-                        name: member.name,
-                        characterKey: heroOverride,
-                        profileName: CharacterProfileCatalog.defaultNameFor(
-                          heroOverride,
-                        ),
-                        sourceDescription: member.sourceDescription,
-                      )
-                    : member,
+                ? StoryCastMember(
+                    role: member.role,
+                    name: member.name,
+                    characterKey: heroOverride,
+                    profileName: CharacterProfileCatalog.defaultNameFor(
+                      heroOverride,
+                    ),
+                    sourceDescription: member.sourceDescription,
+                  )
+                : member,
           )
           .toList(growable: false);
     }
     return characters.entries
         .where(
-      (entry) =>
-          entry.key.toLowerCase() != 'key_item' &&
-          entry.value.trim().isNotEmpty,
-    )
+          (entry) =>
+              entry.key.toLowerCase() != 'key_item' &&
+              entry.value.trim().isNotEmpty,
+        )
         .map((entry) {
-      final member = StoryCastMember.fromCharacter(entry.key, entry.value);
-      final override =
-          characterOverrides[entry.key.toLowerCase()]?.trim() ?? '';
-      if (override.isEmpty) return member;
-      return StoryCastMember(
-        role: member.role,
-        name: member.name,
-        characterKey: override,
-        profileName: CharacterProfileCatalog.defaultNameFor(override),
-        sourceDescription: member.sourceDescription,
-      );
-    }).toList(growable: false);
+          final member = StoryCastMember.fromCharacter(entry.key, entry.value);
+          final override =
+              characterOverrides[entry.key.toLowerCase()]?.trim() ?? '';
+          if (override.isEmpty) return member;
+          return StoryCastMember(
+            role: member.role,
+            name: member.name,
+            characterKey: override,
+            profileName: CharacterProfileCatalog.defaultNameFor(override),
+            sourceDescription: member.sourceDescription,
+          );
+        })
+        .toList(growable: false);
   }
 
   EmotionAnalysis? emotionForChoice(String choice) {
@@ -587,10 +596,12 @@ class StorySession {
         .map(
           (scene) => StoryChapter(
             chapter: (scene['step_number'] as num?)?.toInt() ?? 1,
-            text: scene['story_text']?.toString() ??
+            text:
+                scene['story_text']?.toString() ??
                 scene['content']?.toString() ??
                 '',
-            choiceMade: scene['choice_made']?.toString() ??
+            choiceMade:
+                scene['choice_made']?.toString() ??
                 scene['user_choice']?.toString(),
             imageUrl: scene['image_url']?.toString(),
             videoUrl: scene['video_url']?.toString(),
@@ -642,39 +653,64 @@ class StorySession {
     final rawStoryCast = json['story_cast'];
     final storyCast = rawStoryCast is List
         ? rawStoryCast
-            .whereType<Map>()
-            .map(
-              (item) => StoryCastMember.fromJson(
-                item.map((key, value) => MapEntry(key.toString(), value)),
-              ),
-            )
-            .where((member) => member.role.isNotEmpty)
-            .toList()
+              .whereType<Map>()
+              .map(
+                (item) => StoryCastMember.fromJson(
+                  item.map((key, value) => MapEntry(key.toString(), value)),
+                ),
+              )
+              .where((member) => member.role.isNotEmpty)
+              .toList()
         : <StoryCastMember>[];
 
     final syncedKeys = vocab
         .map((word) => '${word.hard}|${word.easy}|${word.definition}')
         .toSet();
-    final syncedChapterNumbers =
-        chapters.map((chapter) => chapter.chapter).toSet();
+    final syncedChapterNumbers = chapters
+        .map((chapter) => chapter.chapter)
+        .toSet();
     final mediaGenerationChapterNumbers = chapters
         .where((chapter) => chapter.videoUrl?.trim().isNotEmpty ?? false)
         .map((chapter) => chapter.chapter)
         .toSet();
 
+    final pendingChoices = (json['pending_choices'] as List? ?? const [])
+        .map((item) => item.toString())
+        .where((item) => item.trim().isNotEmpty)
+        .toList();
+    final pendingEmotions =
+        json['pending_choice_emotions'] as List? ?? const [];
+
     return StorySession(
-      storyId: dbStoryId == null || dbStoryId.isEmpty
+      storyId: json['ai_story_id']?.toString().trim().isNotEmpty == true
+          ? json['ai_story_id'].toString()
+          : dbStoryId == null || dbStoryId.isEmpty
           ? 'db_${DateTime.now().microsecondsSinceEpoch}'
           : 'db_$dbStoryId',
       dbStoryId: dbStoryId,
+      runtimeState: json['runtime_state']?.toString(),
       genre: json['genre']?.toString() ?? '동화',
       age: json['age']?.toString() ?? json['target_age']?.toString() ?? '',
       initialPrompt: json['title']?.toString().trim().isNotEmpty == true
           ? json['title'].toString()
           : json['prompt']?.toString() ?? '제목 없는 동화',
       chapters: chapters,
-      choices: const [],
-      choiceOptions: const [],
+      choices: pendingChoices,
+      choiceOptions: List.generate(pendingChoices.length, (index) {
+        final rawEmotion = index < pendingEmotions.length
+            ? pendingEmotions[index]
+            : null;
+        return ChoiceOption(
+          text: pendingChoices[index],
+          emotion: rawEmotion is Map
+              ? EmotionAnalysis.fromJson(
+                  rawEmotion.map(
+                    (key, value) => MapEntry(key.toString(), value),
+                  ),
+                )
+              : null,
+        );
+      }),
       candidateVocab: const [],
       vocab: vocab,
       characters: characters,
@@ -685,6 +721,12 @@ class StorySession {
         0,
         (max, chapter) => chapter.chapter > max ? chapter.chapter : max,
       ),
+      readProgress:
+          (json['read_progress'] as num?)?.toInt() ??
+          chapters.fold<int>(
+            1,
+            (max, chapter) => chapter.chapter > max ? chapter.chapter : max,
+          ),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
       syncedVocabKeys: syncedKeys,
       syncedChapterNumbers: syncedChapterNumbers,
@@ -699,6 +741,8 @@ class PsychResult {
   final Map<String, int> traits;
   final List<String> dominantEmotions;
   final List<String> choiceInsights;
+  final List<String> caregiverPrompts;
+  final String analysisCaution;
 
   PsychResult({
     required this.type,
@@ -706,6 +750,8 @@ class PsychResult {
     required this.traits,
     this.dominantEmotions = const [],
     this.choiceInsights = const [],
+    this.caregiverPrompts = const [],
+    this.analysisCaution = '동화 속 선택을 바탕으로 한 대화용 해설이며 심리검사가 아닙니다.',
   });
 
   factory PsychResult.fromJson(Map<String, dynamic> json) {
@@ -735,6 +781,14 @@ class PsychResult {
           })
           .where((item) => item.trim().isNotEmpty)
           .toList(),
+      caregiverPrompts: (json['caregiver_prompts'] as List? ?? const [])
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList(),
+      analysisCaution:
+          json['analysis_caution']?.toString().trim().isNotEmpty == true
+          ? json['analysis_caution'].toString().trim()
+          : '동화 속 선택을 바탕으로 한 대화용 해설이며 심리검사가 아닙니다.',
     );
   }
 }
@@ -760,7 +814,8 @@ class CommunityComment {
       authorName: json['author_name']?.toString() ?? '동화 친구',
       authorAccountId: json['author_account_id']?.toString(),
       content: json['content']?.toString() ?? '',
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
     );
   }
@@ -817,7 +872,8 @@ class CommunityPost {
       preview: json['preview']?.toString() ?? '',
       fullText: json['full_text']?.toString() ?? '',
       storyEmoji: json['story_emoji']?.toString() ?? '📖',
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
       viewCount: (json['view_count'] as num?)?.toInt() ?? 0,
       likeCount: (json['like_count'] as num?)?.toInt() ?? 0,

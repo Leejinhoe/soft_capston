@@ -11,6 +11,7 @@ import 'package:record/record.dart';
 
 import 'main.dart';
 import 'character_chat_page.dart';
+import 'letter_page.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'models/story_video.dart';
@@ -22,7 +23,8 @@ import 'widgets/story_video_player.dart';
 
 enum _NarrationTarget { currentChapter, fullStory }
 
-const _voiceSampleScript = '안녕하세요. 저는 따뜻한 목소리로 동화를 읽어요. '
+const _voiceSampleScript =
+    '안녕하세요. 저는 따뜻한 목소리로 동화를 읽어요. '
     '별빛이 반짝이는 숲에서 작은 토끼가 용기를 냈어요. '
     '친구와 함께라면 어려운 길도 즐겁게 갈 수 있어요.';
 
@@ -261,9 +263,7 @@ class _StoryPageState extends State<StoryPage> {
         _ttsStatus = '내 목소리로 읽으려면 먼저 3초 이상 녹음해 주세요';
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('먼저 "내 목소리 녹음"으로 3초 이상 녹음해 주세요.'),
-        ),
+        const SnackBar(content: Text('먼저 "내 목소리 녹음"으로 3초 이상 녹음해 주세요.')),
       );
       return;
     }
@@ -288,8 +288,9 @@ class _StoryPageState extends State<StoryPage> {
       setState(() {
         _ttsSpeaking = true;
         final scope = target == _NarrationTarget.fullStory ? '전체 이야기' : '현재 장';
-        _ttsStatus =
-            _recordedVoiceWav == null ? '$scope을 읽는 중' : '내 목소리로 $scope을 읽는 중';
+        _ttsStatus = _recordedVoiceWav == null
+            ? '$scope을 읽는 중'
+            : '내 목소리로 $scope을 읽는 중';
       });
     } catch (error) {
       if (!mounted || requestNumber != _ttsRequestNumber) return;
@@ -537,6 +538,15 @@ class _StoryPageState extends State<StoryPage> {
             icon: const Icon(Icons.forum_outlined),
             color: AppColors.p300,
           ),
+          IconButton(
+            tooltip: '주인공에게 편지 쓰기',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => LetterPage(story: story)),
+            ),
+            icon: const Icon(Icons.mail_outline_rounded),
+            color: AppColors.pink2,
+          ),
           const SizedBox(width: 8),
           IconButton(
             onPressed: () async {
@@ -602,8 +612,8 @@ class _StoryPageState extends State<StoryPage> {
     final statusColor = _ttsStatus.startsWith('낭독 오류')
         ? AppColors.pink2
         : _ttsReady
-            ? AppColors.teal
-            : AppColors.gray;
+        ? AppColors.teal
+        : AppColors.gray;
 
     return Container(
       width: double.infinity,
@@ -750,9 +760,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                            currentChapterText,
-                            _NarrationTarget.currentChapter,
-                          ),
+                          currentChapterText,
+                          _NarrationTarget.currentChapter,
+                        ),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('현재 장'),
                   style: ElevatedButton.styleFrom(
@@ -766,9 +776,9 @@ class _StoryPageState extends State<StoryPage> {
                   onPressed: _ttsInitializing
                       ? null
                       : () => _speakText(
-                            story.fullStoryText,
-                            _NarrationTarget.fullStory,
-                          ),
+                          story.fullStoryText,
+                          _NarrationTarget.fullStory,
+                        ),
                   icon: const Icon(Icons.menu_book_rounded, size: 18),
                   label: const Text('전체'),
                   style: OutlinedButton.styleFrom(
@@ -950,8 +960,9 @@ class _StoryPageState extends State<StoryPage> {
           ...emotions.asMap().entries.map((entry) {
             final color = colors[entry.key % colors.length];
             final item = entry.value;
-            final label =
-                item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
+            final label = item.labelDisplay.isNotEmpty
+                ? item.labelDisplay
+                : item.label;
             final percent = item.score.clamp(0.0, 1.0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
@@ -1006,8 +1017,9 @@ class _StoryPageState extends State<StoryPage> {
     void collect(EmotionAnalysis? analysis) {
       if (analysis == null) return;
       for (final item in analysis.topEmotions.take(5)) {
-        final key =
-            item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
+        final key = item.labelDisplay.isNotEmpty
+            ? item.labelDisplay
+            : item.label;
         totals[key] = (totals[key] ?? 0) + item.score;
         counts[key] = (counts[key] ?? 0) + 1;
         indexes[key] = item.labelIndex;
@@ -1032,8 +1044,7 @@ class _StoryPageState extends State<StoryPage> {
         labelDisplay: displays[entry.key] ?? entry.key,
         score: double.parse(score.toStringAsFixed(3)),
       );
-    }).toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
+    }).toList()..sort((a, b) => b.score.compareTo(a.score));
 
     return result.take(5).toList();
   }
@@ -1236,8 +1247,9 @@ class _StoryPageState extends State<StoryPage> {
                     ),
                     label: Text(alreadySaved ? '단어장에 저장됨' : '단어장에 저장'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          alreadySaved ? AppColors.teal : AppColors.p600,
+                      backgroundColor: alreadySaved
+                          ? AppColors.teal
+                          : AppColors.p600,
                       foregroundColor: Colors.white,
                       elevation: 2,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1264,9 +1276,11 @@ class _StoryPageState extends State<StoryPage> {
   ) {
     final animationCharacterKey = story.selectedHeroCharacterKey;
     final isLatestChapter = identical(chapter, story.chapters.last);
-    final remoteVideoUrl =
-        _isRemoteMediaUrl(chapter.videoUrl) ? chapter.videoUrl!.trim() : null;
-    final showLocalCharacterAnimation = isLatestChapter &&
+    final remoteVideoUrl = _isRemoteMediaUrl(chapter.videoUrl)
+        ? chapter.videoUrl!.trim()
+        : null;
+    final showLocalCharacterAnimation =
+        isLatestChapter &&
         remoteVideoUrl == null &&
         animationCharacterKey != null &&
         StoryCharacterAnimation.supports(
@@ -1333,16 +1347,10 @@ class _StoryPageState extends State<StoryPage> {
           ),
           const SizedBox(height: 12),
         ] else if (remoteVideoUrl != null) ...[
-          _buildArchivedVideoButton(
-            context,
-            videoUrl: remoteVideoUrl,
-          ),
+          _buildArchivedVideoButton(context, videoUrl: remoteVideoUrl),
           const SizedBox(height: 12),
         ] else if (selectedVideo != null && isLatestChapter) ...[
-          StoryVideoPlayer(
-            clip: selectedVideo,
-            autoplay: true,
-          ),
+          StoryVideoPlayer(clip: selectedVideo, autoplay: true),
           const SizedBox(height: 12),
         ] else if (selectedVideo != null) ...[
           _buildArchivedVideoButton(context, clip: selectedVideo),

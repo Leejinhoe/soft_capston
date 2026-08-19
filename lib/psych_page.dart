@@ -21,14 +21,16 @@ class _PsychPageState extends State<PsychPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF070018),
-      body: SafeArea(
-        child: _buildBody(context, state, story, psych),
-      ),
+      body: SafeArea(child: _buildBody(context, state, story, psych)),
     );
   }
 
-  Widget _buildBody(BuildContext context, AppState state, StorySession? story,
-      PsychResult? psych) {
+  Widget _buildBody(
+    BuildContext context,
+    AppState state,
+    StorySession? story,
+    PsychResult? psych,
+  ) {
     if (story == null || story.chapters.isEmpty) {
       return _buildEmptyState();
     }
@@ -198,7 +200,10 @@ class _PsychPageState extends State<PsychPage> {
   }
 
   Widget _buildAnalyzePrompt(
-      BuildContext context, AppState state, StorySession story) {
+    BuildContext context,
+    AppState state,
+    StorySession story,
+  ) {
     final history = story.choiceEmotionHistory;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -222,9 +227,10 @@ class _PsychPageState extends State<PsychPage> {
                 const Text(
                   '내 성격 알아보기',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800),
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -253,14 +259,16 @@ class _PsychPageState extends State<PsychPage> {
                       backgroundColor: const Color(0xFF8B5CF6),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                     child: const Text(
                       '🧠 선택 감정으로 AI 분석',
                       style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700),
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -323,12 +331,14 @@ class _PsychPageState extends State<PsychPage> {
                 Text(
                   top.isEmpty
                       ? '감정 점수 없음'
-                      : top.map((item) {
-                          final label = item.labelDisplay.isNotEmpty
-                              ? item.labelDisplay
-                              : item.label;
-                          return '$label ${(item.score * 100).round()}%';
-                        }).join(' · '),
+                      : top
+                            .map((item) {
+                              final label = item.labelDisplay.isNotEmpty
+                                  ? item.labelDisplay
+                                  : item.label;
+                              return '$label ${(item.score * 100).round()}%';
+                            })
+                            .join(' · '),
                   style: const TextStyle(
                     color: AppColors.p300,
                     fontSize: 10,
@@ -343,11 +353,7 @@ class _PsychPageState extends State<PsychPage> {
     );
   }
 
-  Widget _buildResult(
-    PsychResult psych,
-    StorySession story,
-    AppState state,
-  ) {
+  Widget _buildResult(PsychResult psych, StorySession story, AppState state) {
     const traitColors = {
       '모험적': AppColors.p500,
       '친절함': AppColors.pink,
@@ -408,7 +414,7 @@ class _PsychPageState extends State<PsychPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'AI 감정 분석 글',
+                  '동화 선택 해설',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -418,11 +424,28 @@ class _PsychPageState extends State<PsychPage> {
                 const SizedBox(height: 6),
                 Text(
                   psych.description,
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.left,
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
                     height: 1.6,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    psych.analysisCaution,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      height: 1.45,
+                    ),
                   ),
                 ),
               ],
@@ -477,9 +500,10 @@ class _PsychPageState extends State<PsychPage> {
                 const Text(
                   '특성 분석',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700),
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 ...psych.traits.entries.map((e) {
@@ -492,17 +516,21 @@ class _PsychPageState extends State<PsychPage> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(e.key,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600)),
+                            Text(
+                              e.key,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             Text(
                               '${e.value}%',
                               style: TextStyle(
-                                  color: color,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700),
+                                color: color,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ],
                         ),
@@ -538,9 +566,10 @@ class _PsychPageState extends State<PsychPage> {
                 const Text(
                   '선택과 감정 근거',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700),
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 ...story.choiceEmotionHistory.map(_buildChoiceEmotionPreview),
@@ -561,7 +590,7 @@ class _PsychPageState extends State<PsychPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    '선택별 AI 해석',
+                    '선택별 관찰과 해석',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 15,
@@ -570,18 +599,66 @@ class _PsychPageState extends State<PsychPage> {
                   ),
                   const SizedBox(height: 12),
                   ...psych.choiceInsights.asMap().entries.map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
-                            '${entry.key + 1}. ${entry.value}',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                              height: 1.55,
-                            ),
-                          ),
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        '${entry.key + 1}. ${entry.value}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          height: 1.55,
                         ),
                       ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (psych.caregiverPrompts.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF140028),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '함께 이야기해 보기',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '정답을 찾기보다 아이의 생각을 편하게 들어보세요.',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...psych.caregiverPrompts.asMap().entries.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        '${entry.key + 1}. ${entry.value}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          height: 1.55,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

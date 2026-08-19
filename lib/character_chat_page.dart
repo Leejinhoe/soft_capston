@@ -1,20 +1,21 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import 'main.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'services/api_service.dart';
+import 'services/db_service.dart';
 
 class CharacterChatPage extends StatefulWidget {
   final StorySession story;
 
-  const CharacterChatPage({
-    super.key,
-    required this.story,
-  });
+  const CharacterChatPage({super.key, required this.story});
 
   @override
   State<CharacterChatPage> createState() => _CharacterChatPageState();
@@ -29,6 +30,9 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
 
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _messageScrollController = ScrollController();
+  final AudioPlayer _voiceReplyPlayer = AudioPlayer();
+  final AudioRecorder _voiceRecorder = AudioRecorder();
+  final BytesBuilder _voicePcm = BytesBuilder(copy: false);
   final Map<String, List<CharacterChatMessage>> _conversations = {};
   final Map<String, List<String>> _suggestions = {};
 
@@ -36,11 +40,17 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   StoryCharacter? _selectedCharacter;
   bool _isLoadingCharacters = true;
   bool _isSending = false;
+  bool _isRecordingVoice = false;
+  bool _isTranscribingVoice = false;
+  int _voiceRecordSeconds = 0;
+  Timer? _voiceRecordTimer;
+  StreamSubscription<Uint8List>? _voiceRecordingSubscription;
   String? _notice;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_voiceReplyPlayer.setReleaseMode(ReleaseMode.stop));
     unawaited(_loadCharacters());
   }
 
@@ -48,6 +58,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   void dispose() {
     _messageController.dispose();
     _messageScrollController.dispose();
+    _voiceRecordTimer?.cancel();
+    _voiceRecordingSubscription?.cancel();
+    _voiceRecorder.dispose();
+    _voiceReplyPlayer.dispose();
     super.dispose();
   }
 
@@ -115,10 +129,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     _scrollToLatest();
   }
 
-  Future<void> _sendMessage([String? preset]) async {
+  Future<String?> _sendMessage([String? preset]) async {
     final character = _selectedCharacter;
     final message = (preset ?? _messageController.text).trim();
-    if (character == null || message.isEmpty || _isSending) return;
+    if (character == null || message.isEmpty || _isSending) return null;
 
     final conversation = _conversations[character.name]!;
     setState(() {
@@ -131,9 +145,6 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
 
     CharacterChatReply result;
     try {
-      if (widget.story.storyId.startsWith('mock_')) {
-        throw const _UseLocalCharacters();
-      }
       result = await ApiService.chatWithStoryCharacter(
         storyId: widget.story.storyId,
         storyTitle: widget.story.initialPrompt,
@@ -149,7 +160,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
       _notice = '서버 답장을 받지 못해 캐릭터의 임시 답변을 보여드려요.';
     }
 
-    if (!mounted || _selectedCharacter?.name != character.name) return;
+    if (!mounted || _selectedCharacter?.name != character.name) return null;
     setState(() {
       conversation.add(
         CharacterChatMessage(role: 'character', content: result.reply),
@@ -160,24 +171,146 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
       _isSending = false;
     });
     _scrollToLatest();
+    return result.reply;
   }
 
-  CharacterChatReply _fallbackReply(
-    StoryCharacter character,
-    String message,
-  ) {
+  String get _voiceTime {
+    final minutes = (_voiceRecordSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_voiceRecordSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Uint8List _pcm16ToWav(Uint8List pcm, {int sampleRate = 24000}) {
+    const channels = 1;
+    const bytesPerSample = 2;
+    final wav = Uint8List(44 + pcm.length);
+    final header = ByteData.sublistView(wav);
+
+    void writeAscii(int offset, String value) {
+      for (var index = 0; index < value.length; index++) {
+        header.setUint8(offset + index, value.codeUnitAt(index));
+      }
+    }
+
+    writeAscii(0, 'RIFF');
+    header.setUint32(4, 36 + pcm.length, Endian.little);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, channels, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(28, sampleRate * channels * bytesPerSample, Endian.little);
+    header.setUint16(32, channels * bytesPerSample, Endian.little);
+    header.setUint16(34, bytesPerSample * 8, Endian.little);
+    writeAscii(36, 'data');
+    header.setUint32(40, pcm.length, Endian.little);
+    wav.setRange(44, wav.length, pcm);
+    return wav;
+  }
+
+  Future<void> _toggleVoiceConversation() async {
+    if (_isSending || _isTranscribingVoice) return;
+    if (_isRecordingVoice) {
+      await _stopVoiceConversation();
+    } else {
+      await _startVoiceConversation();
+    }
+  }
+
+  Future<void> _startVoiceConversation() async {
+    try {
+      if (!await _voiceRecorder.hasPermission()) {
+        throw Exception('마이크 권한이 필요해요. 브라우저 또는 기기 설정에서 허용해 주세요.');
+      }
+      await _voiceReplyPlayer.stop();
+      _voicePcm.clear();
+      _voiceRecordSeconds = 0;
+      final stream = await _voiceRecorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 24000,
+          numChannels: 1,
+        ),
+      );
+      _voiceRecordingSubscription = stream.listen(_voicePcm.add);
+      _voiceRecordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted || !_isRecordingVoice) return;
+        if (_voiceRecordSeconds >= 20) {
+          unawaited(_stopVoiceConversation());
+          return;
+        }
+        setState(() {
+          _voiceRecordSeconds++;
+          _notice = '듣고 있어요. 말을 마치면 마이크를 다시 눌러 주세요. ($_voiceTime / 00:20)';
+        });
+      });
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = true;
+        _notice = '듣고 있어요. 말을 마치면 마이크를 다시 눌러 주세요. (00:00 / 00:20)';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _notice = '음성 대화를 시작하지 못했어요: $error');
+    }
+  }
+
+  Future<void> _stopVoiceConversation() async {
+    if (!_isRecordingVoice) return;
+    _voiceRecordTimer?.cancel();
+    _voiceRecordTimer = null;
+    try {
+      await _voiceRecorder.stop();
+      await _voiceRecordingSubscription?.cancel();
+      _voiceRecordingSubscription = null;
+      final pcm = _voicePcm.takeBytes();
+      const minimumBytes = 24000 * 2;
+      if (pcm.length < minimumBytes) {
+        throw Exception('1초 이상 말해 주세요.');
+      }
+      final wav = _pcm16ToWav(pcm);
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = false;
+        _isTranscribingVoice = true;
+        _notice = '말한 내용을 이해하고 있어요...';
+      });
+      final transcript = await ApiService.transcribeKoreanSpeech(wav);
+      if (!mounted) return;
+      setState(() => _notice = '“$transcript”라고 말했어요. 캐릭터가 답하는 중이에요...');
+      final reply = await _sendMessage(transcript);
+      if (reply == null || !mounted) return;
+      setState(() => _notice = '내 목소리로 캐릭터의 답을 들려드릴게요.');
+      final audio = await DbService.synthesizeNarration(reply, speakerWav: wav);
+      if (!mounted) return;
+      await _voiceReplyPlayer.play(BytesSource(audio));
+      if (!mounted) return;
+      setState(() => _notice = '음성 대화가 끝났어요. 다시 마이크를 눌러 말해 보세요.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _notice = '음성 대화 오류: $error');
+    } finally {
+      if (mounted) setState(() => _isTranscribingVoice = false);
+    }
+  }
+
+  CharacterChatReply _fallbackReply(StoryCharacter character, String message) {
     final normalized = message.replaceAll(RegExp(r'\s+'), ' ');
     late String reply;
     if (RegExp(r'기분|마음|무서|두려').hasMatch(normalized)) {
-      reply = '솔직히 조금 떨렸지만 혼자가 아니라는 생각에 힘이 났어. '
+      reply =
+          '솔직히 조금 떨렸지만 혼자가 아니라는 생각에 힘이 났어. '
           '우리 이야기에서 용기를 낼 수 있었던 건 곁에 있는 친구들의 마음 덕분이야.';
     } else if (RegExp(r'왜|이유|어째서').hasMatch(normalized)) {
-      reply = '그때는 내가 소중하게 생각하는 것을 지키고 싶었어. '
+      reply =
+          '그때는 내가 소중하게 생각하는 것을 지키고 싶었어. '
           '서두르기보다 친구들의 이야기를 듣고 움직이는 게 좋은 방법이라는 것도 배웠지.';
     } else if (RegExp(r'친구|좋아|고마').hasMatch(normalized)) {
       reply = '그렇게 말해 줘서 정말 고마워! 너도 내 이야기 속에 함께 있었다면 든든한 친구가 되었을 거야.';
     } else {
-      reply = '${character.name}인 내가 듣기에도 참 재미있는 질문이야. '
+      reply =
+          '${character.name}인 내가 듣기에도 참 재미있는 질문이야. '
           '나는 ${character.personality.replaceAll(RegExp(r'[.!?]+$'), '')} 마음으로 그 순간을 지나왔어. '
           '너라면 우리 이야기에서 어떤 길을 골랐을지 궁금해!';
     }
@@ -292,8 +425,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
             SizedBox(height: 18),
             Text(
               '동화 속 친구들을 만나고 있어요...',
-              style:
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
         ),
@@ -331,7 +466,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _characters.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
                 final character = _characters[index];
                 return _buildCharacterCard(character);
@@ -387,8 +522,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                   color: Colors.white.withValues(alpha: selected ? 0.16 : 0.08),
                   shape: BoxShape.circle,
                 ),
-                child: Text(character.avatarEmoji,
-                    style: const TextStyle(fontSize: 24)),
+                child: Text(
+                  character.avatarEmoji,
+                  style: const TextStyle(fontSize: 24),
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -439,8 +576,11 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline_rounded,
-              color: AppColors.p300, size: 16),
+          const Icon(
+            Icons.info_outline_rounded,
+            color: AppColors.p300,
+            size: 16,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -553,16 +693,20 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                   color: Color(0xFF2A2050),
                   shape: BoxShape.circle,
                 ),
-                child: Text(character.avatarEmoji,
-                    style: const TextStyle(fontSize: 18)),
+                child: Text(
+                  character.avatarEmoji,
+                  style: const TextStyle(fontSize: 18),
+                ),
               ),
               const SizedBox(width: 8),
             ],
             Flexible(
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 600),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   gradient: isUser
                       ? const LinearGradient(
@@ -610,8 +754,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                 color: Color(0xFF2A2050),
                 shape: BoxShape.circle,
               ),
-              child: Text(character.avatarEmoji,
-                  style: const TextStyle(fontSize: 18)),
+              child: Text(
+                character.avatarEmoji,
+                style: const TextStyle(fontSize: 18),
+              ),
             ),
             const SizedBox(width: 8),
             Container(
@@ -655,7 +801,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
         border: const Border(top: BorderSide(color: AppColors.border)),
         boxShadow: const [
           BoxShadow(
-              color: Colors.black38, blurRadius: 20, offset: Offset(0, -5)),
+            color: Colors.black38,
+            blurRadius: 20,
+            offset: Offset(0, -5),
+          ),
         ],
       ),
       child: Column(
@@ -665,7 +814,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: suggestions.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 7),
+              separatorBuilder: (_, _) => const SizedBox(width: 7),
               itemBuilder: (context, index) {
                 final suggestion = suggestions[index];
                 return ActionChip(
@@ -676,12 +825,15 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                     size: 13,
                   ),
                   label: Text(suggestion),
-                  labelStyle:
-                      const TextStyle(color: AppColors.p300, fontSize: 10),
+                  labelStyle: const TextStyle(
+                    color: AppColors.p300,
+                    fontSize: 10,
+                  ),
                   backgroundColor: const Color(0xFF241B45),
                   disabledColor: const Color(0xFF19152D),
-                  side:
-                      BorderSide(color: AppColors.p500.withValues(alpha: 0.25)),
+                  side: BorderSide(
+                    color: AppColors.p500.withValues(alpha: 0.25),
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(999),
                   ),
@@ -705,8 +857,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: '${character.name}에게 궁금한 것을 물어보세요',
-                    hintStyle:
-                        const TextStyle(color: AppColors.gray2, fontSize: 12),
+                    hintStyle: const TextStyle(
+                      color: AppColors.gray2,
+                      fontSize: 12,
+                    ),
                     counterText: '',
                     filled: true,
                     fillColor: const Color(0xFF17122F),
@@ -727,6 +881,35 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
               ),
               const SizedBox(width: 9),
               IconButton.filled(
+                tooltip: _isRecordingVoice ? '녹음 멈추기' : '음성으로 캐릭터와 대화하기',
+                onPressed: _isSending || _isTranscribingVoice
+                    ? null
+                    : _toggleVoiceConversation,
+                style: IconButton.styleFrom(
+                  backgroundColor: _isRecordingVoice
+                      ? AppColors.pink
+                      : const Color(0xFF2B2352),
+                  disabledBackgroundColor: AppColors.card2,
+                  minimumSize: const Size(48, 48),
+                ),
+                icon: _isTranscribingVoice
+                    ? const SizedBox(
+                        width: 19,
+                        height: 19,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Icon(
+                        _isRecordingVoice
+                            ? Icons.stop_rounded
+                            : Icons.mic_rounded,
+                        color: Colors.white,
+                      ),
+              ),
+              const SizedBox(width: 7),
+              IconButton.filled(
                 tooltip: '메시지 보내기',
                 onPressed: _isSending ? null : () => _sendMessage(),
                 style: IconButton.styleFrom(
@@ -734,14 +917,16 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                   disabledBackgroundColor: AppColors.card2,
                   minimumSize: const Size(48, 48),
                 ),
-                icon:
-                    const Icon(Icons.arrow_upward_rounded, color: Colors.white),
+                icon: const Icon(
+                  Icons.arrow_upward_rounded,
+                  color: Colors.white,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 7),
           const Text(
-            '캐릭터 답변은 동화 기반 AI 역할극이며 실제 사람의 말이 아니에요.',
+            '음성은 서버 한국어 인식 후 동화 기반 AI 역할극으로 답해요.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.gray2, fontSize: 9),
           ),
@@ -761,8 +946,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
             const SizedBox(height: 12),
             const Text(
               '동화 속 친구를 찾지 못했어요.',
-              style:
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 14),
             OutlinedButton.icon(

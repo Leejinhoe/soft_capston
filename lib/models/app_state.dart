@@ -9,8 +9,10 @@ import '../services/db_service.dart';
 import 'story_model.dart';
 
 class AppState extends ChangeNotifier {
-  static const bool _generateVideosForScenes =
-      bool.fromEnvironment('MEDIA_INCLUDE_VIDEO', defaultValue: true);
+  static const bool _generateVideosForScenes = bool.fromEnvironment(
+    'MEDIA_INCLUDE_VIDEO',
+    defaultValue: true,
+  );
 
   static const List<List<String>> _temporaryChoicePools = [
     ['반짝이는 빛을 따라 깊은 숲으로 간다', '숲속 친구들에게 함께 가자고 말한다', '별조각을 손수건에 감싸 단서를 살핀다'],
@@ -220,6 +222,7 @@ class AppState extends ChangeNotifier {
 
       currentStory = StorySession(
         storyId: data['story_id']?.toString() ?? 'story_0',
+        runtimeState: data['runtime_state']?.toString(),
         genre: genre,
         age: age,
         initialPrompt: prompt,
@@ -234,10 +237,11 @@ class AppState extends ChangeNotifier {
         characters: storyCharacters,
         characterOverrides:
             selectedCharacterKey == null || selectedCharacterKey.isEmpty
-                ? const {}
-                : {'hero': selectedCharacterKey},
+            ? const {}
+            : {'hero': selectedCharacterKey},
         allChoicesMade: [],
         currentChapter: 1,
+        readProgress: 1,
       );
       psychResult = _buildPsychResultFromStory(currentStory!);
 
@@ -268,6 +272,7 @@ class AppState extends ChangeNotifier {
         choice: choice,
         genre: session.genre,
         age: session.age,
+        runtimeState: session.runtimeState,
       );
 
       final newText = data['new_text']?.toString() ?? '';
@@ -300,6 +305,9 @@ class AppState extends ChangeNotifier {
       );
       session.allChoicesMade = [...session.allChoicesMade, choice];
       session.currentChapter = newChapter;
+      session.readProgress = newChapter;
+      session.runtimeState =
+          data['runtime_state']?.toString() ?? session.runtimeState;
       psychResult = _buildPsychResultFromStory(session);
 
       notifyListeners();
@@ -342,7 +350,16 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       psychResult = _buildPsychResultFromStory(story);
       _psychResultStoryIdentity = _storyIdentity(story);
-      psychAnalysisNotice = 'AI 서버에 연결하지 못해 저장된 선택과 감정 점수로 기기에서 분석했어요.';
+      final detail = e
+          .toString()
+          .replaceFirst('Exception: ', '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      final shortDetail = detail.length > 120
+          ? '${detail.substring(0, 120)}...'
+          : detail;
+      psychAnalysisNotice =
+          'AI 분석 응답을 받지 못해 저장된 선택과 감정 점수로 기기에서 분석했어요.\n원인: $shortDetail';
       errorMessage = null;
     } finally {
       isPsychLoading = false;
@@ -507,8 +524,9 @@ class AppState extends ChangeNotifier {
     _setLoading(true);
     errorMessage = null;
     try {
-      final normalizedPrompt =
-          prompt.trim().isEmpty ? '반짝이는 숲속 모험' : prompt.trim();
+      final normalizedPrompt = prompt.trim().isEmpty
+          ? '반짝이는 숲속 모험'
+          : prompt.trim();
       final selectedCharacterKey = selectedHeroCharacterKey?.trim() ?? '';
       final chapterVocab = _temporaryVocabForChapter(
         genre: genre,
@@ -635,6 +653,15 @@ class AppState extends ChangeNotifier {
         prompt: session.initialPrompt,
         characters: session.characters,
         characterOverrides: session.characterOverrides,
+        aiStoryId: session.storyId,
+        runtimeState: session.runtimeState,
+        pendingChoices: session.choices,
+        pendingChoiceEmotions: session.choiceOptions
+            .map(
+              (option) => option.emotion?.toJson() ?? const <String, dynamic>{},
+            )
+            .toList(),
+        readProgress: session.readProgress,
       );
 
       if (dbStoryId == null) return;
@@ -647,6 +674,7 @@ class AppState extends ChangeNotifier {
       changed = synced || changed;
       await _generateMediaForChapter(session, chapter);
     }
+    await _syncReadingState(session);
 
     if (changed) {
       notifyListeners();
@@ -667,7 +695,37 @@ class AppState extends ChangeNotifier {
     if (changed) {
       notifyListeners();
     }
+    await _syncReadingState(session);
     await _generateMediaForChapter(session, chapter);
+  }
+
+  Future<void> _syncReadingState(StorySession session) async {
+    final dbStoryId = session.dbStoryId;
+    if (dbStoryId == null || dbStoryId.isEmpty) return;
+    await DbService.saveStoryReadingState(
+      storyId: dbStoryId,
+      aiStoryId: session.storyId,
+      runtimeState: session.runtimeState,
+      pendingChoices: session.choices,
+      pendingChoiceEmotions: session.choiceOptions
+          .map(
+            (option) => option.emotion?.toJson() ?? const <String, dynamic>{},
+          )
+          .toList(),
+      readProgress: session.readProgress,
+      completed: session.hasReachedEnding,
+    );
+  }
+
+  void resumeStory(StorySession story) {
+    currentStory = story;
+    story.readProgress = story.currentChapter;
+    completedStories = completedStories
+        .where((item) => _storyIdentity(item) != _storyIdentity(story))
+        .toList();
+    psychResult = _buildPsychResultFromStory(story);
+    notifyListeners();
+    unawaited(_syncReadingState(story));
   }
 
   Future<bool> _syncSceneIfNeeded(
@@ -754,8 +812,9 @@ class AppState extends ChangeNotifier {
         needsVideo && !(media.videoUrl?.trim().isNotEmpty ?? false);
     if (media.isPartial || media.status == 'failed' || requestedVideoMissing) {
       session.mediaGenerationChapterNumbers.remove(chapter.chapter);
-      chapter.mediaStatus =
-          media.isPartial || requestedVideoMissing ? 'partial' : 'failed';
+      chapter.mediaStatus = media.isPartial || requestedVideoMissing
+          ? 'partial'
+          : 'failed';
       chapter.mediaError ??= requestedVideoMissing
           ? '이미지는 생성됐지만 영상 생성에 실패했습니다.'
           : '미디어 생성에 실패했습니다.';
@@ -866,9 +925,11 @@ class AppState extends ChangeNotifier {
     ];
     final start = seed % pool.length;
     final choices = <String>[];
-    for (var offset = 0;
-        choices.length < 3 && offset < pool.length * 2;
-        offset++) {
+    for (
+      var offset = 0;
+      choices.length < 3 && offset < pool.length * 2;
+      offset++
+    ) {
       final choice = pool[(start + offset) % pool.length];
       if (!choices.contains(choice)) choices.add(choice);
     }
@@ -991,33 +1052,33 @@ class AppState extends ChangeNotifier {
   }) {
     final base = switch (genre) {
       '미스터리' => [
-          _emotionItem(15, '신기함/관심', 0.95),
-          _emotionItem(39, '놀람', 0.82),
-          _emotionItem(8, '기대감', 0.78),
-          _emotionItem(41, '불안/걱정', 0.42),
-          _emotionItem(2, '감동/감탄', 0.38),
-        ],
+        _emotionItem(15, '신기함/관심', 0.95),
+        _emotionItem(39, '놀람', 0.82),
+        _emotionItem(8, '기대감', 0.78),
+        _emotionItem(41, '불안/걱정', 0.42),
+        _emotionItem(2, '감동/감탄', 0.38),
+      ],
       '우정' => [
-          _emotionItem(16, '아껴주는', 0.94),
-          _emotionItem(4, '고마움', 0.88),
-          _emotionItem(40, '행복', 0.82),
-          _emotionItem(43, '안심/신뢰', 0.68),
-          _emotionItem(42, '기쁨', 0.63),
-        ],
+        _emotionItem(16, '아껴주는', 0.94),
+        _emotionItem(4, '고마움', 0.88),
+        _emotionItem(40, '행복', 0.82),
+        _emotionItem(43, '안심/신뢰', 0.68),
+        _emotionItem(42, '기쁨', 0.63),
+      ],
       '모험' => [
-          _emotionItem(8, '기대감', 0.96),
-          _emotionItem(28, '즐거움/신남', 0.86),
-          _emotionItem(15, '신기함/관심', 0.74),
-          _emotionItem(2, '감동/감탄', 0.55),
-          _emotionItem(39, '놀람', 0.42),
-        ],
+        _emotionItem(8, '기대감', 0.96),
+        _emotionItem(28, '즐거움/신남', 0.86),
+        _emotionItem(15, '신기함/관심', 0.74),
+        _emotionItem(2, '감동/감탄', 0.55),
+        _emotionItem(39, '놀람', 0.42),
+      ],
       _ => [
-          _emotionItem(2, '감동/감탄', 0.94),
-          _emotionItem(42, '기쁨', 0.88),
-          _emotionItem(40, '행복', 0.84),
-          _emotionItem(8, '기대감', 0.78),
-          _emotionItem(15, '신기함/관심', 0.62),
-        ],
+        _emotionItem(2, '감동/감탄', 0.94),
+        _emotionItem(42, '기쁨', 0.88),
+        _emotionItem(40, '행복', 0.84),
+        _emotionItem(8, '기대감', 0.78),
+        _emotionItem(15, '신기함/관심', 0.62),
+      ],
     };
 
     final adjusted = base
@@ -1098,61 +1159,61 @@ class AppState extends ChangeNotifier {
 
     final byGenre = switch (genre) {
       '판타지' => [
-          VocabWord(
-            hard: '주문',
-            easy: '마법 말',
-            definition: '마법을 부릴 때 외우는 특별한 말이에요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '별가루',
-            easy: '반짝 가루',
-            definition: '별빛처럼 반짝이는 상상 속의 가루예요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '주문',
+          easy: '마법 말',
+          definition: '마법을 부릴 때 외우는 특별한 말이에요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '별가루',
+          easy: '반짝 가루',
+          definition: '별빛처럼 반짝이는 상상 속의 가루예요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
       '미스터리' => [
-          VocabWord(
-            hard: '수상한',
-            easy: '이상한',
-            definition: '평소와 달라서 궁금하거나 의심이 드는 모습이에요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '비밀',
-            easy: '숨긴 이야기',
-            definition: '아직 다른 사람에게 알려지지 않은 일이에요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '수상한',
+          easy: '이상한',
+          definition: '평소와 달라서 궁금하거나 의심이 드는 모습이에요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '비밀',
+          easy: '숨긴 이야기',
+          definition: '아직 다른 사람에게 알려지지 않은 일이에요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
       '자연' => [
-          VocabWord(
-            hard: '시냇물',
-            easy: '작은 물길',
-            definition: '졸졸 흐르는 작은 물줄기를 말해요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '관찰하다',
-            easy: '자세히 보다',
-            definition: '무엇이 어떻게 움직이는지 찬찬히 살펴보는 거예요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '시냇물',
+          easy: '작은 물길',
+          definition: '졸졸 흐르는 작은 물줄기를 말해요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '관찰하다',
+          easy: '자세히 보다',
+          definition: '무엇이 어떻게 움직이는지 찬찬히 살펴보는 거예요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
       _ => [
-          VocabWord(
-            hard: '용기',
-            easy: '씩씩한 마음',
-            definition: '무섭거나 어려워도 해 보려는 마음이에요.',
-            sourceStoryTitle: prompt,
-          ),
-          VocabWord(
-            hard: '다정한',
-            easy: '친절한',
-            definition: '상대방을 따뜻하게 대해 주는 모습이에요.',
-            sourceStoryTitle: prompt,
-          ),
-        ],
+        VocabWord(
+          hard: '용기',
+          easy: '씩씩한 마음',
+          definition: '무섭거나 어려워도 해 보려는 마음이에요.',
+          sourceStoryTitle: prompt,
+        ),
+        VocabWord(
+          hard: '다정한',
+          easy: '친절한',
+          definition: '상대방을 따뜻하게 대해 주는 모습이에요.',
+          sourceStoryTitle: prompt,
+        ),
+      ],
     };
 
     final byChapter = [
@@ -1160,18 +1221,18 @@ class AppState extends ChangeNotifier {
         hard: chapter == 1
             ? '모험'
             : chapter == 2
-                ? '문양'
-                : '약속',
+            ? '문양'
+            : '약속',
         easy: chapter == 1
             ? '새로운 일을 겪는 것'
             : chapter == 2
-                ? '그림 무늬'
-                : '꼭 하기로 한 말',
+            ? '그림 무늬'
+            : '꼭 하기로 한 말',
         definition: chapter == 1
             ? '낯선 곳에서 새롭고 신나는 일을 겪는 거예요.'
             : chapter == 2
-                ? '물건이나 문에 새겨진 특별한 모양이에요.'
-                : '서로 믿고 꼭 지키기로 한 말이에요.',
+            ? '물건이나 문에 새겨진 특별한 모양이에요.'
+            : '서로 믿고 꼭 지키기로 한 말이에요.',
         sourceStoryTitle: prompt,
       ),
     ];
@@ -1335,8 +1396,9 @@ class AppState extends ChangeNotifier {
           ? emotion.topEmotions
           : emotion.activeEmotions;
       for (final item in items.take(5)) {
-        final label =
-            item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
+        final label = item.labelDisplay.isNotEmpty
+            ? item.labelDisplay
+            : item.label;
         emotionScores[label] = (emotionScores[label] ?? 0) + item.score;
       }
     }

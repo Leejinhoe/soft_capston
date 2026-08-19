@@ -38,6 +38,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - .env
     - assets/characters/female_01_reference_v2.png
     - assets/characters/female_02_reference_v2.png
     - assets/characters/female_03_reference_v2.png
