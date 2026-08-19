@@ -312,7 +312,10 @@ class DbService {
     );
   }
 
+ codex/integrate-latest
   static Future<List<Notice>> fetchNotices({int limit = 500}) async {
+  static Future<List<Notice>> fetchNotices({int limit = 30}) async {
+ main
     final response = await http
         .get(
           _apiUri('/api/notices').replace(queryParameters: {'limit': '$limit'}),
