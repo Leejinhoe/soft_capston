@@ -5,6 +5,7 @@ import 'additional_info_page.dart';
 import 'library_page.dart';
 import 'login_page.dart';
 import 'models/app_state.dart';
+import 'notice_page.dart';
 import 'psych_page.dart';
 import 'services/api_service.dart';
 import 'services/db_service.dart';
@@ -580,6 +581,14 @@ class ProfilePage extends StatelessWidget {
                     ),
                   );
                 },
+              ),
+              _menuButton(
+                icon: Icons.campaign_outlined,
+                title: '공지사항',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const NoticePage()),
+                ),
               ),
               if (state.currentAccountId != null &&
                   state.currentAccountId!.isNotEmpty)

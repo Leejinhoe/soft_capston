@@ -48,11 +48,33 @@ class GeneratedCharacterAssetTests(unittest.TestCase):
             f"{key}_run_cycle_v16.png" for key in KEYS
         }
         jump_cycle_expected = {"male_01_jump_cycle_v19.png"}
+        jump_cycle_v23_expected = {
+            f"{key}_jump_cycle_v23.png" for key in KEYS
+        }
+        jump_cycle_v28_expected = {
+            f"{key}_jump_cycle_v28.png" for key in KEYS
+        }
         action_sheet_expected = {"male_01_action_sheet_v21.png"}
+        action_sheet_v23_expected = {
+            f"{key}_action_sheet_v23.png" for key in KEYS
+        }
+        action_sheet_v28_expected = {
+            f"{key}_action_sheet_v28.png" for key in KEYS
+        }
         action_cycle_expected = {
             "male_01_battle_cycle_v22.png",
             "male_01_magic_cycle_v22.png",
             "male_01_interaction_cycle_v22.png",
+        }
+        action_cycle_v23_expected = {
+            f"{key}_{action}_cycle_v23.png"
+            for key in KEYS
+            for action in ("battle", "interaction")
+        }
+        action_cycle_v28_expected = {
+            f"{key}_{action}_cycle_v28.png"
+            for key in KEYS
+            for action in ("battle", "interaction")
         }
         custom_action_cycle_expected = {
             "male_01_sit_cycle_v1.png",
@@ -69,8 +91,14 @@ class GeneratedCharacterAssetTests(unittest.TestCase):
             | run_cycle_expected
             | run_cycle_v16_expected
             | jump_cycle_expected
+            | jump_cycle_v23_expected
+            | jump_cycle_v28_expected
             | action_sheet_expected
+            | action_sheet_v23_expected
+            | action_sheet_v28_expected
             | action_cycle_expected
+            | action_cycle_v23_expected
+            | action_cycle_v28_expected
             | custom_action_cycle_expected,
         )
 
@@ -166,7 +194,37 @@ class GeneratedCharacterAssetTests(unittest.TestCase):
                     [0, 0, 0, 0],
                 )
 
-        for filename in action_sheet_expected | action_cycle_expected:
+        for filename in jump_cycle_v23_expected | jump_cycle_v28_expected:
+            path = MOTION_SHEET_DIR / filename
+            with self.subTest(path=filename), Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.size, (1536, 1024))
+                alpha = image.getchannel("A")
+                self.assertEqual(alpha.getextrema()[0], 0)
+                for row in range(2):
+                    for column in range(4):
+                        cell = alpha.crop(
+                            (
+                                column * image.width // 4,
+                                row * image.height // 2,
+                                (column + 1) * image.width // 4,
+                                (row + 1) * image.height // 2,
+                            )
+                        )
+                        self.assertIsNotNone(cell.getbbox())
+                        self.assertGreater(
+                            cell.histogram()[0],
+                            cell.width * cell.height // 3,
+                        )
+
+        for filename in (
+            action_sheet_expected
+            | action_sheet_v23_expected
+            | action_sheet_v28_expected
+            | action_cycle_expected
+            | action_cycle_v23_expected
+            | action_cycle_v28_expected
+        ):
             path = MOTION_SHEET_DIR / filename
             with Image.open(path) as image:
                 self.assertEqual(image.mode, "RGBA")

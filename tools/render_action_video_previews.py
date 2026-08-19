@@ -10,6 +10,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+VIDEO_VERSION = "v29"
+ACTION_ASSET_VERSION = "v28"
+ACTION_ASSET_ROOT = ROOT / "output" / "action_asset_versions" / ACTION_ASSET_VERSION
 BACKEND = ROOT / "DB\uc5f0\uacb0 \ud14c\uc2a4\ud2b8"
 sys.path.insert(0, str(BACKEND))
 
@@ -94,6 +97,7 @@ ACTIONS = {
             "animation_action": "battle",
             "participant_count": 2,
             "requires_partner": True,
+            "partner_role": "opponent",
             "body_focus": "whole_body",
         },
     },
@@ -124,44 +128,76 @@ ACTIONS = {
             "participant_count": 2,
             "requires_partner": True,
             "requires_object": True,
+            "object_role": "golden_key",
+            "subject_role": "receiver",
+            "partner_role": "giver",
             "body_focus": "hands_and_gaze",
         },
     },
 }
 
+CHARACTER_KEYS = tuple(
+    [f"male_{index:02d}" for index in range(1, 9)]
+    + [f"female_{index:02d}" for index in range(1, 9)]
+)
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--character-key", default="male_01")
+    parser.add_argument(
+        "--all-characters",
+        action="store_true",
+        help="Render the selected actions for all 16 catalog characters.",
+    )
     parser.add_argument("--actions", nargs="+", choices=tuple(ACTIONS), default=list(ACTIONS))
     parser.add_argument("--duration", type=float, default=6.0)
-    parser.add_argument("--fps", type=int, default=24)
+    parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument(
+        "--asset-version",
+        default=ACTION_ASSET_VERSION,
+        help="Versioned jump/battle/interaction/action sheets to render.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "output" / "action_previews",
+        default=ROOT / "output" / "action_previews_v29_quality",
     )
     return parser.parse_args()
 
 
-async def _render_action(args: argparse.Namespace, action: str) -> Path:
-    key = args.character_key.strip().lower()
+def _versioned_asset_path(character_key: str, action_name: str, version: str) -> Path:
+    """Resolve the tracked canonical pack before the ignored matrix output."""
+
+    filename = f"{character_key}_{action_name}_{version}.png"
+    canonical = ROOT / "assets" / "characters" / "motion_sheets" / filename
+    if version == "v28" and canonical.is_file():
+        return canonical
+    return ROOT / "output" / "action_asset_versions" / version / filename
+
+
+async def _render_action(
+    args: argparse.Namespace,
+    action: str,
+    character_key: str | None = None,
+) -> dict:
+    key = (character_key or args.character_key).strip().lower()
     character_dir = ROOT / "assets" / "characters"
     background = ROOT / "assets" / "backgrounds" / "fantasy_castle_wide_v2.png"
     case = ACTIONS[action]
-    jump_cycle_path = (
-        character_dir / "motion_sheets" / f"{key}_jump_cycle_v19.png"
-    )
-    action_sheet_path = (
-        character_dir / "motion_sheets" / f"{key}_action_sheet_v21.png"
-    )
-    battle_cycle_path = character_dir / "motion_sheets" / f"{key}_battle_cycle_v22.png"
+    jump_cycle_path = _versioned_asset_path(key, "jump_cycle", args.asset_version)
+    action_sheet_path = _versioned_asset_path(key, "action_sheet", args.asset_version)
+    battle_cycle_path = _versioned_asset_path(key, "battle_cycle", args.asset_version)
     magic_cycle_path = character_dir / "motion_sheets" / f"{key}_magic_cycle_v22.png"
-    interaction_cycle_path = (
-        character_dir / "motion_sheets" / f"{key}_interaction_cycle_v22.png"
+    interaction_cycle_path = _versioned_asset_path(
+        key, "interaction_cycle", args.asset_version
     )
+    sit_cycle_path = character_dir / "motion_sheets" / f"{key}_sit_cycle_v1.png"
+    stand_cycle_path = character_dir / "motion_sheets" / f"{key}_stand_cycle_v1.png"
     action_fx_path = ROOT / "assets" / "effects" / "action_fx_sheet_v23.png"
     secondary_key = case.get("secondary_key")
+    if secondary_key == key:
+        secondary_key = next(candidate for candidate in CHARACTER_KEYS if candidate != key)
     secondary_bytes = (
         (character_dir / f"{secondary_key}_reference_v2.png").read_bytes()
         if secondary_key else None
@@ -179,8 +215,8 @@ async def _render_action(args: argparse.Namespace, action: str) -> Path:
         story_text=case["story_text"],
         genre="fantasy",
         age="7",
-        width=768,
-        height=384,
+        width=960,
+        height=480,
         num_frames=max(1, round(args.duration * args.fps)),
         frame_rate=args.fps,
         steps=2,
@@ -216,6 +252,12 @@ async def _render_action(args: argparse.Namespace, action: str) -> Path:
                 interaction_cycle_path.read_bytes()
                 if interaction_cycle_path.is_file() else None
             ),
+            "character_sit_cycle_sheet_bytes": (
+                sit_cycle_path.read_bytes() if sit_cycle_path.is_file() else None
+            ),
+            "character_stand_cycle_sheet_bytes": (
+                stand_cycle_path.read_bytes() if stand_cycle_path.is_file() else None
+            ),
             "action_fx_sheet_bytes": (
                 action_fx_path.read_bytes() if action_fx_path.is_file() else None
             ),
@@ -226,26 +268,90 @@ async def _render_action(args: argparse.Namespace, action: str) -> Path:
             "motion_modifier_tags": case["modifiers"],
             "action_semantics": case["semantics"],
             "motion_focus": "character",
+            "motion_asset_version": args.asset_version,
+            # v28 sheets carry the readable action; avoid decorative overlays
+            # obscuring hand/foot silhouettes during quality review. Handoff
+            # keeps the semantic object layer so the transfer is visible.
+            "suppress_action_effects": action != "interaction",
         },
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    output = args.output_dir / f"{key}_{action}_v25.mp4"
+    output = args.output_dir / f"{key}_{action}_{VIDEO_VERSION}.mp4"
     await asyncio.to_thread(output.write_bytes, result["video_bytes"])
+    manifest = {
+        "path": str(output.resolve()),
+        "character_key": key,
+        "action": action,
+        "requested_duration_seconds": args.duration,
+        "requested_fps": args.fps,
+        "asset_version": args.asset_version,
+        "parameters": result["parameters"],
+    }
+    parameters = result["parameters"]
+    if action in {"jump", "battle", "interaction"}:
+        if parameters.get("motion_fallback_used"):
+            raise RuntimeError(f"{key}/{action} unexpectedly used a motion fallback")
+        if parameters.get("motion_asset_version") != args.asset_version:
+            raise RuntimeError(
+                f"{key}/{action} selected {parameters.get('motion_asset_version')!r}, "
+                f"expected {args.asset_version!r}"
+            )
+    if action in {"battle", "interaction"}:
+        if not parameters.get("co_star_included"):
+            raise RuntimeError(f"{key}/{action} is missing its partner layer")
+        if parameters.get("secondary_motion_sheet_character_key") == key:
+            raise RuntimeError(f"{key}/{action} reused the primary character as partner")
+    if action == "interaction":
+        motion_plan = parameters.get("motion_plan") or {}
+        if not motion_plan.get("requires_object"):
+            raise RuntimeError("interaction preview lost its required handoff object")
+    await asyncio.to_thread(
+        output.with_suffix(".json").write_text,
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(output.resolve())
     print(json.dumps(result["parameters"], ensure_ascii=False))
-    return output
+    return manifest
 
 
 async def main() -> None:
     args = _parse_args()
-    if not (
-        args.character_key.startswith(("male_", "female_"))
-        and args.character_key[-2:].isdigit()
-        and 1 <= int(args.character_key[-2:]) <= 8
-    ):
-        raise ValueError("--character-key must be male_01..08 or female_01..08")
-    for action in args.actions:
-        await _render_action(args, action)
+    character_keys = list(CHARACTER_KEYS) if args.all_characters else [
+        args.character_key.strip().lower()
+    ]
+    invalid_keys = [key for key in character_keys if key not in CHARACTER_KEYS]
+    if invalid_keys:
+        raise ValueError(
+            "Unknown character key(s): " + ", ".join(invalid_keys)
+        )
+    expected_asset_names = {
+        "jump": "jump_cycle",
+        "battle": "battle_cycle",
+        "rescue": "interaction_cycle",
+        "interaction": "interaction_cycle",
+    }
+    missing = []
+    for key in character_keys:
+        for action in args.actions:
+            asset_name = expected_asset_names.get(action)
+            if not asset_name:
+                continue
+            path = _versioned_asset_path(key, asset_name, args.asset_version)
+            if not path.is_file() or path.stat().st_size == 0:
+                missing.append(str(path))
+    if missing:
+        raise FileNotFoundError("Missing dedicated action assets:\n" + "\n".join(missing))
+
+    reports = []
+    for key in character_keys:
+        for action in args.actions:
+            reports.append(await _render_action(args, action, key))
+    await asyncio.to_thread(
+        (args.output_dir / "manifest.json").write_text,
+        json.dumps(reports, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

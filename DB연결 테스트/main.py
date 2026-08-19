@@ -1,14 +1,17 @@
 ﻿import asyncio
 from contextlib import suppress
-import hashlib
+import ast
 import base64
+import hashlib
 import hmac
 import json
 import logging
 import os
 import re
 import secrets
+import smtplib
 import time
+from email.message import EmailMessage
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -43,10 +46,13 @@ from character_seed import DEFAULT_CHARACTERS, seed_default_character_profiles
 from database import (
     character_profiles_collection,
     community_posts_collection,
+    email_verifications_collection,
     fit_vocabulary_collection,
     init_database,
     media_files_bucket,
     media_jobs_collection,
+    messages_collection,
+    notices_collection,
     reports_collection,
     stories_collection,
     user_warnings_collection,
@@ -73,15 +79,22 @@ from hf_media_provider import (
 )
 from models import (
     AccountWithdrawalSchema,
+    AdminNoticeCreateSchema,
+    AdminNoticeEmailSchema,
+    AdminNoticeUpdateSchema,
     CharacterProfileUpsertSchema,
     CommunityCommentSchema,
     CommunityPostSchema,
     CommunityReportSchema,
+    EmailVerificationSendSchema,
+    EmailVerificationVerifySchema,
     LoginSchema,
     MediaGenerationSchema,
     MediaGenerationWithStorySchema,
     ReportResolutionSchema,
     SceneSchema,
+    StoryCharacterChatSchema,
+    StoryCharacterDiscoverySchema,
     StoryCharactersSchema,
     StorySchema,
     UserSchema,
@@ -91,6 +104,7 @@ from models import (
 )
 from story_cast import (
     build_story_cast,
+    extract_character_name,
     normalize_story_characters,
     select_scene_partner,
     select_story_cast_member,
@@ -199,6 +213,7 @@ async def protect_sensitive_routes(request: Request, call_next):
 class UserUpdateSchema(BaseModel):
     nickname: Optional[str] = None
     email: Optional[str] = None
+    email_verification_token: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
 
@@ -263,10 +278,126 @@ MEDIA_GENERATION_WORKER_ID = f"fastapi-{secrets.token_hex(4)}"
 media_job_sync_task: Optional[asyncio.Task] = None
 media_generation_worker_task: Optional[asyncio.Task] = None
 media_enqueue_locks: Dict[str, asyncio.Lock] = {}
+notice_email_tasks: set[asyncio.Task] = set()
 
 
 def is_admin_account_id(account_id: Optional[str]) -> bool:
     return str(account_id or "").strip() == ADMIN_ACCOUNT_ID
+
+
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+EMAIL_VERIFICATION_TTL_MINUTES = max(
+    3,
+    int(os.getenv("EMAIL_VERIFICATION_TTL_MINUTES", "10")),
+)
+EMAIL_VERIFICATION_EXPOSE_CODE = (
+    os.getenv("EMAIL_VERIFICATION_EXPOSE_CODE", "false").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+
+
+def normalize_email(value: Optional[str]) -> Optional[str]:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+    if len(normalized) > 254 or not EMAIL_PATTERN.fullmatch(normalized):
+        raise HTTPException(status_code=400, detail="올바른 이메일 주소를 입력해 주세요.")
+    return normalized
+
+
+def safe_normalize_email(value: Optional[str]) -> Optional[str]:
+    try:
+        return normalize_email(value)
+    except HTTPException:
+        logger.warning("Ignoring malformed stored email address: %r", value)
+        return None
+
+
+def _secret_digest(value: str) -> str:
+    return hmac.new(
+        AUTH_TOKEN_SECRET,
+        value.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _smtp_settings() -> Dict[str, Any]:
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = (os.getenv("SMTP_FROM") or os.getenv("SMTP_USER") or "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    try:
+        port = int(os.getenv("SMTP_PORT", "587"))
+    except ValueError:
+        port = 587
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    return {
+        "host": host,
+        "port": port,
+        "sender": sender,
+        "username": os.getenv("SMTP_USER", "").strip(),
+        "password": password,
+        "use_tls": use_tls,
+    }
+
+
+def smtp_is_configured() -> bool:
+    settings = _smtp_settings()
+    return bool(settings["host"] and settings["sender"])
+
+
+def send_smtp_message(*, recipient: str, subject: str, body: str) -> None:
+    settings = _smtp_settings()
+    if not settings["host"] or not settings["sender"]:
+        raise RuntimeError("SMTP_HOST와 SMTP_FROM 설정이 필요합니다.")
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = settings["sender"]
+    message["To"] = recipient
+    message.set_content(body)
+
+    if settings["use_tls"]:
+        with smtplib.SMTP(settings["host"], settings["port"], timeout=20) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            if settings["username"] and settings["password"]:
+                server.login(settings["username"], settings["password"])
+            server.send_message(message)
+        return
+
+    with smtplib.SMTP(settings["host"], settings["port"], timeout=20) as server:
+        if settings["username"] and settings["password"]:
+            server.login(settings["username"], settings["password"])
+        server.send_message(message)
+
+
+async def consume_email_verification_token(email: str, token: Optional[str]) -> None:
+    if not token:
+        raise HTTPException(
+            status_code=400,
+            detail="이메일 인증을 완료한 뒤 다시 시도해 주세요.",
+        )
+    now = datetime.utcnow()
+    record = await email_verifications_collection.find_one(
+        {
+            "email": email,
+            "verification_token_hash": _secret_digest(token.strip()),
+            "verified_at": {"$ne": None},
+            "verification_expires_at": {"$gt": now},
+        }
+    )
+    if not record:
+        raise HTTPException(
+            status_code=400,
+            detail="이메일 인증이 만료되었거나 유효하지 않습니다.",
+        )
+    await email_verifications_collection.delete_one({"_id": record["_id"]})
 
 
 def hash_password(password: str) -> str:
@@ -973,9 +1104,9 @@ async def generate_and_store_backend_media(
     width: int = 512,
     height: int = 512,
     flux_steps: int = 1,
-    video_width: int = 768,
-    video_height: int = 384,
-    num_frames: int = 48,
+    video_width: int = 960,
+    video_height: int = 480,
+    num_frames: int = 180,
     video_steps: int = 2,
     frame_rate: Optional[int] = None,
     seed: Optional[int] = None,
@@ -1171,6 +1302,8 @@ async def generate_and_store_backend_media(
     character_battle_cycle_sheet_asset = None
     character_magic_cycle_sheet_asset = None
     character_interaction_cycle_sheet_asset = None
+    character_sit_cycle_sheet_asset = None
+    character_stand_cycle_sheet_asset = None
     character_motion_sheet_bytes = None
     secondary_motion_sheet_bytes = None
     character_target_journey_sheet_bytes = None
@@ -1180,8 +1313,24 @@ async def generate_and_store_backend_media(
     character_battle_cycle_sheet_bytes = None
     character_magic_cycle_sheet_bytes = None
     character_interaction_cycle_sheet_bytes = None
+    character_sit_cycle_sheet_bytes = None
+    character_stand_cycle_sheet_bytes = None
     action_fx_sheet_bytes = None
     if include_video:
+        planned_action = str(asset_motion_plan.get("action") or "")
+        if planned_action == "stand":
+            dedicated_cycle_actions = ("sit", "stand")
+        else:
+            dedicated_cycle_action = (
+                "interaction" if planned_action == "rescue" else planned_action
+            )
+            dedicated_cycle_actions = (
+                (dedicated_cycle_action,)
+                if dedicated_cycle_action in {
+                    "battle", "magic", "interaction", "sit",
+                }
+                else ()
+            )
         action_fx_path = (
             Path(__file__).resolve().parent.parent
             / "assets"
@@ -1197,9 +1346,10 @@ async def generate_and_store_backend_media(
             download_profile_run_cycle_sheet(character_profile),
             download_profile_jump_cycle_sheet(character_profile),
             download_profile_action_sheet(character_profile),
-            download_profile_action_cycle_sheet(character_profile, "battle"),
-            download_profile_action_cycle_sheet(character_profile, "magic"),
-            download_profile_action_cycle_sheet(character_profile, "interaction"),
+            *(
+                download_profile_action_cycle_sheet(character_profile, action)
+                for action in dedicated_cycle_actions
+            ),
         )
         character_motion_sheet_asset, character_motion_sheet_bytes = (
             motion_sheet_results[0]
@@ -1220,16 +1370,43 @@ async def generate_and_store_backend_media(
         character_action_sheet_asset, character_action_sheet_bytes = (
             motion_sheet_results[5]
         )
-        character_battle_cycle_sheet_asset, character_battle_cycle_sheet_bytes = (
-            motion_sheet_results[6]
+        for action, (cycle_asset, cycle_bytes) in zip(
+            dedicated_cycle_actions,
+            motion_sheet_results[6:],
+        ):
+            if action == "battle":
+                character_battle_cycle_sheet_asset = cycle_asset
+                character_battle_cycle_sheet_bytes = cycle_bytes
+            elif action == "magic":
+                character_magic_cycle_sheet_asset = cycle_asset
+                character_magic_cycle_sheet_bytes = cycle_bytes
+            elif action == "interaction":
+                character_interaction_cycle_sheet_asset = cycle_asset
+                character_interaction_cycle_sheet_bytes = cycle_bytes
+            elif action == "sit":
+                character_sit_cycle_sheet_asset = cycle_asset
+                character_sit_cycle_sheet_bytes = cycle_bytes
+            elif action == "stand":
+                character_stand_cycle_sheet_asset = cycle_asset
+                character_stand_cycle_sheet_bytes = cycle_bytes
+        selected_motion_asset = next(
+            (
+                asset
+                for asset in (
+                    character_jump_cycle_sheet_asset,
+                    character_battle_cycle_sheet_asset,
+                    character_interaction_cycle_sheet_asset,
+                    character_action_sheet_asset,
+                )
+                if asset
+            ),
+            None,
         )
-        character_magic_cycle_sheet_asset, character_magic_cycle_sheet_bytes = (
-            motion_sheet_results[7]
+        selected_quality_tier = str(
+            (selected_motion_asset or {}).get("quality_tier") or ""
         )
-        (
-            character_interaction_cycle_sheet_asset,
-            character_interaction_cycle_sheet_bytes,
-        ) = motion_sheet_results[8]
+        version_match = re.search(r"(_v\d+)$", selected_quality_tier)
+        motion_asset_version = version_match.group(1)[1:] if version_match else None
         video_task = asyncio.create_task(generate_hf_fairytale_video(
             image_bytes=(
                 generated.get("video_background_bytes")
@@ -1265,6 +1442,9 @@ async def generate_and_store_backend_media(
                 "character_interaction_cycle_sheet_bytes": (
                     character_interaction_cycle_sheet_bytes
                 ),
+                "character_sit_cycle_sheet_bytes": character_sit_cycle_sheet_bytes,
+                "character_stand_cycle_sheet_bytes": character_stand_cycle_sheet_bytes,
+                "motion_asset_version": motion_asset_version,
                 "action_fx_sheet_bytes": action_fx_sheet_bytes,
                 "character_key": (character_profile or {}).get("character_key"),
                 "secondary_character_key": (
@@ -1533,9 +1713,9 @@ async def execute_media_generation(
     width: int = 512,
     height: int = 512,
     flux_steps: int = 1,
-    video_width: int = 768,
-    video_height: int = 384,
-    num_frames: int = 48,
+    video_width: int = 960,
+    video_height: int = 480,
+    num_frames: int = 180,
     video_steps: int = 2,
     frame_rate: Optional[int] = None,
     owner_user_id: Optional[str] = None,
@@ -1857,9 +2037,9 @@ async def complete_media_job_with_backend_provider(job: Dict[str, Any]) -> None:
             width=int(_media_job_request_value(job, "width", 512)),
             height=int(_media_job_request_value(job, "height", 512)),
             flux_steps=int(_media_job_request_value(job, "flux_steps", 1)),
-            video_width=int(_media_job_request_value(job, "video_width", 768)),
-            video_height=int(_media_job_request_value(job, "video_height", 384)),
-            num_frames=int(_media_job_request_value(job, "num_frames", 48)),
+            video_width=int(_media_job_request_value(job, "video_width", 960)),
+            video_height=int(_media_job_request_value(job, "video_height", 480)),
+            num_frames=int(_media_job_request_value(job, "num_frames", 180)),
             video_steps=int(_media_job_request_value(job, "video_steps", 2)),
             frame_rate=(
                 int(_media_job_request_value(job, "frame_rate"))
@@ -2054,7 +2234,11 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     global media_job_sync_task, media_generation_worker_task
-    tasks = [media_job_sync_task, media_generation_worker_task]
+    tasks = [
+        media_job_sync_task,
+        media_generation_worker_task,
+        *list(notice_email_tasks),
+    ]
     for task in tasks:
         if task is None:
             continue
@@ -2065,6 +2249,7 @@ async def shutdown_event():
             pass
     media_job_sync_task = None
     media_generation_worker_task = None
+    notice_email_tasks.clear()
 
 
 async def require_admin(account_id: Optional[str]):
@@ -2214,9 +2399,391 @@ def serialize_admin_post(post: dict):
     return serialized
 
 
+def serialize_notice(notice: dict, *, include_delivery_error: bool = False) -> Dict[str, Any]:
+    result = {
+        "id": serialize_object_id(notice.get("_id")),
+        "title": notice.get("title", "공지사항"),
+        "content": notice.get("content", ""),
+        "is_pinned": bool(notice.get("is_pinned", False)),
+        "is_published": bool(notice.get("is_published", True)),
+        "author_account_id": notice.get("author_account_id"),
+        "created_at": serialize_optional_datetime(notice.get("created_at")),
+        "published_at": serialize_optional_datetime(notice.get("published_at")),
+        "updated_at": serialize_optional_datetime(notice.get("updated_at")),
+        "email_requested": bool(notice.get("email_requested", False)),
+        "email_delivery_status": notice.get("email_delivery_status", "not_requested"),
+        "email_recipient_count": int(notice.get("email_recipient_count", 0) or 0),
+        "email_sent_count": int(notice.get("email_sent_count", 0) or 0),
+        "email_failed_count": int(notice.get("email_failed_count", 0) or 0),
+    }
+    if include_delivery_error:
+        result["email_delivery_error"] = notice.get("email_delivery_error")
+    return result
+
+
+async def deliver_notice_emails(notice_id: ObjectId) -> None:
+    notice = await notices_collection.find_one({"_id": notice_id})
+    if not notice:
+        return
+    if not smtp_is_configured():
+        await notices_collection.update_one(
+            {"_id": notice_id},
+            {
+                "$set": {
+                    "email_delivery_status": "failed",
+                    "email_delivery_error": "SMTP_HOST와 SMTP_FROM이 설정되지 않았습니다.",
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+        return
+
+    recipients = await users_collection.find(
+        {
+            "account_status": {"$ne": "deleted"},
+            "email": {"$type": "string", "$ne": ""},
+        },
+        {"email": 1},
+    ).to_list(length=5000)
+    recipient_emails = sorted(
+        {
+            normalized
+            for user in recipients
+            for normalized in [safe_normalize_email(user.get("email"))]
+            if normalized
+        }
+    )
+    await notices_collection.update_one(
+        {"_id": notice_id},
+        {
+            "$set": {
+                "email_delivery_status": "sending",
+                "email_recipient_count": len(recipient_emails),
+                "email_sent_count": 0,
+                "email_failed_count": 0,
+                "email_delivery_error": None,
+                "updated_at": datetime.utcnow(),
+            }
+        },
+    )
+
+    sent_count = 0
+    failed_count = 0
+    errors = []
+    subject = f"[동화 AI] {notice.get('title', '공지사항')}"
+    body = str(notice.get("content", "")).strip()
+    for recipient in recipient_emails:
+        try:
+            await asyncio.to_thread(
+                send_smtp_message,
+                recipient=recipient,
+                subject=subject,
+                body=body,
+            )
+            sent_count += 1
+        except Exception as exc:
+            failed_count += 1
+            if len(errors) < 3:
+                errors.append(str(exc)[:240])
+        await notices_collection.update_one(
+            {"_id": notice_id},
+            {
+                "$set": {
+                    "email_sent_count": sent_count,
+                    "email_failed_count": failed_count,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+
+    status = "completed" if failed_count == 0 else "completed_with_failures"
+    await notices_collection.update_one(
+        {"_id": notice_id},
+        {
+            "$set": {
+                "email_delivery_status": status,
+                "email_delivery_error": "; ".join(errors) if errors else None,
+                "updated_at": datetime.utcnow(),
+            }
+        },
+    )
+
+
+def schedule_notice_email_delivery(notice_id: ObjectId) -> None:
+    task = asyncio.create_task(deliver_notice_emails(notice_id))
+    notice_email_tasks.add(task)
+    task.add_done_callback(notice_email_tasks.discard)
+
+
+def _character_emoji(role: str) -> str:
+    return {
+        "hero": "🧭",
+        "target": "🌟",
+        "antagonist": "🛡️",
+        "companion": "🪽",
+        "guide": "🌲",
+    }.get(role, "✨")
+
+
+def _character_personality(member: Dict[str, Any]) -> str:
+    description = str(
+        member.get("fixed_description")
+        or member.get("source_description")
+        or "따뜻하고 용감한 마음"
+    ).strip()
+    return " ".join(description.split())[:180]
+
+
+def _serialize_story_character(member: Dict[str, Any]) -> Dict[str, str]:
+    role = str(member.get("role") or "companion").strip().lower()
+    name = str(member.get("name") or member.get("profile_name") or "이야기 속 친구").strip()
+    return {
+        "name": name[:80],
+        "role": role[:40],
+        "personality": _character_personality(member),
+        "greeting": f"안녕! 나는 {name}야. 우리 모험에서 궁금한 점을 물어봐.",
+        "avatar_emoji": _character_emoji(role),
+    }
+
+
+def _parse_legacy_story_characters(story_text: str) -> list[Dict[str, Any]]:
+    match = re.search(
+        r"\[(?:등장인물|CHARACTERS)\]\s*(\{.*?\})",
+        story_text or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return []
+    try:
+        parsed = ast.literal_eval(match.group(1))
+    except (SyntaxError, ValueError):
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    return [
+        {
+            "role": str(role),
+            "name": extract_character_name(str(description)),
+            "source_description": str(description),
+        }
+        for role, description in parsed.items()
+        if str(role).strip() not in {"key_item", "item", "location"}
+    ][:5]
+
+
+async def resolve_chat_characters(payload: StoryCharacterDiscoverySchema) -> list[Dict[str, Any]]:
+    cast = await load_story_cast(payload.story_id)
+    if cast:
+        return [_serialize_story_character(member) for member in cast[:5]]
+    return [
+        _serialize_story_character(member)
+        for member in _parse_legacy_story_characters(payload.story_text)
+    ]
+
+
+def _character_chat_reply(character: Dict[str, Any], message: str) -> Dict[str, Any]:
+    name = str(character.get("name") or "이야기 속 친구")
+    personality = str(character.get("personality") or "따뜻하고 용감한 마음")
+    normalized = " ".join(message.split())
+    if re.search(r"기분|마음|무서|두려", normalized):
+        reply = (
+            f"솔직히 조금 떨렸지만, {personality[:70]} 마음을 잃지 않으려고 했어. "
+            "친구들과 함께라서 끝까지 용기를 낼 수 있었지."
+        )
+    elif re.search(r"왜|이유|어째서", normalized):
+        reply = (
+            f"나는 {name}에게 소중한 것을 지키는 일이 가장 중요하다고 생각했어. "
+            "그래서 서두르지 않고 친구들의 이야기를 들은 다음 움직였지."
+        )
+    elif re.search(r"친구|좋아|고마", normalized):
+        reply = "그렇게 물어봐 줘서 정말 고마워! 우리 모험에서 친구의 마음은 가장 큰 힘이었어."
+    else:
+        reply = (
+            f"재미있는 질문이야. 나는 {personality[:90]} 성격으로 그 순간을 지나왔어. "
+            "너라면 우리 이야기에서 어떤 선택을 했을지 궁금해!"
+        )
+    return {
+        "reply": reply,
+        "suggested_replies": [
+            "다시 모험한다면 무엇을 하고 싶어?",
+            "가장 고마웠던 친구는 누구야?",
+            "나도 용기를 내려면 어떻게 해야 해?",
+        ],
+    }
+
+
+@app.post("/story/characters")
+async def discover_story_characters(payload: StoryCharacterDiscoverySchema):
+    characters = await resolve_chat_characters(payload)
+    if not characters:
+        characters = [
+            {
+                "name": "이야기 친구",
+                "role": "companion",
+                "personality": "이야기를 함께 돌아보고 질문을 들어주는 다정한 친구",
+                "greeting": "안녕! 나는 이야기 친구야. 동화에서 궁금했던 걸 물어봐.",
+                "avatar_emoji": "✨",
+            }
+        ]
+    return {"story_id": payload.story_id, "characters": characters}
+
+
+@app.post("/story/character-chat")
+async def chat_with_story_character(
+    payload: StoryCharacterChatSchema,
+    request: Request,
+):
+    character = {
+        "name": str(payload.character.get("name") or "이야기 친구").strip()[:80],
+        "personality": str(
+            payload.character.get("personality") or "따뜻하고 용감한 마음"
+        ).strip()[:240],
+    }
+    result = _character_chat_reply(character, payload.user_message)
+
+    auth = None
+    try:
+        auth = verify_access_token(request.headers.get("authorization"))
+    except Exception:
+        auth = None
+    story_id = str(payload.story_id or "").strip() or None
+    user_id = str((auth or {}).get("uid") or "guest").strip()
+    now = datetime.utcnow()
+    if story_id:
+        messages = []
+        for message in payload.messages[-12:]:
+            role = str(message.get("role") or "").strip()
+            content = str(message.get("content") or "").strip()
+            if role in {"user", "character"} and content:
+                messages.append(
+                    {
+                        "story_id": story_id,
+                        "user_id": user_id,
+                        "character_name": character["name"],
+                        "role": role,
+                        "content": content[:2000],
+                        "created_at": now,
+                        "source": "character_chat",
+                    }
+                )
+        messages.append(
+            {
+                "story_id": story_id,
+                "user_id": user_id,
+                "character_name": character["name"],
+                "role": "character",
+                "content": result["reply"],
+                "created_at": now,
+                "source": "character_chat",
+            }
+        )
+        if messages:
+            await messages_collection.insert_many(messages)
+    return result
+
+
 @app.get("/")
 async def root():
     return {"message": "동화 생성 API 서버가 정상적으로 실행 중입니다."}
+
+
+@app.post("/api/auth/email-verifications/send")
+async def send_email_verification(payload: EmailVerificationSendSchema):
+    email = normalize_email(payload.email)
+    if not email:
+        raise HTTPException(status_code=400, detail="이메일 주소를 입력해 주세요.")
+    if not smtp_is_configured() and not EMAIL_VERIFICATION_EXPOSE_CODE:
+        raise HTTPException(
+            status_code=503,
+            detail="이메일 발송 설정이 준비되지 않았습니다. 관리자에게 문의해 주세요.",
+        )
+
+    now = datetime.utcnow()
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    await email_verifications_collection.delete_many({"email": email})
+    record = {
+        "email": email,
+        "code_hash": _secret_digest(code),
+        "created_at": now,
+        "expires_at": now + timedelta(minutes=EMAIL_VERIFICATION_TTL_MINUTES),
+        "verification_expires_at": now
+        + timedelta(minutes=EMAIL_VERIFICATION_TTL_MINUTES),
+        "verified_at": None,
+        "verification_token_hash": None,
+        "attempts": 0,
+    }
+    insert_result = await email_verifications_collection.insert_one(record)
+
+    if smtp_is_configured():
+        try:
+            await asyncio.to_thread(
+                send_smtp_message,
+                recipient=email,
+                subject="[동화 AI] 이메일 인증번호",
+                body=(
+                    f"인증번호는 {code}입니다.\n"
+                    f"{EMAIL_VERIFICATION_TTL_MINUTES}분 안에 입력해 주세요."
+                ),
+            )
+        except Exception as exc:
+            await email_verifications_collection.delete_one({"_id": insert_result.inserted_id})
+            logger.exception("Email verification delivery failed")
+            raise HTTPException(
+                status_code=502,
+                detail="인증번호 이메일을 발송하지 못했습니다.",
+            ) from exc
+
+    response = {
+        "message": "인증번호를 이메일로 발송했습니다.",
+        "email": email,
+        "expires_in_seconds": EMAIL_VERIFICATION_TTL_MINUTES * 60,
+    }
+    if EMAIL_VERIFICATION_EXPOSE_CODE and not smtp_is_configured():
+        response["dev_code"] = code
+    return response
+
+
+@app.post("/api/auth/email-verifications/verify")
+async def verify_email_code(payload: EmailVerificationVerifySchema):
+    email = normalize_email(payload.email)
+    if not email or not payload.code.isdigit():
+        raise HTTPException(status_code=400, detail="이메일과 6자리 인증번호를 확인해 주세요.")
+
+    now = datetime.utcnow()
+    record = await email_verifications_collection.find_one(
+        {"email": email, "expires_at": {"$gt": now}},
+        sort=[("created_at", -1)],
+    )
+    if not record:
+        raise HTTPException(status_code=400, detail="인증번호가 만료되었거나 없습니다.")
+    if int(record.get("attempts", 0) or 0) >= 5:
+        raise HTTPException(status_code=429, detail="인증번호 입력 횟수를 초과했습니다.")
+    if not hmac.compare_digest(
+        str(record.get("code_hash") or ""),
+        _secret_digest(payload.code),
+    ):
+        await email_verifications_collection.update_one(
+            {"_id": record["_id"]},
+            {"$inc": {"attempts": 1}},
+        )
+        raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
+
+    verification_token = secrets.token_urlsafe(32)
+    await email_verifications_collection.update_one(
+        {"_id": record["_id"]},
+        {
+            "$set": {
+                "verified_at": now,
+                "verification_token_hash": _secret_digest(verification_token),
+                "verification_expires_at": now + timedelta(minutes=10),
+            }
+        },
+    )
+    return {
+        "message": "이메일 인증이 완료되었습니다.",
+        "email": email,
+        "verification_token": verification_token,
+    }
 
 
 @app.post("/api/users/register", response_description="Register user")
@@ -2226,9 +2793,14 @@ async def register_user(user: UserSchema):
             status_code=403,
             detail="The administrator account ID is reserved.",
         )
-    user_dict = user.model_dump()
+    email = normalize_email(user.email)
+    if user.provider == "local" and email:
+        await consume_email_verification_token(email, user.email_verification_token)
+    user_dict = user.model_dump(exclude={"email_verification_token"})
+    user_dict["email"] = email
     if user_dict.get("password"):
         user_dict["password"] = hash_password(user_dict["password"])
+    user_dict.pop("email_verification_token", None)
     user_dict["social_info"] = {
         "provider": user.provider,
         "social_id": user.provider_id or user.account_id,
@@ -2367,12 +2939,40 @@ async def update_user_profile(account_id: str, update_data: UserUpdateSchema):
     if not existing_user:
         raise HTTPException(status_code=404, detail="媛?낅맂 怨꾩젙??李얠쓣 ???놁뒿?덈떎.")
 
+    current_email = normalize_email(existing_user.get("email"))
+    email_was_sent = "email" in update_data.model_fields_set
+    requested_email = (
+        normalize_email(update_data.email) if email_was_sent else current_email
+    )
+    if email_was_sent and requested_email != current_email:
+        if requested_email:
+            await consume_email_verification_token(
+                requested_email,
+                update_data.email_verification_token,
+            )
+
+        duplicate = await users_collection.find_one(
+            {
+                "email": requested_email,
+                "account_id": {"$ne": account_id},
+                "account_status": {"$ne": "deleted"},
+            },
+            {"_id": 1},
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="이미 사용 중인 이메일입니다.")
+
     update_dict = {}
-    for key, value in update_data.model_dump().items():
+    for key, value in update_data.model_dump(
+        exclude={"email_verification_token"},
+        exclude_unset=True,
+    ).items():
         if value is None:
             continue
         if isinstance(value, str):
             value = value.strip()
+        if key == "email":
+            value = requested_email
         update_dict[key] = value
 
     if not update_dict:
@@ -4113,6 +4713,126 @@ async def resolve_admin_report(
     }
 
 
+@app.get("/api/notices", response_description="Published notices")
+async def list_notices(limit: int = 500):
+    bounded_limit = max(1, min(int(limit), 500))
+    notices = await notices_collection.find(
+        {"is_published": True}
+    ).sort(
+        [("is_pinned", -1), ("published_at", -1), ("created_at", -1)]
+    ).to_list(length=bounded_limit)
+    return {"notices": [serialize_notice(notice) for notice in notices]}
+
+
+@app.get("/api/notices/{notice_id}", response_description="Notice detail")
+async def get_notice(notice_id: str):
+    if not ObjectId.is_valid(notice_id):
+        raise HTTPException(status_code=400, detail="공지사항 ID가 올바르지 않습니다.")
+    notice = await notices_collection.find_one(
+        {"_id": ObjectId(notice_id), "is_published": True}
+    )
+    if not notice:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    return serialize_notice(notice)
+
+
+@app.post("/api/admin/notices", response_description="Create notice")
+async def create_admin_notice(payload: AdminNoticeCreateSchema):
+    await require_admin(payload.account_id)
+    now = datetime.utcnow()
+    notice = {
+        "title": payload.title.strip(),
+        "content": payload.content.strip(),
+        "is_pinned": payload.is_pinned,
+        "is_published": True,
+        "author_account_id": payload.account_id.strip(),
+        "created_at": now,
+        "published_at": now,
+        "updated_at": now,
+        "email_requested": payload.send_email,
+        "email_delivery_status": "queued" if payload.send_email else "not_requested",
+        "email_recipient_count": 0,
+        "email_sent_count": 0,
+        "email_failed_count": 0,
+        "email_delivery_error": None,
+        "schema_version": 1,
+    }
+    result = await notices_collection.insert_one(notice)
+    notice["_id"] = result.inserted_id
+    if payload.send_email:
+        schedule_notice_email_delivery(result.inserted_id)
+    return serialize_notice(notice, include_delivery_error=True)
+
+
+@app.patch("/api/admin/notices/{notice_id}", response_description="Update notice")
+async def update_admin_notice(
+    notice_id: str,
+    payload: AdminNoticeUpdateSchema,
+):
+    await require_admin(payload.account_id)
+    if not ObjectId.is_valid(notice_id):
+        raise HTTPException(status_code=400, detail="공지사항 ID가 올바르지 않습니다.")
+    now = datetime.utcnow()
+    notice = await notices_collection.find_one_and_update(
+        {"_id": ObjectId(notice_id)},
+        {
+            "$set": {
+                "title": payload.title.strip(),
+                "content": payload.content.strip(),
+                "is_pinned": payload.is_pinned,
+                "updated_at": now,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if not notice:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    return serialize_notice(notice, include_delivery_error=True)
+
+
+@app.post("/api/admin/notices/{notice_id}/email", response_description="Send notice email")
+async def send_admin_notice_email(
+    notice_id: str,
+    payload: AdminNoticeEmailSchema,
+):
+    await require_admin(payload.account_id)
+    if not ObjectId.is_valid(notice_id):
+        raise HTTPException(status_code=400, detail="공지사항 ID가 올바르지 않습니다.")
+    object_id = ObjectId(notice_id)
+    notice = await notices_collection.find_one({"_id": object_id})
+    if not notice:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    if notice.get("email_delivery_status") in {"queued", "sending"}:
+        return serialize_notice(notice, include_delivery_error=True)
+    await notices_collection.update_one(
+        {"_id": object_id},
+        {
+            "$set": {
+                "email_requested": True,
+                "email_delivery_status": "queued",
+                "email_delivery_error": None,
+                "updated_at": datetime.utcnow(),
+            }
+        },
+    )
+    notice["email_requested"] = True
+    notice["email_delivery_status"] = "queued"
+    notice["email_delivery_error"] = None
+    schedule_notice_email_delivery(object_id)
+    return serialize_notice(notice, include_delivery_error=True)
+
+
+@app.delete("/api/admin/notices/{notice_id}", response_description="Delete notice")
+async def delete_admin_notice(notice_id: str, account_id: str):
+    await require_admin(account_id)
+    if not ObjectId.is_valid(notice_id):
+        raise HTTPException(status_code=400, detail="공지사항 ID가 올바르지 않습니다.")
+    result = await notices_collection.delete_one({"_id": ObjectId(notice_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
+    return {"message": "공지사항이 삭제되었습니다.", "notice_id": notice_id}
+
+
 @app.get("/api/admin/dashboard", response_description="Admin dashboard data")
 async def get_admin_dashboard(account_id: str):
     await require_admin(account_id)
@@ -4121,6 +4841,7 @@ async def get_admin_dashboard(account_id: str):
     stories = await stories_collection.find().to_list(length=500)
     vocabularies = await vocabularies_collection.find().to_list(length=1000)
     posts = await community_posts_collection.find().to_list(length=500)
+    notices = await notices_collection.find().to_list(length=500)
 
     stories_by_user = {}
     for story in stories:
@@ -4150,6 +4871,13 @@ async def get_admin_dashboard(account_id: str):
         key=lambda item: serialize_datetime(item.get("last_activity_at") or item.get("created_at")),
         reverse=True,
     )
+    notices.sort(
+        key=lambda item: (
+            bool(item.get("is_pinned", False)),
+            serialize_datetime(item.get("published_at") or item.get("created_at")),
+        ),
+        reverse=True,
+    )
 
     comment_count = sum(len(post.get("comments", [])) for post in posts)
     hidden_post_count = sum(1 for post in posts if post.get("is_hidden", False))
@@ -4171,6 +4899,7 @@ async def get_admin_dashboard(account_id: str):
             "hidden_post_count": hidden_post_count,
             "pending_report_count": pending_report_count,
             "active_warning_count": active_warning_count,
+            "notice_count": len(notices),
             "deleted_user_count": sum(
                 1 for user in users if user.get("account_status") == "deleted"
             ),
@@ -4185,6 +4914,10 @@ async def get_admin_dashboard(account_id: str):
         ],
         "stories": [serialize_admin_story(story) for story in stories[:200]],
         "community_posts": [serialize_admin_post(post) for post in posts[:200]],
+        "notices": [
+            serialize_notice(notice, include_delivery_error=True)
+            for notice in notices[:200]
+        ],
         "vocabularies": [serialize_vocabulary(vocab) for vocab in vocabularies[:300]],
     }
 

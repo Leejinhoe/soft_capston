@@ -92,6 +92,16 @@ class CharacterAssetSelectionTests(unittest.TestCase):
                 {
                     "pose": "jump-cycle-sheet",
                     "quality_tier": "video_jump_cycle_v20",
+                    "image_file_id": "legacy-jump-cycle-file",
+                },
+                {
+                    "pose": "jump-cycle-sheet",
+                    "quality_tier": "video_jump_cycle_v23",
+                    "image_file_id": "legacy-jump-cycle-v23-file",
+                },
+                {
+                    "pose": "jump-cycle-sheet",
+                    "quality_tier": "video_jump_cycle_v28",
                     "image_file_id": "jump-cycle-file",
                 },
             ]
@@ -108,6 +118,16 @@ class CharacterAssetSelectionTests(unittest.TestCase):
                 {
                     "pose": "action-sheet",
                     "quality_tier": "video_action_sheet_v21",
+                    "image_file_id": "legacy-action-sheet-file",
+                },
+                {
+                    "pose": "action-sheet",
+                    "quality_tier": "video_action_sheet_v23",
+                    "image_file_id": "legacy-action-sheet-v23-file",
+                },
+                {
+                    "pose": "action-sheet",
+                    "quality_tier": "video_action_sheet_v28",
                     "image_file_id": "action-sheet-file",
                 },
             ]
@@ -125,6 +145,16 @@ class CharacterAssetSelectionTests(unittest.TestCase):
                 {
                     "pose": "battle-cycle-sheet",
                     "quality_tier": "video_battle_cycle_v22",
+                    "image_file_id": "legacy-battle-cycle-file",
+                },
+                {
+                    "pose": "battle-cycle-sheet",
+                    "quality_tier": "video_battle_cycle_v23",
+                    "image_file_id": "legacy-battle-cycle-v23-file",
+                },
+                {
+                    "pose": "battle-cycle-sheet",
+                    "quality_tier": "video_battle_cycle_v28",
                     "image_file_id": "battle-cycle-file",
                 },
                 {
@@ -141,6 +171,71 @@ class CharacterAssetSelectionTests(unittest.TestCase):
         )
         self.assertEqual(
             select_character_asset(profile, "battle")["image_file_id"],
+            "default-file",
+        )
+
+    def test_legacy_versions_are_ordered_fallbacks(self):
+        profile = {
+            "assets": [
+                {"pose": "jump-cycle-sheet", "quality_tier": "video_jump_cycle_v20", "image_file_id": "jump-v20"},
+                {"pose": "jump-cycle-sheet", "quality_tier": "video_jump_cycle_v23", "image_file_id": "jump-v23"},
+                {"pose": "action-sheet", "quality_tier": "video_action_sheet_v21", "image_file_id": "action-v21"},
+                {"pose": "action-sheet", "quality_tier": "video_action_sheet_v23", "image_file_id": "action-v23"},
+                {"pose": "battle-cycle-sheet", "quality_tier": "video_battle_cycle_v22", "image_file_id": "battle-v22"},
+                {"pose": "battle-cycle-sheet", "quality_tier": "video_battle_cycle_v23", "image_file_id": "battle-v23"},
+                {"pose": "interaction-cycle-sheet", "quality_tier": "video_interaction_cycle_v22", "image_file_id": "interaction-v22"},
+                {"pose": "interaction-cycle-sheet", "quality_tier": "video_interaction_cycle_v23", "image_file_id": "interaction-v23"},
+            ]
+        }
+
+        self.assertEqual(
+            select_character_jump_cycle_sheet(profile)["image_file_id"],
+            "jump-v23",
+        )
+        self.assertEqual(
+            select_character_action_sheet(profile)["image_file_id"],
+            "action-v23",
+        )
+        self.assertEqual(
+            select_character_action_cycle_sheet(profile, "battle")["image_file_id"],
+            "battle-v23",
+        )
+        self.assertEqual(
+            select_character_action_cycle_sheet(profile, "interaction")["image_file_id"],
+            "interaction-v23",
+        )
+
+    def test_selects_sit_and_stand_cycles_as_video_assets(self):
+        profile = {
+            "assets": [
+                {
+                    "pose": "sit-cycle-sheet",
+                    "quality_tier": "video_sit_cycle_v1",
+                    "image_file_id": "sit-cycle-file",
+                },
+                {
+                    "pose": "stand-cycle-sheet",
+                    "quality_tier": "video_stand_cycle_v1",
+                    "image_file_id": "stand-cycle-file",
+                },
+                {
+                    "pose": "default",
+                    "quality_tier": "fast_action",
+                    "image_file_id": "default-file",
+                },
+            ]
+        }
+
+        self.assertEqual(
+            select_character_action_cycle_sheet(profile, "sit")["image_file_id"],
+            "sit-cycle-file",
+        )
+        self.assertEqual(
+            select_character_action_cycle_sheet(profile, "stand")["image_file_id"],
+            "stand-cycle-file",
+        )
+        self.assertEqual(
+            select_character_asset(profile, "The hero sits down")["image_file_id"],
             "default-file",
         )
 

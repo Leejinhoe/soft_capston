@@ -70,6 +70,9 @@ flutter:
     - assets/characters/motion_sheets/male_06_run_cycle_v16.png
     - assets/characters/motion_sheets/male_07_run_cycle_v16.png
     - assets/characters/motion_sheets/male_08_run_cycle_v16.png
+    # The directory keeps the v28 contract extensible while v23 remains the
+    # checked-in fallback until the next binary asset batch is generated.
+    - assets/characters/motion_sheets/
     - assets/backgrounds/adventure_ruins_wide_v2.png
     - assets/backgrounds/fantasy_castle_wide_v2.png
     - assets/backgrounds/friendship_square_wide_v2.png

@@ -22,10 +22,16 @@ class AdditionalInfoPage extends StatefulWidget {
 class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
   final TextEditingController _nicknameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _emailCodeController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   bool _isLoading = false;
+  bool _emailSending = false;
+  bool _emailVerifying = false;
   bool _didPrefill = false;
+  String? _originalEmail;
+  String? _verifiedEmail;
+  String? _emailVerificationToken;
 
   @override
   void didChangeDependencies() {
@@ -34,6 +40,7 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
     final state = context.read<AppState>();
     _nicknameController.text = state.currentNickname ?? '';
     _emailController.text = state.currentEmail ?? '';
+    _originalEmail = _emailController.text.trim();
     _phoneController.text = state.currentPhone ?? '';
     _addressController.text = state.currentAddress ?? '';
     _didPrefill = true;
@@ -43,19 +50,34 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
   void dispose() {
     _nicknameController.dispose();
     _emailController.dispose();
+    _emailCodeController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
     super.dispose();
   }
 
   Future<void> _submitExtraInfo() async {
+    final email = _emailController.text.trim();
+    final originalEmail = (_originalEmail ?? '').trim().toLowerCase();
+    final emailChanged = email.toLowerCase() != originalEmail;
+    final verifiedEmail = _verifiedEmail?.trim().toLowerCase();
+    if (emailChanged &&
+        email.isNotEmpty &&
+        (verifiedEmail != email.toLowerCase() ||
+            _emailVerificationToken == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('새 이메일 주소를 먼저 인증해 주세요.')),
+      );
+      return;
+    }
     setState(() => _isLoading = true);
 
     try {
       final data = await DbService.updateUserProfile(
         accountId: widget.accountId,
         nickname: _nicknameController.text,
-        email: _emailController.text,
+        email: email,
+        emailVerificationToken: emailChanged ? _emailVerificationToken : null,
         phone: _phoneController.text,
         address: _addressController.text,
       );
@@ -88,6 +110,68 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _sendEmailCode() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('인증할 이메일 주소를 입력해 주세요.')),
+      );
+      return;
+    }
+    setState(() {
+      _emailSending = true;
+      _emailVerificationToken = null;
+      _verifiedEmail = null;
+    });
+    try {
+      await DbService.sendEmailVerificationCode(email: email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('인증번호를 이메일로 보냈습니다.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _emailSending = false);
+    }
+  }
+
+  Future<void> _verifyEmailCode() async {
+    final email = _emailController.text.trim();
+    final code = _emailCodeController.text.trim();
+    if (email.isEmpty || code.length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이메일과 6자리 인증번호를 확인해 주세요.')),
+      );
+      return;
+    }
+    setState(() => _emailVerifying = true);
+    try {
+      final token = await DbService.confirmEmailVerificationCode(
+        email: email,
+        code: code,
+      );
+      if (!mounted) return;
+      setState(() {
+        _emailVerificationToken = token;
+        _verifiedEmail = email;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이메일 인증이 완료되었습니다.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _emailVerifying = false);
     }
   }
 
@@ -134,6 +218,16 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
               const SizedBox(height: 16),
               TextField(
                 controller: _emailController,
+                onChanged: (value) {
+                  if (_verifiedEmail != null &&
+                      _verifiedEmail!.trim().toLowerCase() !=
+                          value.trim().toLowerCase()) {
+                    setState(() {
+                      _verifiedEmail = null;
+                      _emailVerificationToken = null;
+                    });
+                  }
+                },
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: '이메일',
@@ -146,6 +240,49 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                   ),
                 ),
                 keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _emailCodeController,
+                      style: const TextStyle(color: Colors.white),
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        hintText: '인증번호 6자리',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: const Color(0xFF160F38),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: _emailVerifying ? null : _verifyEmailCode,
+                    child: _emailVerifying
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('확인'),
+                  ),
+                  TextButton(
+                    onPressed: _emailSending ? null : _sendEmailCode,
+                    child: _emailSending
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('인증 발송'),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               TextField(
