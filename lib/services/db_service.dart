@@ -8,6 +8,7 @@ import '../models/admin_model.dart';
 import '../models/character_profile.dart';
 import '../models/media_readiness.dart';
 import '../models/moderation_model.dart';
+import '../models/notice_model.dart';
 import '../models/story_model.dart';
 
 class DbService {
@@ -198,6 +199,7 @@ class DbService {
     String? address,
     String provider = 'local',
     String? providerId,
+    String? emailVerificationToken,
   }) async {
     final response = await http
         .post(
@@ -212,6 +214,7 @@ class DbService {
             'address': address,
             'provider': provider,
             'provider_id': providerId,
+            'email_verification_token': emailVerificationToken,
           }),
         )
         .timeout(const Duration(seconds: 15));
@@ -224,6 +227,43 @@ class DbService {
     throw Exception(
       _extractDetailMessage(response.body) ??
           '회원 저장 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<void> sendEmailVerificationCode({
+    required String email,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/auth/email-verifications/send'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'email': email.trim()}),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200 || response.statusCode == 201) return;
+    throw Exception(
+      _extractDetailMessage(response.body) ?? '인증번호 발송에 실패했어요.',
+    );
+  }
+
+  static Future<String> confirmEmailVerificationCode({
+    required String email,
+    required String code,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/auth/email-verifications/verify'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'email': email.trim(), 'code': code.trim()}),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['verification_token']?.toString().trim() ?? '';
+      if (token.isNotEmpty) return token;
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ?? '인증번호 확인에 실패했어요.',
     );
   }
 
@@ -269,6 +309,122 @@ class DbService {
     throw Exception(
       _extractDetailMessage(response.body) ??
           '관리자 데이터 조회 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<List<Notice>> fetchNotices({int limit = 500}) async {
+    final response = await http
+        .get(
+          _apiUri('/api/notices').replace(queryParameters: {'limit': '$limit'}),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return (body['notices'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Notice.fromJson(Map<String, dynamic>.from(item)))
+          .toList(growable: false);
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '공지사항 조회 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Notice> createAdminNotice({
+    required String adminAccountId,
+    required String title,
+    required String content,
+    required bool isPinned,
+    required bool sendEmail,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/admin/notices'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'account_id': adminAccountId,
+            'title': title,
+            'content': content,
+            'is_pinned': isPinned,
+            'send_email': sendEmail,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return Notice.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '공지사항 등록 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Notice> updateAdminNotice({
+    required String adminAccountId,
+    required String noticeId,
+    required String title,
+    required String content,
+    required bool isPinned,
+  }) async {
+    final response = await http
+        .patch(
+          _apiUri('/api/admin/notices/$noticeId'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'account_id': adminAccountId,
+            'title': title,
+            'content': content,
+            'is_pinned': isPinned,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) {
+      return Notice.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '공지사항 수정 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Notice> sendAdminNoticeEmail({
+    required String adminAccountId,
+    required String noticeId,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/admin/notices/$noticeId/email'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'account_id': adminAccountId}),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) {
+      return Notice.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '공지 메일 발송 요청 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<void> deleteAdminNotice({
+    required String adminAccountId,
+    required String noticeId,
+  }) async {
+    final response = await http
+        .delete(
+          _apiUri('/api/admin/notices/$noticeId').replace(
+            queryParameters: {'account_id': adminAccountId},
+          ),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 200 || response.statusCode == 204) return;
+    throw Exception(
+      _extractDetailMessage(response.body) ??
+          '공지사항 삭제 실패: ${response.statusCode}',
     );
   }
 
@@ -430,6 +586,7 @@ class DbService {
     required String accountId,
     String? nickname,
     String? email,
+    String? emailVerificationToken,
     String? phone,
     String? address,
   }) async {
@@ -440,6 +597,7 @@ class DbService {
           body: jsonEncode({
             'nickname': nickname?.trim(),
             'email': email?.trim(),
+            'email_verification_token': emailVerificationToken?.trim(),
             'phone': phone?.trim(),
             'address': address?.trim(),
           }),
@@ -739,6 +897,8 @@ class DbService {
     required int stepNumber,
     required String storyText,
     String? choiceMade,
+    Map<String, dynamic>? selectedChoiceEmotion,
+    Map<String, dynamic>? storyEmotion,
     String? imageUrl,
     String? videoUrl,
   }) async {
@@ -751,6 +911,8 @@ class DbService {
               'step_number': stepNumber,
               'story_text': storyText,
               'choice_made': choiceMade,
+              'selected_choice_emotion': selectedChoiceEmotion,
+              'story_emotion': storyEmotion,
               'image_url': imageUrl,
               'video_url': videoUrl,
               'created_at': DateTime.now().toUtc().toIso8601String(),

@@ -1,5 +1,7 @@
+import asyncio
 import unittest
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
@@ -15,6 +17,7 @@ from hf_video_provider import (
     _lock_grounded_action_legs,
     _motion_timeline,
     _optical_flow_interpolate,
+    _prepare_background_stage,
     _prepare_motion_sheet,
     _prepare_run_cycle_sheet,
     _render_frame,
@@ -23,9 +26,11 @@ from hf_video_provider import (
     _select_action_sheet_pose,
     _select_dedicated_action_cycle_pose,
     _select_jump_cycle_pose,
+    _select_posture_cycle_pose,
     _select_run_cycle_pose,
     build_video_motion_plan,
     build_fairytale_video_prompt,
+    generate_hf_fairytale_video,
     _normalize_frame_count,
     _paste_character_layer,
 )
@@ -81,6 +86,159 @@ class HfVideoProviderTests(unittest.TestCase):
         )
 
         self.assertIsNone(frame.getchannel("A").getbbox())
+
+    def test_v28_quality_review_can_suppress_decorative_effect_layers(self):
+        frame = Image.new("RGBA", (320, 180), (0, 0, 0, 0))
+
+        _draw_action_effects(
+            frame=frame,
+            Image=Image,
+            ImageDraw=ImageDraw,
+            ImageFilter=ImageFilter,
+            action="battle",
+            progress=0.52,
+            center_x=160,
+            ground_y=165,
+            character_width=80,
+            character_height=140,
+            suppress_effects=True,
+        )
+
+        self.assertIsNone(frame.getchannel("A").getbbox())
+
+    def test_v28_cycle_reports_selection_duration_and_fallback_metadata(self):
+        background = Image.new("RGBA", (320, 180), "#8ec7ee")
+        character = Image.new("RGBA", (80, 140), (0, 0, 0, 0))
+        ImageDraw.Draw(character).rectangle((20, 8, 60, 132), fill="#d95050")
+        cycle = self._motion_sheet()
+
+        def png_bytes(image):
+            output = BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        result = asyncio.run(
+            generate_hf_fairytale_video(
+                image_bytes=png_bytes(background),
+                story_text="The hero steps forward and swings a sword.",
+                width=256,
+                height=256,
+                num_frames=12,
+                frame_rate=6,
+                motion_context={
+                    "background_key": "fantasy_castle",
+                    "background_bytes": png_bytes(background),
+                    "character_key": "male_01",
+                    "character_bytes": png_bytes(character),
+                    "character_battle_cycle_sheet_bytes": png_bytes(cycle),
+                    "motion_asset_version": "v28",
+                    "suppress_action_effects": True,
+                    "action_semantics": {
+                        "motion_mode": "stationary",
+                        "animation_action": "battle",
+                        "participant_count": 1,
+                        "requires_partner": False,
+                    },
+                },
+            )
+        )
+
+        parameters = result["parameters"]
+        self.assertEqual(parameters["animation_mode"], "identity_locked_action_cycle_v28_stable_alpha")
+        self.assertEqual(parameters["motion_asset_tier"], "dedicated_action_cycle")
+        self.assertEqual(parameters["motion_asset_version"], "v28")
+        self.assertEqual(parameters["dedicated_action_cycle_version"], "v28")
+        self.assertEqual(parameters["num_frames"], 12)
+        self.assertEqual(parameters["frame_rate"], 6)
+        self.assertEqual(parameters["duration_seconds"], 2.0)
+        self.assertFalse(parameters["motion_fallback_used"])
+        self.assertTrue(parameters["action_effects_suppressed"])
+        self.assertEqual(
+            parameters["compositor_mode"],
+            "cinematic_action_compositor_v29_stable_alpha",
+        )
+        self.assertIn(b"ftyp", result["video_bytes"][:64])
+
+    def test_missing_v28_cycle_marks_reference_fallback_in_metadata(self):
+        background = Image.new("RGBA", (320, 180), "#8ec7ee")
+        character = Image.new("RGBA", (80, 140), (0, 0, 0, 0))
+        ImageDraw.Draw(character).rectangle((20, 8, 60, 132), fill="#d95050")
+
+        def png_bytes(image):
+            output = BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        result = asyncio.run(
+            generate_hf_fairytale_video(
+                image_bytes=png_bytes(background),
+                story_text="The hero jumps over a branch.",
+                width=256,
+                height=256,
+                num_frames=6,
+                frame_rate=6,
+                motion_context={
+                    "background_bytes": png_bytes(background),
+                    "character_bytes": png_bytes(character),
+                    "motion_asset_version": "v28",
+                    "action_semantics": {
+                        "motion_mode": "stationary",
+                        "animation_action": "jump",
+                        "participant_count": 1,
+                        "requires_partner": False,
+                    },
+                },
+            )
+        )
+
+        self.assertTrue(result["parameters"]["motion_fallback_used"])
+        self.assertEqual(
+            result["parameters"]["motion_fallback_reason"],
+            "semantic_action_asset_missing",
+        )
+        self.assertEqual(
+            result["parameters"]["animation_mode"],
+            "reference_transform_v29_semantic_fallback",
+        )
+
+    def test_legacy_action_version_is_explicitly_marked(self):
+        background = Image.new("RGBA", (320, 180), "#8ec7ee")
+        character = Image.new("RGBA", (80, 140), (0, 0, 0, 0))
+        ImageDraw.Draw(character).rectangle((20, 8, 60, 132), fill="#d95050")
+
+        def png_bytes(image):
+            output = BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        result = asyncio.run(
+            generate_hf_fairytale_video(
+                image_bytes=png_bytes(background),
+                story_text="The hero steps forward and swings a sword.",
+                width=256,
+                height=256,
+                num_frames=6,
+                frame_rate=6,
+                motion_context={
+                    "background_bytes": png_bytes(background),
+                    "character_bytes": png_bytes(character),
+                    "character_battle_cycle_sheet_bytes": png_bytes(self._motion_sheet()),
+                    "motion_asset_version": "v23",
+                    "action_semantics": {
+                        "motion_mode": "stationary",
+                        "animation_action": "battle",
+                        "participant_count": 1,
+                        "requires_partner": False,
+                    },
+                },
+            )
+        )
+
+        self.assertTrue(result["parameters"]["motion_fallback_used"])
+        self.assertEqual(
+            result["parameters"]["motion_fallback_reason"],
+            "legacy_action_asset_version",
+        )
 
     def test_run_cycle_sheet_is_split_into_eight_normalized_cells(self):
         sheet = Image.new("RGBA", (400, 200), (0, 0, 0, 0))
@@ -220,8 +378,80 @@ class HfVideoProviderTests(unittest.TestCase):
         self.assertEqual(set(selected), set(range(8)))
         self.assertEqual(selected, sorted(selected))
 
+    def test_dedicated_action_cycle_uses_more_of_the_video(self):
+        cells = [Image.new("RGBA", (10, 10), (index, 0, 0, 255)) for index in range(8)]
+
+        self.assertIs(
+            _select_dedicated_action_cycle_pose(
+                cells, action="battle", progress=0.12
+            ),
+            cells[0],
+        )
+        self.assertIsNot(
+            _select_dedicated_action_cycle_pose(
+                cells, action="battle", progress=0.30
+            ),
+            cells[0],
+        )
+        self.assertIs(
+            _select_dedicated_action_cycle_pose(
+                cells, action="battle", progress=0.80
+            ),
+            cells[-1],
+        )
+
+    def test_sit_and_stand_dedicated_cycles_reach_the_authored_end_pose(self):
+        cells = [Image.new("RGBA", (10, 10), (index, 0, 0, 255)) for index in range(8)]
+
+        for action in ("sit", "stand"):
+            with self.subTest(action=action):
+                start = _select_dedicated_action_cycle_pose(
+                    cells, action=action, progress=0.05
+                )
+                middle = _select_dedicated_action_cycle_pose(
+                    cells, action=action, progress=0.45
+                )
+                end = _select_dedicated_action_cycle_pose(
+                    cells, action=action, progress=0.90
+                )
+                self.assertIs(start, cells[0])
+                self.assertNotIn(middle.getpixel((0, 0))[0], {0, 7})
+                self.assertIs(end, cells[7])
+
+    def test_posture_cycle_keeps_the_readable_seated_pose(self):
+        sit_cells = [
+            Image.new("RGBA", (10, 10), (10 + index, 0, 0, 255))
+            for index in range(8)
+        ]
+        stand_cells = [
+            Image.new("RGBA", (10, 10), (30 + index, 0, 0, 255))
+            for index in range(8)
+        ]
+
+        seated = _select_posture_cycle_pose(
+            sit_cells, stand_cells, action="sit", progress=0.90
+        )
+        stand_start = _select_posture_cycle_pose(
+            sit_cells, stand_cells, action="stand", progress=0.05
+        )
+        upright = _select_posture_cycle_pose(
+            sit_cells, stand_cells, action="stand", progress=0.90
+        )
+        rising = _select_posture_cycle_pose(
+            sit_cells, stand_cells, action="stand", progress=0.45
+        )
+
+        self.assertIs(seated, sit_cells[4])
+        self.assertIs(stand_start, sit_cells[4])
+        self.assertIn(rising, sit_cells[1:4])
+        self.assertIs(upright, stand_cells[7])
+
     def test_frame_count_is_capped_at_fifteen_seconds(self):
         self.assertEqual(_normalize_frame_count(9999, 24), 360)
+
+    def test_frame_count_honors_shorter_requested_duration(self):
+        self.assertEqual(_normalize_frame_count(180, 30), 180)
+        self.assertEqual(_normalize_frame_count(60, 30), 60)
 
     def test_run_cycle_uses_both_alternating_leg_halves_in_order(self):
         cells = [Image.new("RGBA", (10, 10), (index, 0, 0, 255)) for index in range(8)]
@@ -379,6 +609,21 @@ class HfVideoProviderTests(unittest.TestCase):
         self.assertGreater(camera_span, 0.0)
         self.assertLess(character_span, camera_span * 0.6)
 
+    def test_stationary_posture_actions_keep_the_background_locked(self):
+        for action in ("sit", "stand", "wave", "investigate"):
+            plan = {
+                "action": action,
+                "target": "castle",
+                "background_key": "fantasy_castle",
+                "motion_focus": "character",
+            }
+            start = _background_camera_values(768, 384, 0.10, plan)
+            end = _background_camera_values(768, 384, 384 / 480, plan)
+
+            with self.subTest(action=action):
+                self.assertEqual(start["crop_x"], end["crop_x"])
+                self.assertEqual(start["crop_y"], end["crop_y"])
+
     def test_character_first_action_has_visible_root_motion(self):
         plan = {"motion_focus": "character"}
         battle_start = _character_motion_values(
@@ -502,6 +747,41 @@ class HfVideoProviderTests(unittest.TestCase):
         self.assertIsNotNone(bounds)
         self.assertGreaterEqual(bounds[3], 78)
         self.assertLessEqual(bounds[3], 80)
+
+    def test_character_layer_uses_stable_canvas_center_across_asymmetric_poses(self):
+        class RecordingFrame:
+            size = (100, 100)
+            height = 100
+
+            def __init__(self):
+                self.placements = []
+
+            def alpha_composite(self, _image, dest=None):
+                if dest is not None:
+                    self.placements.append(dest)
+
+        positions = []
+        for left in (2, 28):
+            frame = RecordingFrame()
+            character = Image.new("RGBA", (40, 40), (0, 0, 0, 0))
+            ImageDraw.Draw(character).rectangle(
+                (left, 4, left + 9, 39),
+                fill=(220, 80, 40, 255),
+            )
+            _paste_character_layer(
+                frame=frame,
+                character_image=character,
+                Image=Image,
+                ImageDraw=ImageDraw,
+                ImageFilter=ImageFilter,
+                center_x=50,
+                ground_y=80,
+                scale=0.40,
+                rotation=0.0,
+            )
+            positions.append(frame.placements[-1][0])
+
+        self.assertEqual(positions, [30, 30])
 
     def test_motion_prompt_carries_phase_and_alignment_contract(self):
         plan = build_video_motion_plan(
@@ -746,6 +1026,37 @@ class HfVideoProviderTests(unittest.TestCase):
         )
         self.assertGreater(interpolated_opaque, crossfade_opaque)
 
+    def test_optical_flow_preserves_chroma_on_transparent_edges(self):
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            self.skipTest("OpenCV is not installed")
+
+        first = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        second = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        ImageDraw.Draw(first).rectangle((10, 12, 40, 58), fill=(255, 0, 0, 160))
+        ImageDraw.Draw(second).rectangle((14, 12, 44, 58), fill=(255, 0, 0, 160))
+        interpolated = _optical_flow_interpolate(
+            first,
+            second,
+            0.5,
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            cache={},
+            cache_key="premultiplied-red-rectangle",
+        )
+
+        partial = [
+            pixel
+            for pixel in interpolated.getdata()
+            if 8 <= pixel[3] <= 240
+        ]
+        self.assertTrue(partial)
+        self.assertTrue(all(red >= 245 for red, _, _, _ in partial))
+        self.assertTrue(all(green <= 3 and blue <= 3 for _, green, blue, _ in partial))
+
     def test_dissimilar_silhouettes_use_a_clean_pose_cut(self):
         import cv2
         import numpy as np
@@ -766,6 +1077,43 @@ class HfVideoProviderTests(unittest.TestCase):
         )
 
         self.assertEqual(interpolated.tobytes(), second.tobytes())
+
+    def test_single_warp_transition_does_not_crossfade_two_character_poses(self):
+        import cv2
+        import numpy as np
+
+        first = Image.new("RGBA", (80, 80), (0, 0, 0, 0))
+        second = Image.new("RGBA", (80, 80), (0, 0, 0, 0))
+        ImageDraw.Draw(first).rectangle((10, 12, 45, 74), fill="#e13e3eff")
+        ImageDraw.Draw(second).rectangle((18, 12, 53, 74), fill="#2870dfff")
+
+        early = _optical_flow_interpolate(
+            first,
+            second,
+            0.35,
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            cache={},
+            cache_key="single-warp-early",
+            prefer_single_warp=True,
+        )
+        late = _optical_flow_interpolate(
+            first,
+            second,
+            0.65,
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            cache={},
+            cache_key="single-warp-late",
+            prefer_single_warp=True,
+        )
+
+        early_colors = [pixel for pixel in early.getdata() if pixel[3] >= 64]
+        late_colors = [pixel for pixel in late.getdata() if pixel[3] >= 64]
+        self.assertTrue(all(red > blue for red, _, blue, _ in early_colors))
+        self.assertTrue(all(blue > red for red, _, blue, _ in late_colors))
 
     def test_walking_to_castle_builds_a_journey_plan(self):
         plan = build_video_motion_plan(
@@ -1061,6 +1409,43 @@ class HfVideoProviderTests(unittest.TestCase):
         self.assertEqual(end.size, (768, 384))
         self.assertGreater(end_blue, start_blue + 20)
 
+    def test_prepared_background_stage_matches_uncached_render(self):
+        background = Image.new("RGBA", (500, 240), (40, 80, 120, 255))
+        plan = build_video_motion_plan(
+            story_text="The child runs toward the castle.",
+            action_tags=["running"],
+            background_key="fantasy_castle",
+        )
+        prepared = _prepare_background_stage(
+            background,
+            Image,
+            ImageOps,
+            320,
+            160,
+            plan,
+        )
+        uncached = _fit_background(
+            background,
+            Image,
+            ImageOps,
+            320,
+            160,
+            0.42,
+            plan,
+        )
+        cached = _fit_background(
+            background,
+            Image,
+            ImageOps,
+            320,
+            160,
+            0.42,
+            plan,
+            prepared_background=prepared,
+        )
+
+        self.assertEqual(cached.tobytes(), uncached.tobytes())
+
     def test_magic_pose_takes_priority_over_generic_scene_words(self):
         plan = build_video_motion_plan(
             story_text="The hero walks through the forest.",
@@ -1162,6 +1547,94 @@ class HfVideoProviderTests(unittest.TestCase):
             if green > 120 and green > red + 25 and green > blue + 20
         )
         self.assertGreater(green_pixels, 100)
+
+    def test_missing_jump_cycle_uses_reference_instead_of_walking_cell(self):
+        background = Image.new("RGBA", (320, 180), "#8ec7ee")
+        reference = Image.new("RGBA", (60, 100), (0, 0, 0, 0))
+        ImageDraw.Draw(reference).rectangle((15, 5, 45, 96), fill="#d95050")
+        generic_cells = [
+            Image.new("RGBA", (60, 100), "#20bb70")
+            for _ in range(8)
+        ]
+        plan = build_video_motion_plan(
+            story_text="The hero jumps over a branch.",
+            action_tags=["jumping"],
+            action_semantics={"animation_action": "jump"},
+        )
+
+        frame = _render_layered_frame(
+            background_image=background,
+            character_image=reference,
+            character_motion_cells=generic_cells,
+            Image=Image,
+            ImageDraw=ImageDraw,
+            ImageEnhance=ImageEnhance,
+            ImageFilter=ImageFilter,
+            ImageOps=ImageOps,
+            width=320,
+            height=180,
+            progress=0.5,
+            motion_strength=3,
+            motion_plan=plan,
+        )
+
+        red_pixels = sum(
+            1
+            for red, green, blue in frame.getdata()
+            if red > 140 and red > green + 30 and red > blue + 20
+        )
+        green_pixels = sum(
+            1
+            for red, green, blue in frame.getdata()
+            if green > 140 and green > red + 30 and green > blue + 20
+        )
+        self.assertGreater(red_pixels, 100)
+        self.assertEqual(green_pixels, 0)
+
+    def test_all_sixteen_profiles_use_identity_safe_reference_fallbacks(self):
+        asset_dir = Path(__file__).resolve().parents[1] / "assets" / "characters"
+        background = Image.new("RGBA", (160, 96), "#8ec7ee")
+        generic_cells = [
+            Image.new("RGBA", (60, 100), (0, 255, 0, 255))
+            for _ in range(8)
+        ]
+        character_keys = [
+            f"{gender}_{index:02d}"
+            for gender in ("female", "male")
+            for index in range(1, 9)
+        ]
+
+        for character_key in character_keys:
+            reference_path = asset_dir / f"{character_key}_reference_v2.png"
+            self.assertTrue(reference_path.is_file(), reference_path)
+            reference = Image.open(reference_path).convert("RGBA")
+            for action in ("jump", "investigate", "interaction", "sit", "stand"):
+                with self.subTest(character=character_key, action=action):
+                    plan = build_video_motion_plan(
+                        story_text=f"The hero performs {action}.",
+                        action_semantics={"animation_action": action},
+                    )
+                    frame = _render_layered_frame(
+                        background_image=background,
+                        character_image=reference,
+                        character_motion_cells=generic_cells,
+                        Image=Image,
+                        ImageDraw=ImageDraw,
+                        ImageEnhance=ImageEnhance,
+                        ImageFilter=ImageFilter,
+                        ImageOps=ImageOps,
+                        width=160,
+                        height=96,
+                        progress=0.5,
+                        motion_strength=3,
+                        motion_plan=plan,
+                    )
+                    neon_green = sum(
+                        1
+                        for red, green, blue in frame.getdata()
+                        if green > 240 and red < 20 and blue < 20
+                    )
+                    self.assertEqual(neon_green, 0)
 
     def test_battle_frame_includes_secondary_character(self):
         background = Image.new("RGBA", (640, 480), "#8ec7ee")

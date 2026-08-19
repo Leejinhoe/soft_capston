@@ -4,12 +4,36 @@ from typing import Any, Dict, Optional
 MOTION_SHEET_QUALITY_TIER = "video_motion_sheet_v3"
 TARGET_JOURNEY_SHEET_QUALITY_TIER = "video_target_journey_sheet_v4"
 RUN_CYCLE_SHEET_QUALITY_TIER = "video_run_cycle_v16"
-JUMP_CYCLE_SHEET_QUALITY_TIER = "video_jump_cycle_v20"
-ACTION_SHEET_QUALITY_TIER = "video_action_sheet_v21"
+JUMP_CYCLE_SHEET_QUALITY_TIER = "video_jump_cycle_v28"
+ACTION_SHEET_QUALITY_TIER = "video_action_sheet_v28"
 ACTION_CYCLE_QUALITY_TIERS = {
-    "battle": "video_battle_cycle_v22",
+    "battle": "video_battle_cycle_v28",
     "magic": "video_magic_cycle_v22",
-    "interaction": "video_interaction_cycle_v22",
+    "interaction": "video_interaction_cycle_v28",
+    "sit": "video_sit_cycle_v1",
+    "stand": "video_stand_cycle_v1",
+}
+
+# Keep already-seeded GridFS assets usable while the catalog is reseeded with
+# v28. Selection always prefers the canonical tier above, then the newest
+# known legacy tier.
+LEGACY_JUMP_CYCLE_QUALITY_TIERS = (
+    "video_jump_cycle_v23",
+    "video_jump_cycle_v20",
+)
+LEGACY_ACTION_SHEET_QUALITY_TIERS = (
+    "video_action_sheet_v23",
+    "video_action_sheet_v21",
+)
+LEGACY_ACTION_CYCLE_QUALITY_TIERS = {
+    "battle": (
+        "video_battle_cycle_v23",
+        "video_battle_cycle_v22",
+    ),
+    "interaction": (
+        "video_interaction_cycle_v23",
+        "video_interaction_cycle_v22",
+    ),
 }
 
 VIDEO_ASSET_QUALITY_TIERS = {
@@ -19,7 +43,31 @@ VIDEO_ASSET_QUALITY_TIERS = {
     JUMP_CYCLE_SHEET_QUALITY_TIER,
     ACTION_SHEET_QUALITY_TIER,
     *ACTION_CYCLE_QUALITY_TIERS.values(),
+    *LEGACY_JUMP_CYCLE_QUALITY_TIERS,
+    *LEGACY_ACTION_SHEET_QUALITY_TIERS,
+    *{
+        tier
+        for tiers in LEGACY_ACTION_CYCLE_QUALITY_TIERS.values()
+        for tier in tiers
+    },
 }
+
+
+def _select_video_asset(
+    assets: list[Dict[str, Any]],
+    quality_tiers: tuple[str, ...],
+    pose: str,
+) -> Optional[Dict[str, Any]]:
+    """Select the newest compatible asset before falling back by pose."""
+
+    for quality_tier in quality_tiers:
+        match = next(
+            (asset for asset in assets if asset.get("quality_tier") == quality_tier),
+            None,
+        )
+        if match:
+            return match
+    return next((asset for asset in assets if asset.get("pose") == pose), None)
 
 
 def select_character_asset(
@@ -46,6 +94,7 @@ def select_character_asset(
             "jump-cycle-sheet",
             "action-sheet",
             "battle-cycle-sheet", "magic-cycle-sheet", "interaction-cycle-sheet",
+            "sit-cycle-sheet", "stand-cycle-sheet",
         }
     ]
     if not scene_assets:
@@ -165,14 +214,10 @@ def select_character_jump_cycle_sheet(
     assets = profile.get("assets")
     if not isinstance(assets, list):
         return None
-    return next(
-        (
-            asset
-            for asset in assets
-            if asset.get("quality_tier") == JUMP_CYCLE_SHEET_QUALITY_TIER
-            or asset.get("pose") == "jump-cycle-sheet"
-        ),
-        None,
+    return _select_video_asset(
+        assets,
+        (JUMP_CYCLE_SHEET_QUALITY_TIER, *LEGACY_JUMP_CYCLE_QUALITY_TIERS),
+        "jump-cycle-sheet",
     )
 
 
@@ -184,14 +229,10 @@ def select_character_action_sheet(
     assets = profile.get("assets")
     if not isinstance(assets, list):
         return None
-    return next(
-        (
-            asset
-            for asset in assets
-            if asset.get("quality_tier") == ACTION_SHEET_QUALITY_TIER
-            or asset.get("pose") == "action-sheet"
-        ),
-        None,
+    return _select_video_asset(
+        assets,
+        (ACTION_SHEET_QUALITY_TIER, *LEGACY_ACTION_SHEET_QUALITY_TIERS),
+        "action-sheet",
     )
 
 
@@ -205,17 +246,16 @@ def select_character_action_cycle_sheet(
     if not isinstance(assets, list):
         return None
     normalized_action = "interaction" if action == "rescue" else str(action or "")
-    quality_tier = ACTION_CYCLE_QUALITY_TIERS.get(normalized_action)
-    if not quality_tier:
+    canonical_quality_tier = ACTION_CYCLE_QUALITY_TIERS.get(normalized_action)
+    if not canonical_quality_tier:
         return None
-    return next(
+    return _select_video_asset(
+        assets,
         (
-            asset
-            for asset in assets
-            if asset.get("quality_tier") == quality_tier
-            or asset.get("pose") == f"{normalized_action}-cycle-sheet"
+            canonical_quality_tier,
+            *LEGACY_ACTION_CYCLE_QUALITY_TIERS.get(normalized_action, set()),
         ),
-        None,
+        f"{normalized_action}-cycle-sheet",
     )
 
 

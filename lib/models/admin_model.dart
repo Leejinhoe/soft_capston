@@ -1,10 +1,12 @@
 import 'story_model.dart';
+import 'notice_model.dart';
 
 class AdminDashboard {
   final AdminStats stats;
   final List<AdminUser> users;
   final List<AdminStory> stories;
   final List<AdminCommunityPost> communityPosts;
+  final List<Notice> notices;
   final List<VocabWord> vocabularies;
 
   const AdminDashboard({
@@ -12,6 +14,7 @@ class AdminDashboard {
     required this.users,
     required this.stories,
     required this.communityPosts,
+    required this.notices,
     required this.vocabularies,
   });
 
@@ -29,6 +32,10 @@ class AdminDashboard {
       communityPosts: (json['community_posts'] as List? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(AdminCommunityPost.fromJson)
+          .toList(),
+      notices: (json['notices'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(Notice.fromJson)
           .toList(),
       vocabularies: (json['vocabularies'] as List? ?? const [])
           .whereType<Map<String, dynamic>>()
@@ -49,6 +56,7 @@ class AdminStats {
   final int communityPostCount;
   final int commentCount;
   final int hiddenPostCount;
+  final int noticeCount;
 
   const AdminStats({
     required this.userCount,
@@ -60,6 +68,7 @@ class AdminStats {
     required this.communityPostCount,
     required this.commentCount,
     required this.hiddenPostCount,
+    required this.noticeCount,
   });
 
   factory AdminStats.fromJson(Map<String, dynamic> json) {
@@ -74,6 +83,7 @@ class AdminStats {
       communityPostCount: read('community_post_count'),
       commentCount: read('comment_count'),
       hiddenPostCount: read('hidden_post_count'),
+      noticeCount: read('notice_count'),
     );
   }
 }

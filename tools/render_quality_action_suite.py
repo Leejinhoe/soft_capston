@@ -36,8 +36,8 @@ CASES = (
         "background_key": "fantasy_castle",
         "character_pose": "walking",
         "action_tags": ["walking"],
-        "motion_sheet": "male_01_motion_sheet_v3.png",
-        "motion_field": "character_motion_sheet_bytes",
+        "motion_sheet": "male_01_run_cycle_v16.png",
+        "motion_field": "character_run_cycle_sheet_bytes",
         "semantics": {
             "motion_mode": "locomotion",
             "animation_action": "journey",
@@ -57,7 +57,7 @@ CASES = (
         "background_key": "fantasy_castle",
         "character_pose": "walking",
         "action_tags": ["jumping"],
-        "motion_sheet": "male_01_jump_cycle_v19.png",
+        "motion_sheet": "male_01_jump_cycle_v23.png",
         "motion_field": "character_jump_cycle_sheet_bytes",
         "semantics": {
             "motion_mode": "solo",
@@ -75,7 +75,7 @@ CASES = (
         "background_key": "mystery_library",
         "character_pose": "walking",
         "action_tags": ["investigating"],
-        "motion_sheet": "male_01_action_sheet_v21.png",
+        "motion_sheet": "male_01_action_sheet_v23.png",
         "motion_field": "character_action_sheet_bytes",
         "semantics": {
             "motion_mode": "stationary",
@@ -190,7 +190,9 @@ def parse_args() -> argparse.Namespace:
 
 
 async def main(args: argparse.Namespace) -> None:
-    os.environ["LOCAL_VIDEO_RENDER_SCALE"] = "2"
+    os.environ["LOCAL_VIDEO_RENDER_SCALE"] = "3"
+    os.environ["LOCAL_VIDEO_ENCODER_CRF"] = "16"
+    os.environ["LOCAL_VIDEO_FINAL_SHARPNESS"] = "1.08"
     os.environ["LOCAL_VIDEO_DURATION_SECONDS"] = str(DURATION)
     os.environ["LOCAL_VIDEO_MAX_DURATION_SECONDS"] = "15"
     os.environ["LOCAL_VIDEO_JOURNEY_PAN_START"] = "0.52"

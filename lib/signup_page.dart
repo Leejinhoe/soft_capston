@@ -25,6 +25,10 @@ class _SignupPageState extends State<SignupPage> {
   Color _passwordMessageColor = Colors.grey;
   bool _isPasswordSafe = false;
   bool _isLoading = false; // 🔥 서버와 통신 중임을 알리는 변수 추가
+  bool _emailSending = false;
+  bool _emailVerifying = false;
+  String? _emailVerificationToken;
+  String? _verifiedEmail;
 
   @override
   void dispose() {
@@ -91,10 +95,15 @@ class _SignupPageState extends State<SignupPage> {
         accountId: _idController.text,
         password: _passwordController.text,
         nickname: nickname,
-        email: _emailController.text,
+        email: _emailController.text.trim(),
         phone: _phoneController.text,
         address: _addressController.text,
         provider: "local",
+        emailVerificationToken: _emailController.text.trim().isNotEmpty &&
+                _verifiedEmail?.trim().toLowerCase() ==
+                    _emailController.text.trim().toLowerCase()
+            ? _emailVerificationToken
+            : null,
       );
 
       if (!mounted) return;
@@ -125,6 +134,68 @@ class _SignupPageState extends State<SignupPage> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _sendEmailCode() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('먼저 이메일 주소를 입력해 주세요.')),
+      );
+      return;
+    }
+    setState(() => _emailSending = true);
+    try {
+      await DbService.sendEmailVerificationCode(email: email);
+      if (!mounted) return;
+      setState(() {
+        _emailVerificationToken = null;
+        _verifiedEmail = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('인증번호를 이메일로 발송했습니다.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _emailSending = false);
+    }
+  }
+
+  Future<void> _verifyEmailCode() async {
+    final email = _emailController.text.trim();
+    final code = _codeController.text.trim();
+    if (email.isEmpty || code.length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이메일과 6자리 인증번호를 확인해 주세요.')),
+      );
+      return;
+    }
+    setState(() => _emailVerifying = true);
+    try {
+      final token = await DbService.confirmEmailVerificationCode(
+        email: email,
+        code: code,
+      );
+      if (!mounted) return;
+      setState(() {
+        _emailVerificationToken = token;
+        _verifiedEmail = email;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이메일 인증이 완료되었습니다.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _emailVerifying = false);
     }
   }
 
@@ -275,11 +346,7 @@ class _SignupPageState extends State<SignupPage> {
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('인증번호가 발송되었습니다.')),
-                    );
-                  },
+                  onPressed: _emailSending ? null : _sendEmailCode,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFEC4899),
                     padding: const EdgeInsets.symmetric(
@@ -290,7 +357,13 @@ class _SignupPageState extends State<SignupPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
+                  child: _emailSending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
                     '인증 발송',
                     style: TextStyle(
                       color: Colors.white,
@@ -306,6 +379,21 @@ class _SignupPageState extends State<SignupPage> {
               hintText: '인증번호 6자리 입력',
               icon: Icons.verified_user_outlined,
               keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _emailVerifying ? null : _verifyEmailCode,
+                icon: _emailVerifying
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.verified_outlined),
+                label: const Text('인증번호 확인'),
+              ),
             ),
             const SizedBox(height: 24),
             const Text(

@@ -27,14 +27,12 @@ class VocabWord {
       id: json['id']?.toString(),
       userId: json['user_id']?.toString(),
       originStoryId: json['origin_story_id']?.toString(),
-      sourceStoryTitle:
-          json['source_story_title']?.toString() ??
+      sourceStoryTitle: json['source_story_title']?.toString() ??
           json['origin_story_title']?.toString(),
       hard: json['hard']?.toString() ?? json['word']?.toString() ?? '',
       easy: json['easy']?.toString() ?? meaning.toString(),
       definition: meaning.toString(),
-      createdAt:
-          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.tryParse(json['saved_at']?.toString() ?? ''),
     );
   }
@@ -83,6 +81,13 @@ class EmotionScoreItem {
       score: (json['score'] as num?)?.toDouble() ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'label_index': labelIndex,
+        'label': label,
+        'label_display': labelDisplay,
+        'score': score,
+      };
 }
 
 class EmotionAnalysis {
@@ -133,6 +138,125 @@ class EmotionAnalysis {
       scoresByIndex: rawScoresByIndex.map(
         (k, v) => MapEntry(int.tryParse(k) ?? -1, (v as num).toDouble()),
       ),
+    );
+  }
+
+  String get displayLabel {
+    if (primaryEmotionDisplay.trim().isNotEmpty) {
+      return primaryEmotionDisplay.trim();
+    }
+    return primaryEmotion.trim();
+  }
+
+  Map<String, dynamic> toJson() => {
+        'emotion_label_source': emotionLabelSource,
+        'emotion_labels_are_generic': emotionLabelsAreGeneric,
+        'primary_emotion_index': primaryEmotionIndex,
+        'primary_emotion': primaryEmotion,
+        'primary_emotion_display': primaryEmotionDisplay,
+        'primary_score': primaryScore,
+        'top_emotions': topEmotions.map((item) => item.toJson()).toList(),
+        'active_emotions': activeEmotions.map((item) => item.toJson()).toList(),
+        'scores': scores,
+        'scores_by_index': scoresByIndex.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+      };
+}
+
+class StoryChoiceEmotion {
+  final int step;
+  final String choice;
+  final EmotionAnalysis? emotion;
+
+  const StoryChoiceEmotion({
+    required this.step,
+    required this.choice,
+    this.emotion,
+  });
+
+  Map<String, dynamic> toJson() {
+    final analysis = emotion;
+    return {
+      'step': step,
+      'choice': choice,
+      'primary_emotion': analysis?.displayLabel ?? '',
+      'primary_score': analysis?.primaryScore ?? 0.0,
+      'top_emotions':
+          analysis?.topEmotions.map((item) => item.toJson()).toList() ??
+              const [],
+      'scores': analysis?.scores ?? const <String, double>{},
+    };
+  }
+}
+
+class StoryCharacter {
+  final String name;
+  final String role;
+  final String personality;
+  final String greeting;
+  final String avatarEmoji;
+
+  const StoryCharacter({
+    required this.name,
+    required this.role,
+    required this.personality,
+    required this.greeting,
+    required this.avatarEmoji,
+  });
+
+  factory StoryCharacter.fromJson(Map<String, dynamic> json) {
+    return StoryCharacter(
+      name: json['name']?.toString().trim() ?? '',
+      role: json['role']?.toString().trim() ?? '이야기 속 친구',
+      personality: json['personality']?.toString().trim() ?? '따뜻하고 다정해요',
+      greeting: json['greeting']?.toString().trim() ?? '',
+      avatarEmoji: json['avatar_emoji']?.toString().trim() ?? '✨',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'role': role,
+        'personality': personality,
+        'greeting': greeting,
+        'avatar_emoji': avatarEmoji,
+      };
+}
+
+class CharacterChatMessage {
+  final String role;
+  final String content;
+  final DateTime createdAt;
+
+  CharacterChatMessage({
+    required this.role,
+    required this.content,
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  bool get isUser => role == 'user';
+
+  Map<String, dynamic> toJson() => {'role': role, 'content': content};
+}
+
+class CharacterChatReply {
+  final String reply;
+  final List<String> suggestedReplies;
+
+  const CharacterChatReply({
+    required this.reply,
+    this.suggestedReplies = const [],
+  });
+
+  factory CharacterChatReply.fromJson(Map<String, dynamic> json) {
+    return CharacterChatReply(
+      reply: json['reply']?.toString().trim() ?? '',
+      suggestedReplies: (json['suggested_replies'] as List? ?? const [])
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .take(3)
+          .toList(),
     );
   }
 }
@@ -358,9 +482,10 @@ class StorySession {
     Set<String>? syncedVocabKeys,
     Set<int>? syncedChapterNumbers,
     Set<int>? mediaGenerationChapterNumbers,
-  }) : syncedVocabKeys = syncedVocabKeys ?? <String>{},
-       syncedChapterNumbers = syncedChapterNumbers ?? <int>{},
-       mediaGenerationChapterNumbers = mediaGenerationChapterNumbers ?? <int>{};
+  })  : syncedVocabKeys = syncedVocabKeys ?? <String>{},
+        syncedChapterNumbers = syncedChapterNumbers ?? <int>{},
+        mediaGenerationChapterNumbers =
+            mediaGenerationChapterNumbers ?? <int>{};
 
   String get fullStoryText => chapters.map((c) => c.text).join('\n\n');
 
@@ -376,6 +501,36 @@ class StorySession {
     return null;
   }
 
+  bool get hasReachedEnding =>
+      chapters.isNotEmpty &&
+      chapters.last.text.trim().isNotEmpty &&
+      allChoicesMade.isNotEmpty &&
+      choices.isEmpty;
+
+  List<StoryChoiceEmotion> get choiceEmotionHistory {
+    final history = <StoryChoiceEmotion>[];
+    for (final chapter in chapters) {
+      final choice = chapter.choiceMade?.trim() ?? '';
+      if (choice.isEmpty) continue;
+      history.add(
+        StoryChoiceEmotion(
+          step: history.length + 1,
+          choice: choice,
+          emotion: chapter.selectedChoiceEmotion,
+        ),
+      );
+    }
+
+    for (var index = history.length; index < allChoicesMade.length; index++) {
+      final choice = allChoicesMade[index].trim();
+      if (choice.isNotEmpty) {
+        history
+            .add(StoryChoiceEmotion(step: history.length + 1, choice: choice));
+      }
+    }
+    return history;
+  }
+
   List<StoryCastMember> get effectiveStoryCast {
     final heroOverride = characterOverrides['hero']?.trim() ?? '';
     if (storyCast.isNotEmpty) {
@@ -383,39 +538,38 @@ class StorySession {
           .map(
             (member) =>
                 member.role.toLowerCase() == 'hero' && heroOverride.isNotEmpty
-                ? StoryCastMember(
-                    role: member.role,
-                    name: member.name,
-                    characterKey: heroOverride,
-                    profileName: CharacterProfileCatalog.defaultNameFor(
-                      heroOverride,
-                    ),
-                    sourceDescription: member.sourceDescription,
-                  )
-                : member,
+                    ? StoryCastMember(
+                        role: member.role,
+                        name: member.name,
+                        characterKey: heroOverride,
+                        profileName: CharacterProfileCatalog.defaultNameFor(
+                          heroOverride,
+                        ),
+                        sourceDescription: member.sourceDescription,
+                      )
+                    : member,
           )
           .toList(growable: false);
     }
     return characters.entries
         .where(
-          (entry) =>
-              entry.key.toLowerCase() != 'key_item' &&
-              entry.value.trim().isNotEmpty,
-        )
+      (entry) =>
+          entry.key.toLowerCase() != 'key_item' &&
+          entry.value.trim().isNotEmpty,
+    )
         .map((entry) {
-          final member = StoryCastMember.fromCharacter(entry.key, entry.value);
-          final override =
-              characterOverrides[entry.key.toLowerCase()]?.trim() ?? '';
-          if (override.isEmpty) return member;
-          return StoryCastMember(
-            role: member.role,
-            name: member.name,
-            characterKey: override,
-            profileName: CharacterProfileCatalog.defaultNameFor(override),
-            sourceDescription: member.sourceDescription,
-          );
-        })
-        .toList(growable: false);
+      final member = StoryCastMember.fromCharacter(entry.key, entry.value);
+      final override =
+          characterOverrides[entry.key.toLowerCase()]?.trim() ?? '';
+      if (override.isEmpty) return member;
+      return StoryCastMember(
+        role: member.role,
+        name: member.name,
+        characterKey: override,
+        profileName: CharacterProfileCatalog.defaultNameFor(override),
+        sourceDescription: member.sourceDescription,
+      );
+    }).toList(growable: false);
   }
 
   EmotionAnalysis? emotionForChoice(String choice) {
@@ -433,12 +587,10 @@ class StorySession {
         .map(
           (scene) => StoryChapter(
             chapter: (scene['step_number'] as num?)?.toInt() ?? 1,
-            text:
-                scene['story_text']?.toString() ??
+            text: scene['story_text']?.toString() ??
                 scene['content']?.toString() ??
                 '',
-            choiceMade:
-                scene['choice_made']?.toString() ??
+            choiceMade: scene['choice_made']?.toString() ??
                 scene['user_choice']?.toString(),
             imageUrl: scene['image_url']?.toString(),
             videoUrl: scene['video_url']?.toString(),
@@ -446,6 +598,18 @@ class StorySession {
             mediaStatus: scene['media_status']?.toString(),
             mediaError: scene['media_error']?.toString(),
             createdAt: DateTime.tryParse(scene['created_at']?.toString() ?? ''),
+            storyEmotion: scene['story_emotion'] is Map
+                ? EmotionAnalysis.fromJson(
+                    Map<String, dynamic>.from(scene['story_emotion'] as Map),
+                  )
+                : null,
+            selectedChoiceEmotion: scene['selected_choice_emotion'] is Map
+                ? EmotionAnalysis.fromJson(
+                    Map<String, dynamic>.from(
+                      scene['selected_choice_emotion'] as Map,
+                    ),
+                  )
+                : null,
           ),
         )
         .where((chapter) => chapter.text.trim().isNotEmpty)
@@ -478,22 +642,21 @@ class StorySession {
     final rawStoryCast = json['story_cast'];
     final storyCast = rawStoryCast is List
         ? rawStoryCast
-              .whereType<Map>()
-              .map(
-                (item) => StoryCastMember.fromJson(
-                  item.map((key, value) => MapEntry(key.toString(), value)),
-                ),
-              )
-              .where((member) => member.role.isNotEmpty)
-              .toList()
+            .whereType<Map>()
+            .map(
+              (item) => StoryCastMember.fromJson(
+                item.map((key, value) => MapEntry(key.toString(), value)),
+              ),
+            )
+            .where((member) => member.role.isNotEmpty)
+            .toList()
         : <StoryCastMember>[];
 
     final syncedKeys = vocab
         .map((word) => '${word.hard}|${word.easy}|${word.definition}')
         .toSet();
-    final syncedChapterNumbers = chapters
-        .map((chapter) => chapter.chapter)
-        .toSet();
+    final syncedChapterNumbers =
+        chapters.map((chapter) => chapter.chapter).toSet();
     final mediaGenerationChapterNumbers = chapters
         .where((chapter) => chapter.videoUrl?.trim().isNotEmpty ?? false)
         .map((chapter) => chapter.chapter)
@@ -534,19 +697,44 @@ class PsychResult {
   final String type;
   final String description;
   final Map<String, int> traits;
+  final List<String> dominantEmotions;
+  final List<String> choiceInsights;
 
   PsychResult({
     required this.type,
     required this.description,
     required this.traits,
+    this.dominantEmotions = const [],
+    this.choiceInsights = const [],
   });
 
   factory PsychResult.fromJson(Map<String, dynamic> json) {
     final rawTraits = json['traits'] as Map<String, dynamic>? ?? {};
+    final rawInsights = json['choice_insights'] as List? ?? const [];
     return PsychResult(
-      type: json['type'] ?? '탐험가',
-      description: json['description'] ?? '',
-      traits: rawTraits.map((k, v) => MapEntry(k, (v as num).toInt())),
+      type: json['type']?.toString() ?? '탐험가',
+      description: json['description']?.toString() ?? '',
+      traits: rawTraits.map(
+        (key, value) => MapEntry(
+          key,
+          value is num ? value.toInt().clamp(0, 100).toInt() : 50,
+        ),
+      ),
+      dominantEmotions: (json['dominant_emotions'] as List? ?? const [])
+          .map((item) => item.toString())
+          .where((item) => item.trim().isNotEmpty)
+          .toList(),
+      choiceInsights: rawInsights
+          .map((item) {
+            if (item is Map) {
+              return item['analysis']?.toString() ??
+                  item['insight']?.toString() ??
+                  '';
+            }
+            return item.toString();
+          })
+          .where((item) => item.trim().isNotEmpty)
+          .toList(),
     );
   }
 }
@@ -572,8 +760,7 @@ class CommunityComment {
       authorName: json['author_name']?.toString() ?? '동화 친구',
       authorAccountId: json['author_account_id']?.toString(),
       content: json['content']?.toString() ?? '',
-      createdAt:
-          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
     );
   }
@@ -630,8 +817,7 @@ class CommunityPost {
       preview: json['preview']?.toString() ?? '',
       fullText: json['full_text']?.toString() ?? '',
       storyEmoji: json['story_emoji']?.toString() ?? '📖',
-      createdAt:
-          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
       viewCount: (json['view_count'] as num?)?.toInt() ?? 0,
       likeCount: (json['like_count'] as num?)?.toInt() ?? 0,

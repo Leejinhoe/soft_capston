@@ -20,6 +20,9 @@ class StoryCharacterAnimation extends StatefulWidget {
     r'^(male|female)_0[1-8]$',
   );
 
+  static const String motionAssetVersion = 'v28';
+  static const String legacyMotionAssetVersion = 'v23';
+
   static const List<String> _movementTerms = <String>[
     'run',
     'running',
@@ -38,6 +41,51 @@ class StoryCharacterAnimation extends StatefulWidget {
     '\ub5a0\ub098',
   ];
 
+  static const List<String> _actionTerms = <String>[
+    ..._movementTerms,
+    'jump',
+    'leap',
+    'hop',
+    'battle',
+    'fight',
+    'attack',
+    'strike',
+    'slash',
+    'sword',
+    'interact',
+    'reach',
+    'receive',
+    'give',
+    'hand',
+    'rescue',
+    'help',
+    'wave',
+    'greet',
+    'magic',
+    'spell',
+    'investigate',
+    'search',
+    '\uc810\ud504',
+    '\ub3c4\uc57d',
+    '\uc2f8\uc6b0',
+    '\uacf5\uaca9',
+    '\uc804\ud22c',
+    '\uce7c',
+    '\ubca0',
+    '\uac74\ub124',
+    '\ubc1b',
+    '\uc7a1',
+    '\uad6c\ud574',
+    '\ub3d5',
+    '\uc5f4',
+    '\uc778\uc0ac',
+    '\ub9c8\ubc95',
+    '\uc8fc\ubb38',
+    '\uc0b4\ud3b4',
+    '\uc870\uc0ac',
+    '\ucc3e',
+  ];
+
   static bool supports({
     required String characterKey,
     required String storyText,
@@ -45,7 +93,55 @@ class StoryCharacterAnimation extends StatefulWidget {
     final normalizedKey = characterKey.trim().toLowerCase();
     if (!_catalogCharacterPattern.hasMatch(normalizedKey)) return false;
     final normalizedStory = storyText.toLowerCase();
-    return _movementTerms.any(normalizedStory.contains);
+    return _actionTerms.any(normalizedStory.contains);
+  }
+
+  static String _animationActionFor(String storyText) {
+    final story = storyText.toLowerCase();
+    const jumpTerms = <String>[
+      'jump', 'leap', 'hop', '\uc810\ud504', '\ub3c4\uc57d', '\ub6f0\uc5b4\uc624',
+    ];
+    const battleTerms = <String>[
+      'battle', 'fight', 'attack', 'strike', 'slash', 'sword',
+      '\uc2f8\uc6b0', '\uacf5\uaca9', '\uc804\ud22c', '\uce7c', '\ubca0',
+    ];
+    const interactionTerms = <String>[
+      'interact', 'reach', 'receive', 'give', 'hand', 'rescue', 'help',
+      '\uac74\ub124', '\ubc1b', '\uc7a1', '\uad6c\ud574', '\ub3d5', '\uc5f4',
+    ];
+    const actionSheetTerms = <String>[
+      'wave', 'greet', 'magic', 'spell', 'investigate', 'search',
+      '\uc778\uc0ac', '\ub9c8\ubc95', '\uc8fc\ubb38', '\uc0b4\ud3b4', '\uc870\uc0ac', '\ucc3e',
+    ];
+    if (jumpTerms.any(story.contains)) return 'jump';
+    if (battleTerms.any(story.contains)) return 'battle';
+    if (interactionTerms.any(story.contains)) return 'interaction';
+    if (actionSheetTerms.any(story.contains)) return 'action';
+    if (_movementTerms.any(story.contains)) return 'run';
+    return 'run';
+  }
+
+  static String animationActionFor(String storyText) =>
+      _animationActionFor(storyText);
+
+  static bool usesMovingBackgroundForStory(String storyText) =>
+      _animationActionFor(storyText) == 'run';
+
+  static String motionSheetAssetPath({
+    required String characterKey,
+    required String action,
+    String version = motionAssetVersion,
+  }) {
+    final normalizedKey = characterKey.trim().toLowerCase();
+    final filename = switch (action) {
+      'jump' => 'jump_cycle',
+      'battle' => 'battle_cycle',
+      'interaction' => 'interaction_cycle',
+      'action' => 'action_sheet',
+      _ => throw ArgumentError.value(action, 'action'),
+    };
+    return 'assets/characters/motion_sheets/'
+        '${normalizedKey}_${filename}_$version.png';
   }
 
   @override
@@ -65,31 +161,61 @@ class _StoryCharacterAnimationState extends State<StoryCharacterAnimation>
   String get _normalizedCharacterKey =>
       widget.characterKey.trim().toLowerCase();
 
+  String get _animationAction =>
+      StoryCharacterAnimation._animationActionFor(widget.storyText);
+
   bool get _usesHighQualityRunCycle =>
       StoryCharacterAnimation._catalogCharacterPattern
           .hasMatch(_normalizedCharacterKey);
 
   bool get _isRunning {
-    final story = widget.storyText.toLowerCase();
-    const runTerms = <String>[
-      'run',
-      'running',
-      'rush',
-      'dash',
-      '\ub2ec\ub9ac',
-      '\ub6f0',
-      '\uc9c8\uc8fc',
-    ];
-    return runTerms.any(story.contains);
+    return _animationAction == 'run';
   }
 
   int get _sheetRows => 2;
 
-  String get _spriteSheetAsset => _usesHighQualityRunCycle
-      ? 'assets/characters/motion_sheets/'
-          '${_normalizedCharacterKey}_run_cycle_v16.png'
-      : 'assets/characters/motion_sheets/'
-          '${_normalizedCharacterKey}_target_journey_sheet_v4.png';
+  String get _spriteSheetAsset {
+    if (_isDedicatedAction) {
+      return StoryCharacterAnimation.motionSheetAssetPath(
+        characterKey: _normalizedCharacterKey,
+        action: _animationAction,
+      );
+    }
+    final prefix = 'assets/characters/motion_sheets/$_normalizedCharacterKey';
+    return _usesHighQualityRunCycle
+        ? '${prefix}_run_cycle_v16.png'
+        : '${prefix}_target_journey_sheet_v4.png';
+  }
+
+  List<String> get _spriteSheetAssetCandidates {
+    if (!_isDedicatedAction) return <String>[_spriteSheetAsset];
+    return <String>[
+      _spriteSheetAsset,
+      StoryCharacterAnimation.motionSheetAssetPath(
+        characterKey: _normalizedCharacterKey,
+        action: _animationAction,
+        version: StoryCharacterAnimation.legacyMotionAssetVersion,
+      ),
+    ];
+  }
+
+  bool get _isDedicatedAction =>
+      const <String>{'jump', 'battle', 'interaction', 'action'}
+          .contains(_animationAction);
+
+  Duration get _animationDuration {
+    switch (_animationAction) {
+      case 'jump':
+        return const Duration(seconds: 4);
+      case 'battle':
+      case 'interaction':
+        return const Duration(seconds: 6);
+      case 'action':
+        return const Duration(seconds: 7);
+      default:
+        return Duration(seconds: _isRunning ? 8 : 11);
+    }
+  }
 
   String get _backgroundAsset {
     final story = widget.storyText.toLowerCase();
@@ -122,10 +248,7 @@ class _StoryCharacterAnimationState extends State<StoryCharacterAnimation>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: _isRunning ? 8 : 11),
-    );
+    _controller = AnimationController(vsync: this, duration: _animationDuration);
     _controller.addStatusListener(_handleAnimationStatus);
     _controller.forward();
     _loadImages();
@@ -146,7 +269,7 @@ class _StoryCharacterAnimationState extends State<StoryCharacterAnimation>
         oldWidget.genre != widget.genre ||
         oldWidget.storyText != widget.storyText) {
       _paused = false;
-      _controller.duration = Duration(seconds: _isRunning ? 8 : 11);
+      _controller.duration = _animationDuration;
       _controller.forward(from: 0);
       _loadImages();
     }
@@ -162,6 +285,18 @@ class _StoryCharacterAnimationState extends State<StoryCharacterAnimation>
     return frame.image;
   }
 
+  Future<ui.Image> _loadFirstAvailableImage(List<String> assetPaths) async {
+    Object? lastError;
+    for (final assetPath in assetPaths) {
+      try {
+        return await _loadImage(assetPath);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError ?? StateError('No motion asset candidates were provided.');
+  }
+
   Future<void> _loadImages() async {
     final revision = ++_loadRevision;
     setState(() {
@@ -170,7 +305,7 @@ class _StoryCharacterAnimationState extends State<StoryCharacterAnimation>
     try {
       final images = await Future.wait<ui.Image>([
         _loadImage(_backgroundAsset),
-        _loadImage(_spriteSheetAsset),
+        _loadFirstAvailableImage(_spriteSheetAssetCandidates),
       ]);
       if (!mounted || revision != _loadRevision) {
         for (final image in images) {
@@ -240,7 +375,8 @@ class _StoryCharacterAnimationState extends State<StoryCharacterAnimation>
                       spriteSheetImage: _spriteSheetImage!,
                       progress: _controller.value,
                       rows: _sheetRows,
-                      identityLockedRunCycle: _usesHighQualityRunCycle,
+                      identityLockedMotion: _usesHighQualityRunCycle,
+                      action: _animationAction,
                       running: _isRunning,
                       routeKey: _routeKey,
                     ),
@@ -291,7 +427,8 @@ class _StoryCharacterMovementPainter extends CustomPainter {
   final ui.Image spriteSheetImage;
   final double progress;
   final int rows;
-  final bool identityLockedRunCycle;
+  final bool identityLockedMotion;
+  final String action;
   final bool running;
   final String routeKey;
 
@@ -300,7 +437,8 @@ class _StoryCharacterMovementPainter extends CustomPainter {
     required this.spriteSheetImage,
     required this.progress,
     required this.rows,
-    required this.identityLockedRunCycle,
+    required this.identityLockedMotion,
+    required this.action,
     required this.running,
     required this.routeKey,
   });
@@ -308,6 +446,7 @@ class _StoryCharacterMovementPainter extends CustomPainter {
   static const int _columns = 4;
   static const List<int> _runFrameSequence = <int>[0, 1, 2, 3, 4, 5, 6, 7];
   static const List<int> _walkFrameSequence = <int>[0, 1, 4, 5, 6, 5, 4, 1];
+  static const List<int> _actionFrameSequence = <int>[0, 1, 2, 3, 4, 5, 6, 7];
   static const Rect _normalizedRunVisibleBounds = Rect.fromLTWH(
     5 / 384,
     60 / 512,
@@ -359,15 +498,25 @@ class _StoryCharacterMovementPainter extends CustomPainter {
     _paintCoverImage(canvas, size, backgroundImage);
 
     final cellCount = _columns * rows;
-    final cycleCount = running ? 6.0 : 3.4;
-    final sequence = identityLockedRunCycle
-        ? (running ? _runFrameSequence : _walkFrameSequence)
+    final cycleCount = action == 'run'
+        ? (running ? 6.0 : 3.4)
+        : action == 'jump'
+            ? 1.15
+            : action == 'battle'
+                ? 1.45
+                : action == 'interaction'
+                    ? 1.25
+                    : 1.6;
+    final sequence = identityLockedMotion
+        ? (action == 'run'
+            ? (running ? _runFrameSequence : _walkFrameSequence)
+            : _actionFrameSequence)
         : List<int>.generate(cellCount, (index) => index);
     final framePosition = progress * cycleCount * sequence.length;
     final sequencePosition = framePosition.floor();
     final frameIndex = sequence[sequencePosition % sequence.length];
     final nextFrameIndex = sequence[(sequencePosition + 1) % sequence.length];
-    final blend = identityLockedRunCycle && running
+    final blend = identityLockedMotion && action != 'jump'
         ? framePosition - sequencePosition
         : 0.0;
     final cellWidth = spriteSheetImage.width / _columns;
@@ -378,22 +527,22 @@ class _StoryCharacterMovementPainter extends CustomPainter {
     final nextVisibleBounds = _visibleBounds(nextFrameIndex);
 
     final hasStrongPerspective = routeKey == 'castle' || routeKey == 'mystery';
+    final isLocomotion = action == 'run';
     final targetHeight = size.height *
-        (hasStrongPerspective
-            ? (0.48 - 0.18 * progress)
-            : (0.42 - 0.06 * progress));
-    final routePosition = _sampleRoute(progress);
+        (isLocomotion
+            ? (hasStrongPerspective
+                ? (0.48 - 0.18 * progress)
+                : (0.42 - 0.06 * progress))
+            : 0.56);
+    final routePosition = _sampleRoute(isLocomotion ? progress : 0.52);
     final centerX = size.width * routePosition.dx;
-    final flight = identityLockedRunCycle
-        ? math.sin((progress * cycleCount % 1.0) * math.pi * 2).abs() *
-            (running ? 1.0 : 0.25)
-        : 0.0;
-    final groundY =
-        size.height * routePosition.dy - flight * size.height * 0.004;
+    final groundY = size.height * routePosition.dy;
     final runPhase = (progress * cycleCount) % 1.0;
-    final groundContact = identityLockedRunCycle
-        ? 0.5 + 0.5 * math.cos(runPhase * math.pi * 4.0)
-        : 1.0;
+    final groundContact = action == 'jump'
+        ? (frameIndex == 0 || frameIndex >= 5 ? 1.0 : 0.28)
+        : action == 'run' && identityLockedMotion
+            ? 0.5 + 0.5 * math.cos(runPhase * math.pi * 4.0)
+            : 1.0;
     final destination = _destinationRect(
       source: source,
       visibleBounds: visibleBounds,
@@ -457,7 +606,7 @@ class _StoryCharacterMovementPainter extends CustomPainter {
   }
 
   Rect _visibleBounds(int frameIndex) {
-    return identityLockedRunCycle
+    return identityLockedMotion
         ? _normalizedRunVisibleBounds
         : const Rect.fromLTWH(0, 0, 1, 1);
   }
@@ -470,7 +619,7 @@ class _StoryCharacterMovementPainter extends CustomPainter {
     required double targetHeight,
   }) {
     const referenceVisibleHeight = 420 / 512;
-    final canvasHeight = identityLockedRunCycle
+    final canvasHeight = identityLockedMotion
         ? targetHeight / referenceVisibleHeight
         : targetHeight;
     final canvasWidth = canvasHeight * source.width / source.height;
@@ -537,7 +686,8 @@ class _StoryCharacterMovementPainter extends CustomPainter {
         oldDelegate.backgroundImage != backgroundImage ||
         oldDelegate.spriteSheetImage != spriteSheetImage ||
         oldDelegate.rows != rows ||
-        oldDelegate.identityLockedRunCycle != identityLockedRunCycle ||
+        oldDelegate.identityLockedMotion != identityLockedMotion ||
+        oldDelegate.action != action ||
         oldDelegate.running != running ||
         oldDelegate.routeKey != routeKey;
   }
