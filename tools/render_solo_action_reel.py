@@ -10,16 +10,16 @@ from PIL import Image, ImageDraw
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VIDEO_DIR = ROOT / "output" / "action_previews"
+VIDEO_DIR = ROOT / "output" / "action_previews_v29_quality"
 SOLO_CLIPS = (
-    ("RUN", "male_01_run_v25.mp4"),
-    ("JUMP", "male_01_jump_v25.mp4"),
-    ("LOOK AROUND", "male_01_investigate_v25.mp4"),
-    ("CAST MAGIC", "male_01_magic_v25.mp4"),
-    ("WAVE", "male_01_wave_v25.mp4"),
+    ("RUN", "male_01_run_v29.mp4"),
+    ("JUMP", "male_01_jump_v29.mp4"),
+    ("LOOK AROUND", "male_01_investigate_v29.mp4"),
+    ("CAST MAGIC", "male_01_magic_v29.mp4"),
+    ("WAVE", "male_01_wave_v29.mp4"),
 )
-OUTPUT = VIDEO_DIR / "male_01_solo_action_reel_v25.mp4"
-FPS = 12
+OUTPUT = VIDEO_DIR / "male_01_solo_action_reel_v29.mp4"
+FPS = 30
 FRAMES_PER_CLIP = FPS * 3
 
 
@@ -41,7 +41,13 @@ def main() -> Path:
         quality=8,
         macro_block_size=2,
         ffmpeg_log_level="error",
-        output_params=["-pix_fmt", "yuv420p", "-movflags", "+faststart"],
+        output_params=[
+            "-preset", "medium",
+            "-crf", "16",
+            "-profile:v", "high",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ],
     )
     try:
         for label, filename in SOLO_CLIPS:

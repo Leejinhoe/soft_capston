@@ -1,0 +1,195 @@
+{
+  "version": "v28",
+  "quality_profile": {
+    "scale": 1.02,
+    "motion": 1.3,
+    "rotation": 1.16,
+    "trail": 3,
+    "prop": 2,
+    "cleanup": true
+  },
+  "upgrade_rounds": [
+    {
+      "round": 1,
+      "focus": "alpha_cleanup_and_crop_safety",
+      "changes": [
+        "median_alpha_cleanup",
+        "isolated_component_removal",
+        "8px_cell_margin"
+      ]
+    },
+    {
+      "round": 2,
+      "focus": "identity_scale_and_grounding",
+      "changes": [
+        "shared_visible_bounds",
+        "stable_foot_baseline",
+        "bounded_rotation"
+      ]
+    },
+    {
+      "round": 3,
+      "focus": "phase_transition_readability",
+      "changes": [
+        "prepare_act_recover_timeline",
+        "progressive_motion_offsets",
+        "strike_trail"
+      ]
+    },
+    {
+      "round": 4,
+      "focus": "action_semantic_cues",
+      "changes": [
+        "battle_arc",
+        "handoff_object_marker",
+        "action_phase_manifest"
+      ]
+    },
+    {
+      "round": 5,
+      "focus": "canonical_quality_gate",
+      "changes": [
+        "final_crop_gate",
+        "identity_locked_16_character_pack",
+        "sha_verified_canonical_pack"
+      ]
+    }
+  ],
+  "source": "motion_sheet_v3",
+  "source_overrides": {
+    "male_01": {
+      "jump_cycle": "male_01_jump_cycle_v19.png",
+      "battle_cycle": "male_01_battle_cycle_v22.png",
+      "interaction_cycle": "male_01_interaction_cycle_v22.png",
+      "action_sheet": "male_01_action_sheet_v21.png"
+    }
+  },
+  "sheet_size": [
+    1536,
+    1024
+  ],
+  "cell_size": [
+    384,
+    512
+  ],
+  "columns": 4,
+  "rows": 2,
+  "characters": [
+    "male_01",
+    "male_02",
+    "male_03",
+    "male_04",
+    "male_05",
+    "male_06",
+    "male_07",
+    "male_08",
+    "female_01",
+    "female_02",
+    "female_03",
+    "female_04",
+    "female_05",
+    "female_06",
+    "female_07",
+    "female_08"
+  ],
+  "actions": {
+    "jump_cycle": {
+      "phases": [
+        "prepare",
+        "launch",
+        "airborne",
+        "airborne",
+        "descending",
+        "land",
+        "recover",
+        "settle"
+      ],
+      "source_frames": [
+        0,
+        6,
+        3,
+        3,
+        3,
+        3,
+        6,
+        0
+      ]
+    },
+    "battle_cycle": {
+      "phases": [
+        "ready",
+        "windup",
+        "lunge",
+        "strike",
+        "follow_through",
+        "recoil",
+        "guard",
+        "settle"
+      ],
+      "source_frames": [
+        0,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        0
+      ],
+      "requires_partner": true,
+      "requires_object": false
+    },
+    "interaction_cycle": {
+      "phases": [
+        "idle",
+        "orient",
+        "reach",
+        "approach",
+        "contact",
+        "receive",
+        "retract",
+        "settle"
+      ],
+      "source_frames": [
+        0,
+        6,
+        7,
+        6,
+        7,
+        6,
+        7,
+        0
+      ],
+      "requires_partner": true,
+      "requires_object": true
+    },
+    "action_sheet": {
+      "phases": [
+        "idle",
+        "wave",
+        "investigate",
+        "handoff",
+        "magic",
+        "magic_hold",
+        "battle",
+        "battle_recover"
+      ],
+      "source_frames": [
+        0,
+        7,
+        6,
+        7,
+        4,
+        4,
+        3,
+        6
+      ]
+    }
+  },
+  "files": {
+    "jump_cycle": "{character_key}_jump_cycle_v28.png",
+    "battle_cycle": "{character_key}_battle_cycle_v28.png",
+    "interaction_cycle": "{character_key}_interaction_cycle_v28.png",
+    "action_sheet": "{character_key}_action_sheet_v28.png"
+  }
+}

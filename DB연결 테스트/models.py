@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,7 @@ class UserSchema(BaseModel):
     provider_id: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    email_verification_token: Optional[str] = None
     personality_type: Optional[str] = "Unknown"
     radar_stats: Optional[Dict] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -21,6 +22,15 @@ class UserSchema(BaseModel):
 class LoginSchema(BaseModel):
     account_id: str
     password: str
+
+
+class EmailVerificationSendSchema(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+
+
+class EmailVerificationVerifySchema(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    code: str = Field(min_length=6, max_length=6)
 
 
 class StorySchema(BaseModel):
@@ -85,9 +95,9 @@ class MediaGenerationSchema(BaseModel):
     width: int = Field(default=512, ge=256, le=1536)
     height: int = Field(default=512, ge=256, le=1536)
     flux_steps: int = Field(default=1, ge=1, le=8)
-    video_width: int = Field(default=768, ge=256, le=1280)
-    video_height: int = Field(default=384, ge=256, le=768)
-    num_frames: int = Field(default=48, ge=9, le=450)
+    video_width: int = Field(default=960, ge=256, le=1280)
+    video_height: int = Field(default=480, ge=256, le=768)
+    num_frames: int = Field(default=180, ge=9, le=450)
     video_steps: int = Field(default=2, ge=2, le=50)
     frame_rate: Optional[int] = Field(default=30, ge=6, le=30)
     video_timeout: Optional[int] = Field(default=None, ge=30, le=1800)
@@ -159,3 +169,40 @@ class ReportResolutionSchema(BaseModel):
 class AccountWithdrawalSchema(BaseModel):
     password: Optional[str] = Field(default=None, max_length=200)
     reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class AdminNoticeCreateSchema(BaseModel):
+    account_id: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=2, max_length=120)
+    content: str = Field(min_length=2, max_length=5000)
+    is_pinned: bool = False
+    send_email: bool = False
+
+
+class AdminNoticeUpdateSchema(BaseModel):
+    account_id: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=2, max_length=120)
+    content: str = Field(min_length=2, max_length=5000)
+    is_pinned: bool = False
+
+
+class AdminNoticeEmailSchema(BaseModel):
+    account_id: str = Field(min_length=1, max_length=120)
+
+
+class StoryCharacterDiscoverySchema(BaseModel):
+    story_id: Optional[str] = None
+    story_title: str = Field(default="", max_length=500)
+    story_text: str = Field(default="", max_length=12000)
+    age: Optional[str] = Field(default=None, max_length=40)
+
+
+class StoryCharacterChatSchema(BaseModel):
+    story_id: Optional[str] = None
+    story_title: str = Field(default="", max_length=500)
+    story_text: str = Field(default="", max_length=12000)
+    age: Optional[str] = Field(default=None, max_length=40)
+    user_name: Optional[str] = Field(default=None, max_length=120)
+    character: Dict[str, Any] = Field(default_factory=dict)
+    messages: List[Dict[str, str]] = Field(default_factory=list, max_length=20)
+    user_message: str = Field(min_length=1, max_length=1000)

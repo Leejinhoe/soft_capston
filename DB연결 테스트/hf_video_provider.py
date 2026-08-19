@@ -17,16 +17,27 @@ LOCAL_VIDEO_MODEL = (
     or "storybook-motion-sheet-action-v4"
 ).strip()
 LOCAL_VIDEO_FRAME_RATE = int(os.getenv("LOCAL_VIDEO_FRAME_RATE", "30"))
-LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "8.0"))
+LOCAL_VIDEO_DURATION_SECONDS = float(os.getenv("LOCAL_VIDEO_DURATION_SECONDS", "6.0"))
 LOCAL_VIDEO_MAX_DURATION_SECONDS = min(
     max(float(os.getenv("LOCAL_VIDEO_MAX_DURATION_SECONDS", "15.0")), 1.0),
     15.0,
 )
-LOCAL_VIDEO_DEFAULT_WIDTH = int(os.getenv("LOCAL_VIDEO_DEFAULT_WIDTH", "768"))
-LOCAL_VIDEO_DEFAULT_HEIGHT = int(os.getenv("LOCAL_VIDEO_DEFAULT_HEIGHT", "384"))
+LOCAL_VIDEO_DEFAULT_WIDTH = int(os.getenv("LOCAL_VIDEO_DEFAULT_WIDTH", "960"))
+LOCAL_VIDEO_DEFAULT_HEIGHT = int(os.getenv("LOCAL_VIDEO_DEFAULT_HEIGHT", "480"))
 LOCAL_VIDEO_RENDER_SCALE = min(
-    max(int(os.getenv("LOCAL_VIDEO_RENDER_SCALE", "2")), 1),
+    max(int(os.getenv("LOCAL_VIDEO_RENDER_SCALE", "3")), 1),
     3,
+)
+LOCAL_VIDEO_ENCODER_CRF = min(
+    max(int(os.getenv("LOCAL_VIDEO_ENCODER_CRF", "16")), 12),
+    28,
+)
+LOCAL_VIDEO_ENCODER_PRESET = (
+    os.getenv("LOCAL_VIDEO_ENCODER_PRESET", "medium").strip() or "medium"
+)
+LOCAL_VIDEO_FINAL_SHARPNESS = min(
+    max(float(os.getenv("LOCAL_VIDEO_FINAL_SHARPNESS", "1.08")), 1.0),
+    1.5,
 )
 JOURNEY_PAN_START = float(os.getenv("LOCAL_VIDEO_JOURNEY_PAN_START", "0.04"))
 JOURNEY_PAN_END = float(os.getenv("LOCAL_VIDEO_JOURNEY_PAN_END", "0.62"))
@@ -136,6 +147,12 @@ GROUNDED_ACTION_LEG_LOCK_START = 0.62
 GROUNDED_ACTION_LEG_LOCK_END = 0.80
 ACTION_SHEET_ACTIONS = {
     "wave", "magic", "battle", "rescue", "investigate", "interaction",
+}
+# These actions need a dedicated cycle or action sheet to change the body pose
+# faithfully. A stable reference pose plus semantic root motion is preferable to
+# borrowing an unrelated generic walking, rescue, or talking cell.
+REFERENCE_FALLBACK_ACTIONS = {
+    "jump", "investigate", "interaction", "sit", "stand",
 }
 MOTION_PHASE_TIMINGS = {
     "prepare": (0.00, 0.24),
@@ -332,7 +349,8 @@ def get_hf_video_config() -> Dict[str, Any]:
             "sprite_run_cycle_road_v16_stride_amplified",
             "sprite_walk_cycle_road_v16_slow_stride",
             "motion_sheet_jump_v5",
-            "identity_locked_jump_cycle_v20_smoothed",
+            "identity_locked_jump_cycle_v23_smoothed",
+            "identity_locked_jump_cycle_v28_smoothed",
             "motion_sheet_wave_v5",
             "motion_sheet_magic_v5",
             "motion_sheet_investigate_v6",
@@ -341,19 +359,27 @@ def get_hf_video_config() -> Dict[str, Any]:
             "motion_sheet_battle_v6",
             "motion_sheet_rescue_v6",
             "motion_sheet_handoff_v6",
-            "identity_locked_action_sheet_v21_grounded_smooth",
-            "identity_locked_action_cycle_v22_grounded_smooth",
-            "cinematic_action_compositor_v25_stable_motion",
+            "identity_locked_action_sheet_v23_grounded_smooth",
+            "identity_locked_action_sheet_v28_grounded_smooth",
+            "identity_locked_action_cycle_v23_stable_alpha",
+            "identity_locked_action_cycle_v28_stable_alpha",
+            "cinematic_action_compositor_v29_stable_alpha",
             "target_journey_action_v4",
             "motion_sheet_action_v4",
             "motion_sheet_action",
             "layered_action",
             "camera_fallback",
         ],
-        "video_frame_interpolation": "stable-canvas-optical-flow-with-grounded-pose-locks",
+        "video_frame_interpolation": "premultiplied-alpha-optical-flow-with-grounded-pose-locks-v3",
         "video_pose_transition": "identity-locked-action-cycle-or-optical-flow-fallback",
-        "video_effect_style": "action-anchored-subtle-v3",
+        "video_effect_style": "action-anchored-subtle-v6",
         "video_render_scale": LOCAL_VIDEO_RENDER_SCALE,
+        "video_encoder": {
+            "codec": "libx264",
+            "crf": LOCAL_VIDEO_ENCODER_CRF,
+            "preset": LOCAL_VIDEO_ENCODER_PRESET,
+            "final_sharpness": LOCAL_VIDEO_FINAL_SHARPNESS,
+        },
     }
 
 
@@ -370,8 +396,9 @@ def build_fairytale_video_prompt(
     plan = motion_plan or {}
     motion_prompt = str(plan.get("motion_prompt") or "")
     return (
-        "storybook character action animation, clear readable movement, "
-        "warm magical mood, no generated text, stable identity, "
+        "high-resolution storybook character action animation, clean edges, "
+        "clear readable movement, coherent silhouette, warm magical mood, "
+        "no generated text, stable identity, "
         f"{genre_text}, {age_text}, scene: {scene}"
         + (f", motion direction: {motion_prompt}" if motion_prompt else "")
     )
@@ -397,9 +424,8 @@ def _even_dimension(value: int, minimum: int = 256) -> int:
 
 def _normalize_frame_count(num_frames: int, frame_rate: int) -> int:
     requested = max(1, int(num_frames))
-    default_frames = max(1, int(round(LOCAL_VIDEO_DURATION_SECONDS * frame_rate)))
     max_frames = max(1, int(round(LOCAL_VIDEO_MAX_DURATION_SECONDS * frame_rate)))
-    return min(max(requested, default_frames), max_frames)
+    return min(requested, max_frames)
 
 
 def _ease_in_out(progress: float) -> float:
@@ -913,6 +939,9 @@ def _background_camera_values(
         reach = _ease_in_out(min(max((normalized - 0.18) / 0.56, 0.0), 1.0))
         x = max_x * (0.42 + 0.22 * follow_strength * reach)
         y = max_y * 0.58
+    elif action in {"sit", "stand", "wave", "investigate", "conversation"}:
+        x = max_x * 0.50
+        y = max_y * 0.50
     elif target == "castle":
         x = max_x * (0.15 + 0.75 * eased)
         y = max_y * (0.65 - 0.55 * eased)
@@ -920,9 +949,12 @@ def _background_camera_values(
         x = max_x * (0.5 + 0.15 * math.sin(progress * math.pi))
         y = max_y * 0.5
     if action == "battle":
-        impact = _action_pulse(progress, 0.53, 0.075)
-        x += math.sin(progress * math.pi * 74) * max_x * 0.16 * impact
-        y += math.cos(progress * math.pi * 62) * max_y * 0.10 * impact
+        # Keep the impact readable without a high-frequency camera shake that
+        # makes the whole scene look like it is dropping frames.
+        impact = _action_pulse(progress, 0.53, 0.11)
+        impact_phase = (float(progress) - 0.53) / 0.11
+        x += math.sin(impact_phase * math.pi * 2.0) * max_x * 0.035 * impact
+        y += math.cos(impact_phase * math.pi * 1.5) * max_y * 0.022 * impact
     x = min(max(x, 0), max_x)
     y = min(max(y, 0), max_y)
     return {
@@ -933,6 +965,28 @@ def _background_camera_values(
     }
 
 
+def _prepare_background_stage(
+    source_image,
+    Image,
+    ImageOps,
+    width: int,
+    height: int,
+    motion_plan: Dict[str, Any],
+):
+    camera = _background_camera_values(
+        width,
+        height,
+        0.0,
+        motion_plan,
+    )
+    return ImageOps.fit(
+        source_image.convert("RGBA"),
+        (camera["stage_width"], camera["stage_height"]),
+        method=getattr(Image, "Resampling", Image).LANCZOS,
+        centering=(0.5, 0.5),
+    )
+
+
 def _fit_background(
     source_image,
     Image,
@@ -941,6 +995,7 @@ def _fit_background(
     height: int,
     progress: float,
     motion_plan: Dict[str, Any],
+    prepared_background=None,
 ):
     camera = _background_camera_values(
         width,
@@ -948,12 +1003,19 @@ def _fit_background(
         progress,
         motion_plan,
     )
-    fitted = ImageOps.fit(
-        source_image.convert("RGBA"),
-        (camera["stage_width"], camera["stage_height"]),
-        method=getattr(Image, "Resampling", Image).LANCZOS,
-        centering=(0.5, 0.5),
-    )
+    fitted = prepared_background
+    if fitted is None or fitted.size != (
+        camera["stage_width"],
+        camera["stage_height"],
+    ):
+        fitted = _prepare_background_stage(
+            source_image,
+            Image,
+            ImageOps,
+            width,
+            height,
+            motion_plan,
+        )
     x = camera["crop_x"]
     y = camera["crop_y"]
     return fitted.transform(
@@ -1190,11 +1252,13 @@ def _select_dedicated_action_cycle_pose(
         return None
     normalized = min(max(float(progress), 0.0), 1.0)
     if action == "battle":
-        start, end = 0.28, 0.58
+        start, end = 0.16, 0.76
     elif action in {"rescue", "interaction"}:
-        start, end = 0.20, 0.68
+        start, end = 0.14, 0.82
+    elif action in {"sit", "stand"}:
+        start, end = 0.10, 0.76
     else:
-        start, end = 0.18, 0.74
+        start, end = 0.14, 0.82
     if normalized <= start:
         return motion_cells[0]
     if normalized >= end:
@@ -1215,13 +1279,95 @@ def _select_dedicated_action_cycle_pose(
         np=np,
         cache=interpolation_cache,
         cache_key=(id(motion_cells), "action-cycle", action, first_index, second_index),
+        prefer_single_warp=True,
     )
     discrete = (
         motion_cells[first_index]
         if blend < 0.5
         else motion_cells[second_index]
     )
+    if action in {"sit", "stand"}:
+        return interpolated
     return _lock_grounded_action_legs(interpolated, discrete, Image)
+
+
+def _select_posture_cycle_pose(
+    sit_cells,
+    stand_cells,
+    *,
+    action: str,
+    progress: float,
+    Image=None,
+    cv2=None,
+    np=None,
+    interpolation_cache: Optional[Dict[Any, Any]] = None,
+):
+    if action == "sit":
+        if not sit_cells or len(sit_cells) < MOTION_SHEET_CELL_COUNT:
+            return None
+        sources = {"sit": sit_cells}
+        keyframes = (
+            (0.00, ("sit", 0)),
+            (0.10, ("sit", 0)),
+            (0.24, ("sit", 1)),
+            (0.39, ("sit", 2)),
+            (0.55, ("sit", 3)),
+            (0.68, ("sit", 4)),
+            (1.00, ("sit", 4)),
+        )
+    elif action == "stand":
+        if not stand_cells or len(stand_cells) < MOTION_SHEET_CELL_COUNT:
+            return None
+        sources = {"stand": stand_cells}
+        if sit_cells and len(sit_cells) >= MOTION_SHEET_CELL_COUNT:
+            sources["sit"] = sit_cells
+            keyframes = (
+                (0.00, ("sit", 4)),
+                (0.10, ("sit", 4)),
+                (0.24, ("sit", 3)),
+                (0.39, ("sit", 2)),
+                (0.54, ("sit", 1)),
+                (0.68, ("sit", 0)),
+                (0.78, ("stand", 7)),
+                (1.00, ("stand", 7)),
+            )
+        else:
+            keyframes = (
+                (0.00, ("stand", 0)),
+                (0.12, ("stand", 0)),
+                (0.27, ("stand", 1)),
+                (0.43, ("stand", 3)),
+                (0.59, ("stand", 5)),
+                (0.73, ("stand", 7)),
+                (1.00, ("stand", 7)),
+            )
+    else:
+        return None
+
+    normalized = min(max(float(progress), 0.0), 1.0)
+    for (start_time, first), (end_time, second) in zip(keyframes, keyframes[1:]):
+        if normalized > end_time:
+            continue
+        first_cell = sources[first[0]][first[1]]
+        if first == second or end_time <= start_time:
+            return first_cell
+        second_cell = sources[second[0]][second[1]]
+        local = (normalized - start_time) / (end_time - start_time)
+        if Image is None:
+            return first_cell if local < 0.5 else second_cell
+        return _optical_flow_interpolate(
+            first_cell,
+            second_cell,
+            _ease_in_out(local),
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            cache=interpolation_cache,
+            cache_key=(id(sit_cells), id(stand_cells), action, first, second),
+            prefer_single_warp=True,
+        )
+    final_source, final_index = keyframes[-1][1]
+    return sources[final_source][final_index]
 
 
 def _blend_bottom_aligned(first, second, amount: float, Image):
@@ -1270,6 +1416,7 @@ def _optical_flow_interpolate(
     cache: Optional[Dict[Any, Any]],
     cache_key: Any,
     min_silhouette_iou: float = MOTION_FLOW_MIN_SILHOUETTE_IOU,
+    prefer_single_warp: bool = False,
 ):
     blend = min(max(float(amount), 0.0), 1.0)
     if blend <= 0.015:
@@ -1277,10 +1424,13 @@ def _optical_flow_interpolate(
     if blend >= 0.985:
         return second
     if cv2 is None or np is None:
+        if prefer_single_warp:
+            return first if blend < 0.5 else second
         return _blend_bottom_aligned(first, second, blend, Image)
 
     flow_cache = cache if cache is not None else {}
-    prepared = flow_cache.get(cache_key)
+    prepared_key = (cache_key, bool(prefer_single_warp))
+    prepared = flow_cache.get(prepared_key)
     if prepared is None:
         first_canvas, second_canvas = _bottom_aligned_canvases(first, second, Image)
         first_rgba = np.asarray(first_canvas, dtype=np.uint8)
@@ -1307,7 +1457,7 @@ def _optical_flow_interpolate(
         )
         if silhouette_iou < min_silhouette_iou:
             prepared = ("pose_cut", silhouette_iou)
-            flow_cache[cache_key] = prepared
+            flow_cache[prepared_key] = prepared
         else:
             flow_args = (0.5, 4, 25, 4, 7, 1.5, cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
             forward = cv2.calcOpticalFlowFarneback(
@@ -1326,20 +1476,29 @@ def _optical_flow_interpolate(
                 np.arange(first_canvas.width),
                 np.arange(first_canvas.height),
             )
+
+            def premultiply(rgba):
+                normalized = rgba.astype(np.float32) / 255.0
+                alpha = normalized[..., 3:4]
+                return np.concatenate(
+                    (normalized[..., :3] * alpha, alpha),
+                    axis=2,
+                )
+
             prepared = (
-                "optical_flow",
-                first_rgba,
-                second_rgba,
+                "single_warp" if prefer_single_warp else "optical_flow",
+                premultiply(first_rgba),
+                premultiply(second_rgba),
                 forward,
                 backward,
                 grid_x,
                 grid_y,
             )
-            flow_cache[cache_key] = prepared
+            flow_cache[prepared_key] = prepared
     if prepared[0] == "pose_cut":
         return first if blend < 0.5 else second
 
-    _, first_rgba, second_rgba, forward, backward, grid_x, grid_y = prepared
+    mode, first_rgba, second_rgba, forward, backward, grid_x, grid_y = prepared
 
     def warp(source, flow, scale):
         map_x = (grid_x - flow[..., 0] * scale).astype(np.float32)
@@ -1348,19 +1507,46 @@ def _optical_flow_interpolate(
             source,
             map_x,
             map_y,
-            interpolation=cv2.INTER_CUBIC,
+            interpolation=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=(0, 0, 0, 0),
         )
 
-    warped_first = warp(first_rgba, forward, blend).astype(np.float32)
-    warped_second = warp(second_rgba, backward, 1.0 - blend).astype(np.float32)
-    rgba = np.clip(
+    def unpremultiply(premultiplied):
+        alpha = np.clip(premultiplied[..., 3:4], 0.0, 1.0)
+        rgb = np.zeros_like(premultiplied[..., :3], dtype=np.float32)
+        np.divide(
+            premultiplied[..., :3],
+            np.maximum(alpha, 1.0 / 255.0),
+            out=rgb,
+            where=alpha > (1.0 / 255.0),
+        )
+        rgba = np.concatenate((np.clip(rgb, 0.0, 1.0), alpha), axis=2)
+        rgba[alpha[..., 0] <= (1.0 / 255.0)] = 0.0
+        return Image.fromarray(
+            np.rint(rgba * 255.0).astype(np.uint8),
+            "RGBA",
+        )
+
+    if mode == "single_warp":
+        if blend < 0.5:
+            dominant = warp(first_rgba, forward, blend)
+        else:
+            dominant = warp(second_rgba, backward, 1.0 - blend)
+        dominant[..., 3] = np.where(
+            dominant[..., 3] >= (10.0 / 255.0),
+            dominant[..., 3],
+            0.0,
+        )
+        return unpremultiply(dominant)
+    warped_first = warp(first_rgba, forward, blend)
+    warped_second = warp(second_rgba, backward, 1.0 - blend)
+    premultiplied = np.clip(
         warped_first * (1.0 - blend) + warped_second * blend,
-        0,
-        255,
-    ).astype(np.uint8)
-    return Image.fromarray(rgba, "RGBA")
+        0.0,
+        1.0,
+    )
+    return unpremultiply(premultiplied)
 
 
 def _lock_lower_body(
@@ -1697,11 +1883,11 @@ def _character_motion_values(
         bob = -(0.35 * gather + 0.60 * release) * height * 0.008 + pulse * height * 0.006
         rotation = -gather * 1.0 - release * 2.0 + settle * 1.0 + pulse * 0.7
     elif action == "rescue":
-        approach = _phase_ease(normalized, 0.16, 0.42)
-        contact = _action_pulse(progress, 0.54, 0.28)
-        recover = _phase_ease(normalized, 0.62, 0.84)
+        approach = _phase_ease(normalized, 0.14, 0.46)
+        contact = _action_pulse(progress, 0.54, 0.34)
+        recover = _phase_ease(normalized, 0.70, 0.90)
         scale = 0.595 + contact * 0.028
-        center_x = width * (0.39 + 0.14 * approach - 0.025 * recover)
+        center_x = width * (0.38 + 0.10 * approach - 0.02 * recover)
         ground_y = height * 0.94 + contact * height * 0.006
         bob = -approach * height * 0.006 - contact * height * 0.008
         rotation = approach * 0.8 + contact * 1.8 - recover * 0.8
@@ -1716,11 +1902,11 @@ def _character_motion_values(
         bob = -focus * height * 0.004
         rotation = inspect * 0.7 - recover * 0.4 + scan * 0.45
     elif action == "interaction":
-        approach = _phase_ease(normalized, 0.16, 0.44)
-        contact = _action_pulse(progress, 0.54, 0.30)
-        recover = _phase_ease(normalized, 0.62, 0.84)
+        approach = _phase_ease(normalized, 0.14, 0.46)
+        contact = _action_pulse(progress, 0.54, 0.34)
+        recover = _phase_ease(normalized, 0.70, 0.90)
         scale = 0.60 + contact * 0.022
-        center_x = width * (0.40 + 0.13 * approach - 0.03 * recover)
+        center_x = width * (0.38 + 0.10 * approach - 0.02 * recover)
         ground_y = height * 0.94
         bob = -approach * height * 0.005 - contact * height * 0.006
         rotation = approach * 0.6 + contact * 1.2 - recover * 0.6
@@ -1837,8 +2023,11 @@ def _paste_character_layer(
     visible_bounds = rotated.getchannel("A").getbbox()
     if visible_bounds is None:
         return target_width, target_height
-    visible_center_x = (visible_bounds[0] + visible_bounds[2]) / 2.0
-    x = int(round(center_x - visible_center_x))
+    # Motion cells share one normalized canvas. Anchoring that canvas center
+    # avoids a left/right wobble when an arm, cape, or leg changes the visible
+    # alpha bounds between adjacent poses.
+    stable_center_x = rotated.width / 2.0
+    x = int(round(center_x - stable_center_x))
     y = int(round(ground_y - visible_bounds[3]))
     frame.alpha_composite(rotated, (x, y))
     return target_width, target_height
@@ -1862,11 +2051,11 @@ def _secondary_motion_values(
             "rotation": recoil * 4.0 - recovery * 1.4,
         }
     if action == "rescue":
-        reach = _phase_ease(progress, 0.18, 0.52)
-        recover = _phase_ease(progress, 0.62, 0.86)
+        reach = _phase_ease(progress, 0.14, 0.46)
+        recover = _phase_ease(progress, 0.70, 0.90)
         return {
             "scale": 0.49 + beat * 0.012,
-            "center_x": width * (0.73 - reach * 0.10 + recover * 0.03),
+            "center_x": width * (0.75 - reach * 0.08 + recover * 0.025),
             "ground_y": height * (0.94 + beat * 0.004),
             "rotation": -reach * 1.0 + recover * 0.6,
         }
@@ -1879,11 +2068,11 @@ def _secondary_motion_values(
             "rotation": -pulse * 0.6,
         }
     if action == "interaction":
-        reach = _phase_ease(progress, 0.18, 0.50)
-        recover = _phase_ease(progress, 0.62, 0.86)
+        reach = _phase_ease(progress, 0.14, 0.46)
+        recover = _phase_ease(progress, 0.70, 0.90)
         return {
             "scale": 0.50 + beat * 0.015,
-            "center_x": width * (0.73 - reach * 0.12 + recover * 0.04),
+            "center_x": width * (0.75 - reach * 0.075 + recover * 0.025),
             "ground_y": height * (0.94 - beat * 0.004),
             "rotation": -reach * 1.1 + recover * 0.8,
         }
@@ -2100,7 +2289,12 @@ def _draw_action_effects(
     character_height: int,
     interaction_kind: Optional[str] = None,
     effect_cells=None,
+    suppress_effects: bool = False,
 ):
+    # Dedicated action sheets should be readable without decorative overlays.
+    # Keep the default v29 effect behavior unchanged for existing callers.
+    if suppress_effects:
+        return
     if effect_cells and action in {
         "journey", "jump", "magic", "battle", "rescue", "interaction",
     }:
@@ -2373,6 +2567,7 @@ def _draw_action_effects(
 def _render_layered_frame(
     *,
     background_image,
+    prepared_background=None,
     character_image,
     Image,
     ImageDraw,
@@ -2393,7 +2588,10 @@ def _render_layered_frame(
     character_battle_cycle_motion_cells=None,
     character_magic_cycle_motion_cells=None,
     character_interaction_cycle_motion_cells=None,
+    character_sit_cycle_motion_cells=None,
+    character_stand_cycle_motion_cells=None,
     action_fx_motion_cells=None,
+    suppress_action_effects: bool = False,
     secondary_character_motion_cells=None,
     cv2=None,
     np=None,
@@ -2407,6 +2605,7 @@ def _render_layered_frame(
         height,
         progress,
         motion_plan,
+        prepared_background=prepared_background,
     )
     values = _character_motion_values(
         action=str(motion_plan.get("action") or "idle"),
@@ -2437,7 +2636,18 @@ def _render_layered_frame(
         if action == "magic"
         else character_interaction_cycle_motion_cells
         if action in {"rescue", "interaction"}
+        else character_sit_cycle_motion_cells
+        if action == "sit"
+        else character_stand_cycle_motion_cells
+        if action == "stand"
         else None
+    )
+    use_posture_cycle = bool(
+        action in {"sit", "stand"}
+        and (
+            character_sit_cycle_motion_cells
+            or character_stand_cycle_motion_cells
+        )
     )
     if use_jump_cycle:
         rendered_character = _select_jump_cycle_pose(
@@ -2454,6 +2664,17 @@ def _render_layered_frame(
             progress=progress,
             pace=str(motion_plan.get("pace") or "walk"),
             duration_seconds=float(motion_plan.get("_duration_seconds") or 8.0),
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            interpolation_cache=interpolation_cache,
+        ) or character_image
+    elif use_posture_cycle:
+        rendered_character = _select_posture_cycle_pose(
+            character_sit_cycle_motion_cells,
+            character_stand_cycle_motion_cells,
+            action=action,
+            progress=progress,
             Image=Image,
             cv2=cv2,
             np=np,
@@ -2479,6 +2700,8 @@ def _render_layered_frame(
             np=np,
             interpolation_cache=interpolation_cache,
         ) or character_image
+    elif action in REFERENCE_FALLBACK_ACTIONS:
+        rendered_character = character_image
     else:
         active_character_motion_cells = (
             character_target_journey_motion_cells
@@ -2497,16 +2720,19 @@ def _render_layered_frame(
             target_facing=target_facing,
         ) or character_image
     if secondary_character_image is not None:
-        rendered_secondary = _select_motion_pose(
-            secondary_character_motion_cells,
-            motion_plan=motion_plan,
-            progress=progress,
-            Image=Image,
-            role="secondary",
-            cv2=cv2,
-            np=np,
-            interpolation_cache=interpolation_cache,
-        ) or secondary_character_image
+        if action == "interaction":
+            rendered_secondary = secondary_character_image
+        else:
+            rendered_secondary = _select_motion_pose(
+                secondary_character_motion_cells,
+                motion_plan=motion_plan,
+                progress=progress,
+                Image=Image,
+                role="secondary",
+                cv2=cv2,
+                np=np,
+                interpolation_cache=interpolation_cache,
+            ) or secondary_character_image
         if action in {"battle", "rescue", "interaction", "conversation"}:
             rendered_secondary = ImageOps.mirror(rendered_secondary)
         secondary_values = _secondary_motion_values(
@@ -2551,10 +2777,11 @@ def _render_layered_frame(
         character_height=target_height,
         interaction_kind=motion_plan.get("interaction_kind"),
         effect_cells=action_fx_motion_cells,
+        suppress_effects=suppress_action_effects,
     )
     fade = min(1.0, progress * 7.0, (1.0 - progress) * 7.0)
     frame = ImageEnhance.Brightness(frame).enhance(0.95 + 0.05 * fade)
-    return ImageEnhance.Contrast(frame).enhance(1.015).convert("RGB")
+    return ImageEnhance.Contrast(frame).enhance(1.018).convert("RGB")
 
 
 def _write_video_frames(*, output_path: Path, frame_rate: int, frames, imageio, np) -> bytes:
@@ -2562,10 +2789,21 @@ def _write_video_frames(*, output_path: Path, frame_rate: int, frames, imageio, 
         str(output_path),
         fps=frame_rate,
         codec="libx264",
-        quality=8,
+        quality=9,
         macro_block_size=2,
         ffmpeg_log_level="error",
-        output_params=["-pix_fmt", "yuv420p", "-movflags", "+faststart"],
+        output_params=[
+            "-preset",
+            LOCAL_VIDEO_ENCODER_PRESET,
+            "-crf",
+            str(LOCAL_VIDEO_ENCODER_CRF),
+            "-profile:v",
+            "high",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+        ],
     )
     try:
         for frame in frames:
@@ -2601,20 +2839,24 @@ def _generate_local_video_bytes(
 
     with tempfile.TemporaryDirectory(prefix="fairytale_video_") as temp_dir:
         output_path = Path(temp_dir) / "scene.mp4"
-        frames = (
-            _render_frame(
-                source_image=source_image,
-                Image=Image,
-                ImageEnhance=ImageEnhance,
-                ImageOps=ImageOps,
-                width=width,
-                height=height,
-                progress=index / max(total_frames - 1, 1),
-                motion_strength=motion_strength,
-                motion_plan=motion_plan,
-            )
-            for index in range(total_frames)
-        )
+        def render_frames():
+            for index in range(total_frames):
+                frame = _render_frame(
+                    source_image=source_image,
+                    Image=Image,
+                    ImageEnhance=ImageEnhance,
+                    ImageOps=ImageOps,
+                    width=width,
+                    height=height,
+                    progress=index / max(total_frames - 1, 1),
+                    motion_strength=motion_strength,
+                    motion_plan=motion_plan,
+                )
+                yield ImageEnhance.Sharpness(frame).enhance(
+                    LOCAL_VIDEO_FINAL_SHARPNESS
+                )
+
+        frames = render_frames()
         return _write_video_frames(
             output_path=output_path,
             frame_rate=frame_rate,
@@ -2637,7 +2879,10 @@ def _generate_layered_video_bytes(
     character_battle_cycle_sheet_bytes: Optional[bytes],
     character_magic_cycle_sheet_bytes: Optional[bytes],
     character_interaction_cycle_sheet_bytes: Optional[bytes],
+    character_sit_cycle_sheet_bytes: Optional[bytes],
+    character_stand_cycle_sheet_bytes: Optional[bytes],
     action_fx_sheet_bytes: Optional[bytes],
+    suppress_action_effects: bool,
     secondary_character_motion_sheet_bytes: Optional[bytes],
     width: int,
     height: int,
@@ -2727,6 +2972,18 @@ def _generate_layered_video_bytes(
             )
             if character_interaction_cycle_sheet_bytes else None
         )
+        character_sit_cycle_motion_cells = (
+            _prepare_motion_sheet(
+                Image.open(io.BytesIO(character_sit_cycle_sheet_bytes)), Image
+            )
+            if character_sit_cycle_sheet_bytes else None
+        )
+        character_stand_cycle_motion_cells = (
+            _prepare_motion_sheet(
+                Image.open(io.BytesIO(character_stand_cycle_sheet_bytes)), Image
+            )
+            if character_stand_cycle_sheet_bytes else None
+        )
         action_fx_motion_cells = (
             _prepare_motion_sheet(
                 Image.open(io.BytesIO(action_fx_sheet_bytes)),
@@ -2767,15 +3024,26 @@ def _generate_layered_video_bytes(
                 or character_battle_cycle_motion_cells is not None
                 or character_magic_cycle_motion_cells is not None
                 or character_interaction_cycle_motion_cells is not None
+                or character_sit_cycle_motion_cells is not None
+                or character_stand_cycle_motion_cells is not None
                 or secondary_character_motion_cells is not None
             )
             else 1
+        )
+        prepared_background = _prepare_background_stage(
+            background_image,
+            Image,
+            ImageOps,
+            width * render_scale,
+            height * render_scale,
+            render_motion_plan,
         )
 
         def render_frames():
             for index in range(total_frames):
                 frame = _render_layered_frame(
                     background_image=background_image,
+                    prepared_background=prepared_background,
                     character_image=character_image,
                     secondary_character_image=secondary_character_image,
                     character_motion_cells=character_motion_cells,
@@ -2792,7 +3060,10 @@ def _generate_layered_video_bytes(
                     character_battle_cycle_motion_cells=character_battle_cycle_motion_cells,
                     character_magic_cycle_motion_cells=character_magic_cycle_motion_cells,
                     character_interaction_cycle_motion_cells=character_interaction_cycle_motion_cells,
+                    character_sit_cycle_motion_cells=character_sit_cycle_motion_cells,
+                    character_stand_cycle_motion_cells=character_stand_cycle_motion_cells,
                     action_fx_motion_cells=action_fx_motion_cells,
+                    suppress_action_effects=suppress_action_effects,
                     secondary_character_motion_cells=secondary_character_motion_cells,
                     Image=Image,
                     ImageDraw=ImageDraw,
@@ -2813,6 +3084,9 @@ def _generate_layered_video_bytes(
                         (width, height),
                         getattr(Image, "Resampling", Image).LANCZOS,
                     )
+                frame = ImageEnhance.Sharpness(frame).enhance(
+                    LOCAL_VIDEO_FINAL_SHARPNESS
+                )
                 yield frame
 
         return _write_video_frames(
@@ -2832,7 +3106,7 @@ async def generate_hf_fairytale_video(
     age: Optional[str] = None,
     width: int = LOCAL_VIDEO_DEFAULT_WIDTH,
     height: int = LOCAL_VIDEO_DEFAULT_HEIGHT,
-    num_frames: int = 48,
+    num_frames: int = 180,
     steps: int = 2,
     seed: Optional[int] = None,
     frame_rate: Optional[int] = None,
@@ -2880,7 +3154,13 @@ async def generate_hf_fairytale_video(
     character_interaction_cycle_sheet_bytes = context.get(
         "character_interaction_cycle_sheet_bytes"
     )
+    character_sit_cycle_sheet_bytes = context.get("character_sit_cycle_sheet_bytes")
+    character_stand_cycle_sheet_bytes = context.get("character_stand_cycle_sheet_bytes")
     action_fx_sheet_bytes = context.get("action_fx_sheet_bytes")
+    requested_asset_version = str(
+        context.get("motion_asset_version") or ""
+    ).strip() or None
+    suppress_action_effects = bool(context.get("suppress_action_effects"))
     secondary_character_motion_sheet_bytes = context.get(
         "secondary_character_motion_sheet_bytes"
     )
@@ -2925,19 +3205,33 @@ async def generate_hf_fairytale_video(
         if motion_plan.get("action") == "magic"
         else character_interaction_cycle_sheet_bytes
         if motion_plan.get("action") in {"rescue", "interaction"}
+        else character_sit_cycle_sheet_bytes
+        if motion_plan.get("action") == "sit"
+        else character_stand_cycle_sheet_bytes
+        if motion_plan.get("action") == "stand"
         else None
     )
     use_dedicated_action_cycle = bool(
         use_layered_animation and isinstance(dedicated_cycle_bytes, bytes)
     )
     use_action_fx_sheet = bool(
-        use_layered_animation and isinstance(action_fx_sheet_bytes, bytes)
-    )
-    use_cinematic_action = bool(
         use_layered_animation
-        and motion_plan.get("action") in {
-            "journey", "jump", "magic", "battle", "rescue", "interaction",
-        }
+        and isinstance(action_fx_sheet_bytes, bytes)
+        and not suppress_action_effects
+    )
+    action_name = str(motion_plan.get("action") or "idle")
+    has_semantic_action_asset = bool(
+        (action_name == "jump" and use_jump_cycle_sheet)
+        or (action_name in ACTION_SHEET_ACTIONS and use_action_sheet)
+        or (
+            action_name in {"battle", "magic", "rescue", "interaction", "sit", "stand"}
+            and use_dedicated_action_cycle
+        )
+    )
+    uses_reference_fallback = bool(
+        use_layered_animation
+        and action_name in REFERENCE_FALLBACK_ACTIONS
+        and not has_semantic_action_asset
     )
     motion_sheet_animation_mode = {
         "jump": "motion_sheet_jump_v5",
@@ -3000,9 +3294,22 @@ async def generate_hf_fairytale_video(
                 and motion_plan.get("action") in {"rescue", "interaction"}
                 else None
             ),
+            character_sit_cycle_sheet_bytes=(
+                character_sit_cycle_sheet_bytes
+                if isinstance(character_sit_cycle_sheet_bytes, bytes)
+                and motion_plan.get("action") in {"sit", "stand"}
+                else None
+            ),
+            character_stand_cycle_sheet_bytes=(
+                character_stand_cycle_sheet_bytes
+                if isinstance(character_stand_cycle_sheet_bytes, bytes)
+                and motion_plan.get("action") in {"sit", "stand"}
+                else None
+            ),
             action_fx_sheet_bytes=(
                 action_fx_sheet_bytes if use_action_fx_sheet else None
             ),
+            suppress_action_effects=suppress_action_effects,
             secondary_character_motion_sheet_bytes=(
                 secondary_character_motion_sheet_bytes
                 if isinstance(secondary_character_motion_sheet_bytes, bytes)
@@ -3015,38 +3322,34 @@ async def generate_hf_fairytale_video(
             motion_strength=steps,
             motion_plan=motion_plan,
         )
-        animation_mode = (
-            "cinematic_action_compositor_v25_stable_motion"
-            if use_cinematic_action
-            else (
-            "identity_locked_jump_cycle_v20_smoothed"
-            if use_jump_cycle_sheet
-            else (
-                "identity_locked_action_cycle_v22_grounded_smooth"
-                if use_dedicated_action_cycle
-                else (
-                "identity_locked_action_sheet_v21_grounded_smooth"
-                if use_action_sheet
-                else (
-                (
-                    "sprite_run_cycle_road_v16_stride_amplified"
-                    if motion_plan.get("pace") == "run"
-                    else "sprite_walk_cycle_road_v16_slow_stride"
-                )
-                if use_run_cycle_sheet
-                else (
-                    "target_journey_action_v4"
-                    if use_target_journey_sheet
-                    else (
-                        motion_sheet_animation_mode
-                        if use_motion_sheet else "layered_action"
-                    )
-                )
-                )
-                )
-                )
+        if use_jump_cycle_sheet:
+            animation_mode = (
+                f"identity_locked_jump_cycle_{requested_asset_version or 'v23'}_smoothed"
             )
-        )
+        elif use_dedicated_action_cycle:
+            animation_mode = (
+                "identity_locked_action_cycle_"
+                f"{requested_asset_version or 'v23'}_stable_alpha"
+            )
+        elif use_action_sheet:
+            animation_mode = (
+                "identity_locked_action_sheet_"
+                f"{requested_asset_version or 'v23'}_grounded_smooth"
+            )
+        elif use_run_cycle_sheet:
+            animation_mode = (
+                "sprite_run_cycle_road_v16_stride_amplified"
+                if motion_plan.get("pace") == "run"
+                else "sprite_walk_cycle_road_v16_slow_stride"
+            )
+        elif use_target_journey_sheet:
+            animation_mode = "target_journey_action_v4"
+        elif uses_reference_fallback:
+            animation_mode = "reference_transform_v29_semantic_fallback"
+        elif use_motion_sheet:
+            animation_mode = motion_sheet_animation_mode
+        else:
+            animation_mode = "layered_action"
     else:
         video_bytes = await asyncio.to_thread(
             _generate_local_video_bytes,
@@ -3060,6 +3363,58 @@ async def generate_hf_fairytale_video(
         )
         animation_mode = "camera_fallback"
 
+    if use_jump_cycle_sheet:
+        motion_asset_tier = "dedicated_jump_cycle"
+    elif use_dedicated_action_cycle:
+        motion_asset_tier = "dedicated_action_cycle"
+    elif use_action_sheet:
+        motion_asset_tier = "identity_action_sheet"
+    elif use_run_cycle_sheet:
+        motion_asset_tier = "identity_run_cycle"
+    elif use_target_journey_sheet:
+        motion_asset_tier = "target_journey_sheet"
+    elif uses_reference_fallback:
+        motion_asset_tier = "reference_transform"
+    elif use_motion_sheet:
+        motion_asset_tier = "generic_motion_sheet"
+    elif use_layered_animation:
+        motion_asset_tier = "reference_transform"
+    else:
+        motion_asset_tier = "camera_only"
+
+    action_sheet_used = bool(
+        use_action_sheet and not use_dedicated_action_cycle
+    )
+    versioned_action = (
+        use_jump_cycle_sheet
+        or action_sheet_used
+        or (
+            use_dedicated_action_cycle
+            and motion_plan.get("action") in {"battle", "interaction", "rescue"}
+        )
+    )
+    selected_asset_version = (
+        requested_asset_version or "v23"
+        if versioned_action
+        else None
+    )
+    legacy_motion_asset_fallback = bool(
+        versioned_action
+        and requested_asset_version
+        and requested_asset_version != "v28"
+    )
+    motion_fallback_used = bool(
+        uses_reference_fallback
+        or legacy_motion_asset_fallback
+        or (
+            use_layered_animation
+            and action_name in {
+                "jump", "wave", "magic", "battle", "rescue",
+                "investigate", "interaction",
+            }
+            and not has_semantic_action_asset
+        )
+    )
     return {
         "video_bytes": video_bytes,
         "content_type": "video/mp4",
@@ -3071,10 +3426,45 @@ async def generate_hf_fairytale_video(
             "height": _even_dimension(height),
             "num_frames": normalized_frames,
             "frame_rate": min(max(int(normalized_frame_rate), 6), 30),
+            "duration_seconds": round(
+                normalized_frames / min(max(int(normalized_frame_rate), 6), 30),
+                3,
+            ),
             "motion_strength": int(steps),
             "motion_focus": motion_plan.get("motion_focus", "character"),
-            "effect_style": "action-anchored-subtle-v3",
+            "effect_style": "action-anchored-subtle-v6",
+            "encoder": {
+                "codec": "libx264",
+                "crf": LOCAL_VIDEO_ENCODER_CRF,
+                "preset": LOCAL_VIDEO_ENCODER_PRESET,
+                "final_sharpness": LOCAL_VIDEO_FINAL_SHARPNESS,
+            },
             "animation_mode": animation_mode,
+            "compositor_mode": (
+                "cinematic_action_compositor_v29_stable_alpha"
+                if use_layered_animation
+                else "camera_fallback"
+            ),
+            "motion_asset_tier": motion_asset_tier,
+            "motion_asset_version": selected_asset_version,
+            "action_sheet_version": (
+                selected_asset_version if action_sheet_used else None
+            ),
+            "dedicated_action_cycle_version": (
+                selected_asset_version
+                if use_dedicated_action_cycle
+                and motion_plan.get("action") in {"battle", "interaction", "rescue"}
+                else None
+            ),
+            "motion_fallback_used": motion_fallback_used,
+            "motion_fallback_reason": (
+                "legacy_action_asset_version"
+                if legacy_motion_asset_fallback
+                else "semantic_action_asset_missing"
+                if motion_fallback_used
+                else None
+            ),
+            "action_effects_suppressed": suppress_action_effects,
             "render_scale": (
                 LOCAL_VIDEO_RENDER_SCALE
                 if use_motion_sheet or use_target_journey_sheet
@@ -3088,7 +3478,9 @@ async def generate_hf_fairytale_video(
                 use_layered_animation and has_secondary_character
             ),
             "motion_sheet_character_key": (
-                context.get("character_key") if use_motion_sheet else None
+                context.get("character_key")
+                if motion_asset_tier == "generic_motion_sheet"
+                else None
             ),
             "target_facing_character": (
                 use_target_journey_sheet or use_run_cycle_sheet
@@ -3101,7 +3493,9 @@ async def generate_hf_fairytale_video(
                 context.get("character_key") if use_jump_cycle_sheet else None
             ),
             "action_sheet_character_key": (
-                context.get("character_key") if use_action_sheet else None
+                context.get("character_key")
+                if motion_asset_tier == "identity_action_sheet"
+                else None
             ),
             "dedicated_action_cycle_character_key": (
                 context.get("character_key") if use_dedicated_action_cycle else None

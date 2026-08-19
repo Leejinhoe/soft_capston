@@ -307,7 +307,10 @@ class DbService {
     );
   }
 
+ codex/integrate-latest
+  static Future<List<Notice>> fetchNotices({int limit = 500}) async {
   static Future<List<Notice>> fetchNotices({int limit = 30}) async {
+ main
     final response = await http
         .get(
           _apiUri('/api/notices').replace(queryParameters: {'limit': '$limit'}),
@@ -576,6 +579,7 @@ class DbService {
     required String accountId,
     String? nickname,
     String? email,
+    String? emailVerificationToken,
     String? phone,
     String? address,
   }) async {
@@ -586,6 +590,7 @@ class DbService {
           body: jsonEncode({
             'nickname': nickname?.trim(),
             'email': email?.trim(),
+            'email_verification_token': emailVerificationToken?.trim(),
             'phone': phone?.trim(),
             'address': address?.trim(),
           }),

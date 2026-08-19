@@ -87,19 +87,24 @@ RUN_CYCLE_SHEET_VARIANT = {
 JUMP_CYCLE_SHEET_VARIANT = {
     "pose": "jump-cycle-sheet",
     "emotion": "determined",
-    "quality_tier": "video_jump_cycle_v20",
-    "tags": ("video", "sprite-sheet", "jumping", "identity-locked"),
+    "quality_tier": "video_jump_cycle_v28",
+    "tags": ("video", "sprite-sheet", "jumping", "identity-locked", "derived-action-v28"),
     "scene_keywords": ("jump", "leap", "hop", "\uc810\ud504", "\ub3c4\uc57d"),
     "sheet_columns": 4,
     "sheet_rows": 2,
     "motion_cells": {"jumping": list(range(8))},
     "playback": "discrete-frames",
 }
+JUMP_CYCLE_SHEET_LEGACY_VARIANT = {
+    **JUMP_CYCLE_SHEET_VARIANT,
+    "quality_tier": "video_jump_cycle_v23",
+    "tags": ("video", "sprite-sheet", "jumping", "identity-locked", "derived-action-v23"),
+}
 ACTION_SHEET_VARIANT = {
     "pose": "action-sheet",
     "emotion": "dynamic",
-    "quality_tier": "video_action_sheet_v21",
-    "tags": ("video", "sprite-sheet", "actions", "identity-locked"),
+    "quality_tier": "video_action_sheet_v28",
+    "tags": ("video", "sprite-sheet", "actions", "identity-locked", "derived-action-v28"),
     "scene_keywords": (
         "wave", "investigate", "handoff", "rescue", "magic", "battle",
     ),
@@ -111,24 +116,66 @@ ACTION_SHEET_VARIANT = {
     },
     "playback": "discrete-frames",
 }
+ACTION_SHEET_LEGACY_VARIANT = {
+    **ACTION_SHEET_VARIANT,
+    "quality_tier": "video_action_sheet_v23",
+    "tags": ("video", "sprite-sheet", "actions", "identity-locked", "derived-action-v23"),
+}
 ACTION_CYCLE_VARIANTS = {
     "battle": {
         "pose": "battle-cycle-sheet",
         "emotion": "determined",
-        "quality_tier": "video_battle_cycle_v22",
-        "tags": ("video", "sprite-sheet", "battle", "identity-locked"),
+        "quality_tier": "video_battle_cycle_v28",
+        "tags": ("video", "sprite-sheet", "battle", "identity-locked", "derived-action-v28"),
+        "filename_version": "v28",
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "motion_cells": {"battle": list(range(8))},
+        "playback": "optical-flow-adjacent-frames",
     },
     "magic": {
         "pose": "magic-cycle-sheet",
         "emotion": "focused",
         "quality_tier": "video_magic_cycle_v22",
         "tags": ("video", "sprite-sheet", "magic", "identity-locked"),
+        "filename_version": "v22",
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "motion_cells": {"magic": list(range(8))},
+        "playback": "optical-flow-adjacent-frames",
     },
     "interaction": {
         "pose": "interaction-cycle-sheet",
         "emotion": "helpful",
-        "quality_tier": "video_interaction_cycle_v22",
-        "tags": ("video", "sprite-sheet", "interaction", "identity-locked"),
+        "quality_tier": "video_interaction_cycle_v28",
+        "tags": ("video", "sprite-sheet", "interaction", "identity-locked", "derived-action-v28"),
+        "filename_version": "v28",
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "motion_cells": {"interaction": list(range(8))},
+        "playback": "optical-flow-adjacent-frames",
+    },
+    "sit": {
+        "pose": "sit-cycle-sheet",
+        "emotion": "calm",
+        "quality_tier": "video_sit_cycle_v1",
+        "tags": ("video", "sprite-sheet", "sitting", "identity-locked"),
+        "filename_version": "v1",
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "motion_cells": {"sit": list(range(8))},
+        "playback": "optical-flow-adjacent-frames",
+    },
+    "stand": {
+        "pose": "stand-cycle-sheet",
+        "emotion": "calm",
+        "quality_tier": "video_stand_cycle_v1",
+        "tags": ("video", "sprite-sheet", "standing", "identity-locked"),
+        "filename_version": "v1",
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "motion_cells": {"stand": list(range(8))},
+        "playback": "optical-flow-adjacent-frames",
     },
 }
 
@@ -206,58 +253,80 @@ def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
                 "playback": RUN_CYCLE_SHEET_VARIANT["playback"],
             }
         )
-    jump_cycle_filename = f"motion_sheets/{character_key}_jump_cycle_v19.png"
+    jump_cycle_filename = f"motion_sheets/{character_key}_jump_cycle_v28.png"
+    jump_cycle_variant = JUMP_CYCLE_SHEET_VARIANT
+    if not (CHARACTER_ASSET_DIR / jump_cycle_filename).is_file():
+        jump_cycle_filename = f"motion_sheets/{character_key}_jump_cycle_v23.png"
+        jump_cycle_variant = JUMP_CYCLE_SHEET_LEGACY_VARIANT
     if (CHARACTER_ASSET_DIR / jump_cycle_filename).is_file():
         specs.append(
             {
                 "filename": jump_cycle_filename,
-                "pose": JUMP_CYCLE_SHEET_VARIANT["pose"],
-                "emotion": JUMP_CYCLE_SHEET_VARIANT["emotion"],
-                "quality_tier": JUMP_CYCLE_SHEET_VARIANT["quality_tier"],
+                "pose": jump_cycle_variant["pose"],
+                "emotion": jump_cycle_variant["emotion"],
+                "quality_tier": jump_cycle_variant["quality_tier"],
                 "tags": sorted(
-                    set(tags).union(JUMP_CYCLE_SHEET_VARIANT["tags"])
+                    set(tags).union(jump_cycle_variant["tags"])
                 ),
                 "scene_keywords": list(
-                    JUMP_CYCLE_SHEET_VARIANT["scene_keywords"]
+                    jump_cycle_variant["scene_keywords"]
                 ),
-                "sheet_columns": JUMP_CYCLE_SHEET_VARIANT["sheet_columns"],
-                "sheet_rows": JUMP_CYCLE_SHEET_VARIANT["sheet_rows"],
-                "motion_cells": dict(JUMP_CYCLE_SHEET_VARIANT["motion_cells"]),
-                "playback": JUMP_CYCLE_SHEET_VARIANT["playback"],
+                "sheet_columns": jump_cycle_variant["sheet_columns"],
+                "sheet_rows": jump_cycle_variant["sheet_rows"],
+                "motion_cells": dict(jump_cycle_variant["motion_cells"]),
+                "playback": jump_cycle_variant["playback"],
             }
         )
-    action_sheet_filename = f"motion_sheets/{character_key}_action_sheet_v21.png"
+    action_sheet_filename = f"motion_sheets/{character_key}_action_sheet_v28.png"
+    action_sheet_variant = ACTION_SHEET_VARIANT
+    if not (CHARACTER_ASSET_DIR / action_sheet_filename).is_file():
+        action_sheet_filename = f"motion_sheets/{character_key}_action_sheet_v23.png"
+        action_sheet_variant = ACTION_SHEET_LEGACY_VARIANT
     if (CHARACTER_ASSET_DIR / action_sheet_filename).is_file():
         specs.append(
             {
                 "filename": action_sheet_filename,
-                "pose": ACTION_SHEET_VARIANT["pose"],
-                "emotion": ACTION_SHEET_VARIANT["emotion"],
-                "quality_tier": ACTION_SHEET_VARIANT["quality_tier"],
-                "tags": sorted(set(tags).union(ACTION_SHEET_VARIANT["tags"])),
-                "scene_keywords": list(ACTION_SHEET_VARIANT["scene_keywords"]),
-                "sheet_columns": ACTION_SHEET_VARIANT["sheet_columns"],
-                "sheet_rows": ACTION_SHEET_VARIANT["sheet_rows"],
-                "motion_cells": dict(ACTION_SHEET_VARIANT["motion_cells"]),
-                "playback": ACTION_SHEET_VARIANT["playback"],
+                "pose": action_sheet_variant["pose"],
+                "emotion": action_sheet_variant["emotion"],
+                "quality_tier": action_sheet_variant["quality_tier"],
+                "tags": sorted(set(tags).union(action_sheet_variant["tags"])),
+                "scene_keywords": list(action_sheet_variant["scene_keywords"]),
+                "sheet_columns": action_sheet_variant["sheet_columns"],
+                "sheet_rows": action_sheet_variant["sheet_rows"],
+                "motion_cells": dict(action_sheet_variant["motion_cells"]),
+                "playback": action_sheet_variant["playback"],
             }
         )
     for action_name, variant in ACTION_CYCLE_VARIANTS.items():
-        cycle_filename = f"motion_sheets/{character_key}_{action_name}_cycle_v22.png"
+        selected_variant = variant
+        cycle_filename = f"motion_sheets/{character_key}_{action_name}_cycle_{variant['filename_version']}.png"
+        if not (CHARACTER_ASSET_DIR / cycle_filename).is_file() and action_name in {
+            "battle", "interaction",
+        }:
+            selected_variant = {
+                **variant,
+                "quality_tier": f"video_{action_name}_cycle_v23",
+                "filename_version": "v23",
+                "tags": tuple(
+                    "derived-action-v23" if tag == "derived-action-v28" else tag
+                    for tag in variant["tags"]
+                ),
+            }
+            cycle_filename = f"motion_sheets/{character_key}_{action_name}_cycle_v23.png"
         if not (CHARACTER_ASSET_DIR / cycle_filename).is_file():
             continue
         specs.append(
             {
                 "filename": cycle_filename,
-                "pose": variant["pose"],
-                "emotion": variant["emotion"],
-                "quality_tier": variant["quality_tier"],
-                "tags": sorted(set(tags).union(variant["tags"])),
+                "pose": selected_variant["pose"],
+                "emotion": selected_variant["emotion"],
+                "quality_tier": selected_variant["quality_tier"],
+                "tags": sorted(set(tags).union(selected_variant["tags"])),
                 "scene_keywords": [action_name],
-                "sheet_columns": 4,
-                "sheet_rows": 2,
-                "motion_cells": {action_name: list(range(8))},
-                "playback": "optical-flow-adjacent-frames",
+                "sheet_columns": selected_variant["sheet_columns"],
+                "sheet_rows": selected_variant["sheet_rows"],
+                "motion_cells": dict(selected_variant["motion_cells"]),
+                "playback": selected_variant["playback"],
             }
         )
     for suffix, pose, emotion, variant_tags, keywords in ASSET_VARIANTS:
@@ -410,12 +479,22 @@ async def _store_character_asset(
     is_premium_reference = quality_tier == "premium_reference"
     is_target_journey_sheet = quality_tier == "video_target_journey_sheet_v4"
     is_run_cycle_sheet = quality_tier == "video_run_cycle_v16"
-    is_jump_cycle_sheet = quality_tier == "video_jump_cycle_v20"
-    is_action_sheet = quality_tier == "video_action_sheet_v21"
+    is_jump_cycle_sheet = quality_tier in {
+        "video_jump_cycle_v28", "video_jump_cycle_v23", "video_jump_cycle_v20",
+    }
+    is_action_sheet = quality_tier in {
+        "video_action_sheet_v28", "video_action_sheet_v23", "video_action_sheet_v21",
+    }
     is_action_cycle_sheet = quality_tier in {
+        "video_battle_cycle_v28",
+        "video_battle_cycle_v23",
         "video_battle_cycle_v22",
         "video_magic_cycle_v22",
+        "video_interaction_cycle_v28",
+        "video_interaction_cycle_v23",
         "video_interaction_cycle_v22",
+        "video_sit_cycle_v1",
+        "video_stand_cycle_v1",
     }
     is_motion_sheet = (
         quality_tier == "video_motion_sheet_v3"
@@ -433,11 +512,32 @@ async def _store_character_asset(
     model = (
         (
             (
-                "storybook-action-cycle-sheet-v22"
+                (
+                    "storybook-posture-cycle-sheet-v1"
+                    if quality_tier in {
+                        "video_sit_cycle_v1", "video_stand_cycle_v1"
+                    }
+                    else (
+                        "storybook-action-cycle-sheet-v28"
+                        if quality_tier in {
+                            "video_battle_cycle_v28",
+                            "video_interaction_cycle_v28",
+                        }
+                        else "storybook-action-cycle-sheet-v23"
+                    )
+                )
                 if is_action_cycle_sheet
-                else "storybook-action-sheet-v21"
+                else (
+                    "storybook-action-sheet-v28"
+                    if quality_tier == "video_action_sheet_v28"
+                    else "storybook-action-sheet-v23"
+                )
                 if is_action_sheet
-                else "storybook-jump-cycle-sheet-v20"
+                else (
+                    "storybook-jump-cycle-sheet-v28"
+                    if quality_tier == "video_jump_cycle_v28"
+                    else "storybook-jump-cycle-sheet-v23"
+                )
                 if is_jump_cycle_sheet
                 else "storybook-run-cycle-sheet-v16"
                 if is_run_cycle_sheet

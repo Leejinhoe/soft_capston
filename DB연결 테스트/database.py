@@ -44,6 +44,9 @@ visual_vocabulary_collection = database.get_collection("visual_vocabulary")
 community_posts_collection = database.get_collection("community_posts")
 reports_collection = database.get_collection("reports")
 user_warnings_collection = database.get_collection("user_warnings")
+notices_collection = database.get_collection("notices")
+email_verifications_collection = database.get_collection("email_verifications")
+messages_collection = database.get_collection("messages")
 media_jobs_collection = database.get_collection("media_jobs")
 character_profiles_collection = database.get_collection("character_profiles")
 media_files_bucket = AsyncIOMotorGridFSBucket(
@@ -53,6 +56,27 @@ media_files_bucket = AsyncIOMotorGridFSBucket(
 
 
 async def init_database() -> None:
+    await notices_collection.create_index(
+        [("is_published", ASCENDING), ("is_pinned", DESCENDING), ("published_at", DESCENDING)],
+        name="notices_published_pinned_idx",
+    )
+    await notices_collection.create_index(
+        [("author_account_id", ASCENDING), ("created_at", DESCENDING)],
+        name="notices_author_created_idx",
+    )
+    await email_verifications_collection.create_index(
+        [("email", ASCENDING), ("created_at", DESCENDING)],
+        name="email_verifications_email_created_idx",
+    )
+    await email_verifications_collection.create_index(
+        [("expires_at", ASCENDING)],
+        name="email_verifications_expire_idx",
+        expireAfterSeconds=0,
+    )
+    await messages_collection.create_index(
+        [("story_id", ASCENDING), ("user_id", ASCENDING), ("created_at", DESCENDING)],
+        name="messages_story_user_created_idx",
+    )
     await reports_collection.create_index(
         [("status", ASCENDING), ("created_at", DESCENDING)],
         name="reports_status_created_idx",
