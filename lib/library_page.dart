@@ -41,7 +41,8 @@ class _LibraryPageState extends State<LibraryPage> {
     return stories.where((story) {
       final matchesGenre =
           _selectedGenre == '전체' || story.genre == _selectedGenre;
-      final matchesQuery = query.isEmpty ||
+      final matchesQuery =
+          query.isEmpty ||
           story.initialPrompt.contains(query) ||
           story.genre.contains(query) ||
           story.fullStoryText.contains(query);
@@ -173,7 +174,7 @@ class _LibraryPageState extends State<LibraryPage> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _genres.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final genre = _genres[index];
           final selected = genre == _selectedGenre;
@@ -202,12 +203,22 @@ class _LibraryPageState extends State<LibraryPage> {
       borderRadius: BorderRadius.circular(22),
       onTap: busy
           ? null
-          : () => Navigator.push(
+          : () {
+              if (!story.hasReachedEnding && story.choices.isNotEmpty) {
+                state.resumeStory(story);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StoryPage()),
+                );
+                return;
+              }
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => StoryPage(preloadedStory: story),
                 ),
-              ),
+              );
+            },
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -258,7 +269,14 @@ class _LibraryPageState extends State<LibraryPage> {
                       _chip(story.genre, AppColors.p400),
                       _chip('${story.chapters.length}챕터', AppColors.teal),
                       _chip(
-                          '선택 ${story.allChoicesMade.length}회', AppColors.pink),
+                        '선택 ${story.allChoicesMade.length}회',
+                        AppColors.pink,
+                      ),
+                      if (!story.hasReachedEnding && story.choices.isNotEmpty)
+                        _chip(
+                          '📖 ${story.currentChapter}장부터 이어 읽기',
+                          Colors.amberAccent,
+                        ),
                       if (story.dbStoryId != null)
                         _chip('DB 저장됨', Colors.greenAccent),
                     ],
@@ -328,9 +346,7 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
         if (state.isUserDataLoading) ...[
           const SizedBox(height: 18),
-          const Center(
-            child: CircularProgressIndicator(color: AppColors.p400),
-          ),
+          const Center(child: CircularProgressIndicator(color: AppColors.p400)),
         ],
         if (state.userDataErrorMessage != null) ...[
           const SizedBox(height: 18),
@@ -356,8 +372,11 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
       child: Text(
         label,
-        style:
-            TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -422,7 +441,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
                 sliver: SliverList.separated(
                   itemCount: stories.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (context, index) =>
                       _storyCard(state, stories[index]),
                 ),

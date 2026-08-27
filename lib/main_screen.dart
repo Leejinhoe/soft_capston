@@ -124,8 +124,9 @@ class HyeonlimBottomNav extends StatelessWidget {
                       style: TextStyle(
                         color: selected ? Colors.white : Colors.white70,
                         fontSize: 10,
-                        fontWeight:
-                            selected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: selected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -280,10 +281,21 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildCreatedStoryCard(StorySession story) {
     return InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => StoryPage(preloadedStory: story)),
-      ),
+      onTap: () {
+        final state = context.read<AppState>();
+        if (!story.hasReachedEnding && story.choices.isNotEmpty) {
+          state.resumeStory(story);
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const StoryPage()),
+          );
+          return;
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => StoryPage(preloadedStory: story)),
+        );
+      },
       borderRadius: BorderRadius.circular(24),
       child: Container(
         width: 190,
@@ -296,8 +308,10 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(_genreEmoji(story.genre),
-                style: const TextStyle(fontSize: 30)),
+            Text(
+              _genreEmoji(story.genre),
+              style: const TextStyle(fontSize: 30),
+            ),
             const SizedBox(height: 12),
             Text(
               story.initialPrompt,
@@ -333,8 +347,11 @@ class _HomePageState extends State<HomePage> {
       ),
       child: Text(
         label,
-        style:
-            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -383,8 +400,10 @@ class _HomePageState extends State<HomePage> {
                         onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => const NoticePage()),
                         ),
-                        icon: const Icon(Icons.notifications_none_rounded,
-                            color: Colors.white),
+                        icon: const Icon(
+                          Icons.notifications_none_rounded,
+                          color: Colors.white,
+                        ),
                       ),
                       const SizedBox(width: 4),
                       GestureDetector(
@@ -485,8 +504,9 @@ class _HomePageState extends State<HomePage> {
                   controller: _recommendScrollController,
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children:
-                        _featuredStories.map(_buildFeaturedStoryCard).toList(),
+                    children: _featuredStories
+                        .map(_buildFeaturedStoryCard)
+                        .toList(),
                   ),
                 ),
               ),

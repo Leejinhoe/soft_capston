@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -10,8 +9,9 @@ import 'package:provider/provider.dart';
 import 'login_page.dart';
 import 'models/app_state.dart';
 
-const String _definedKakaoNativeKey =
-    String.fromEnvironment('KAKAO_NATIVE_KEY');
+const String _definedKakaoNativeKey = String.fromEnvironment(
+  'KAKAO_NATIVE_KEY',
+);
 const String _definedKakaoJsKey = String.fromEnvironment('KAKAO_JS_KEY');
 
 String _envOrDefined(String key, String defined, [String fallback = '']) {
@@ -27,11 +27,10 @@ String _envOrDefined(String key, String defined, [String fallback = '']) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  if (!kIsWeb) {
-    try {
-      await dotenv.load(fileName: '.env');
-    } catch (_) {}
-  }
+  try {
+    // flutter_dotenv reads the bundled asset on web and the local file elsewhere.
+    await dotenv.load(fileName: '.env');
+  } catch (_) {}
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -99,10 +98,7 @@ class FairyTaleApp extends StatelessWidget {
           backgroundColor: AppColors.bg,
           elevation: 0,
           centerTitle: true,
-          titleTextStyle: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
+          titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           iconTheme: IconThemeData(color: Colors.white),
         ),
       ),

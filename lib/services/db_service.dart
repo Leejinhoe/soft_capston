@@ -168,8 +168,8 @@ class DbService {
           ),
         );
       final streamed = await request.send().timeout(
-            const Duration(seconds: 180),
-          );
+        const Duration(seconds: 180),
+      );
       response = await http.Response.fromStream(streamed);
     }
 
@@ -238,9 +238,7 @@ class DbService {
     );
   }
 
-  static Future<void> sendEmailVerificationCode({
-    required String email,
-  }) async {
+  static Future<void> sendEmailVerificationCode({required String email}) async {
     final response = await http
         .post(
           _apiUri('/api/auth/email-verifications/send'),
@@ -249,9 +247,7 @@ class DbService {
         )
         .timeout(const Duration(seconds: 30));
     if (response.statusCode == 200 || response.statusCode == 201) return;
-    throw Exception(
-      _extractDetailMessage(response.body) ?? '인증번호 발송에 실패했어요.',
-    );
+    throw Exception(_extractDetailMessage(response.body) ?? '인증번호 발송에 실패했어요.');
   }
 
   static Future<String> confirmEmailVerificationCode({
@@ -270,9 +266,7 @@ class DbService {
       final token = data['verification_token']?.toString().trim() ?? '';
       if (token.isNotEmpty) return token;
     }
-    throw Exception(
-      _extractDetailMessage(response.body) ?? '인증번호 확인에 실패했어요.',
-    );
+    throw Exception(_extractDetailMessage(response.body) ?? '인증번호 확인에 실패했어요.');
   }
 
   static Future<Map<String, dynamic>> loginUser({
@@ -423,9 +417,9 @@ class DbService {
   }) async {
     final response = await http
         .delete(
-          _apiUri('/api/admin/notices/$noticeId').replace(
-            queryParameters: {'account_id': adminAccountId},
-          ),
+          _apiUri(
+            '/api/admin/notices/$noticeId',
+          ).replace(queryParameters: {'account_id': adminAccountId}),
           headers: _jsonHeaders,
         )
         .timeout(const Duration(seconds: 15));
@@ -438,10 +432,7 @@ class DbService {
 
   static Future<MediaReadiness> fetchMediaReadiness() async {
     final response = await http
-        .get(
-          _apiUri('/api/media/readiness'),
-          headers: _jsonHeaders,
-        )
+        .get(_apiUri('/api/media/readiness'), headers: _jsonHeaders)
         .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
@@ -475,9 +466,7 @@ class DbService {
     return decoded
         .whereType<Map>()
         .map(
-          (item) => CharacterProfile.fromJson(
-            Map<String, dynamic>.from(item),
-          ),
+          (item) => CharacterProfile.fromJson(Map<String, dynamic>.from(item)),
         )
         .where((profile) => profile.characterKey.isNotEmpty)
         .toList(growable: false);
@@ -853,6 +842,11 @@ class DbService {
     required String prompt,
     Map<String, String> characters = const {},
     Map<String, String> characterOverrides = const {},
+    required String aiStoryId,
+    String? runtimeState,
+    List<String> pendingChoices = const [],
+    List<Map<String, dynamic>> pendingChoiceEmotions = const [],
+    int readProgress = 1,
   }) async {
     try {
       final response = await http
@@ -867,6 +861,11 @@ class DbService {
               'prompt': prompt,
               'characters': characters,
               'character_overrides': characterOverrides,
+              'ai_story_id': aiStoryId,
+              'runtime_state': runtimeState,
+              'pending_choices': pendingChoices,
+              'pending_choice_emotions': pendingChoiceEmotions,
+              'read_progress': readProgress,
               'created_at': DateTime.now().toUtc().toIso8601String(),
             }),
           )
@@ -878,6 +877,36 @@ class DbService {
       }
     } catch (_) {}
     return null;
+  }
+
+  static Future<bool> saveStoryReadingState({
+    required String storyId,
+    required String aiStoryId,
+    String? runtimeState,
+    required List<String> pendingChoices,
+    required List<Map<String, dynamic>> pendingChoiceEmotions,
+    required int readProgress,
+    required bool completed,
+  }) async {
+    try {
+      final response = await http
+          .put(
+            _apiUri('/api/stories/$storyId/reading-state'),
+            headers: _jsonHeaders,
+            body: jsonEncode({
+              'ai_story_id': aiStoryId,
+              'runtime_state': runtimeState,
+              'pending_choices': pendingChoices,
+              'pending_choice_emotions': pendingChoiceEmotions,
+              'read_progress': readProgress,
+              'completed': completed,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<bool> saveStoryCharacters({
@@ -971,7 +1000,7 @@ class DbService {
       }
 
       if (response.statusCode == 404) {
-        return _generateSceneMediaSync(
+        return await _generateSceneMediaSync(
           storyId: storyId,
           stepNumber: stepNumber,
           storyText: storyText,
@@ -1018,10 +1047,7 @@ class DbService {
       await Future.delayed(Duration(seconds: delaySeconds));
       try {
         final response = await http
-            .get(
-              _apiUri(pollPathOrUrl),
-              headers: _jsonHeaders,
-            )
+            .get(_apiUri(pollPathOrUrl), headers: _jsonHeaders)
             .timeout(const Duration(seconds: 20));
         if (response.statusCode == 404) return null;
         if (response.statusCode >= 500) continue;

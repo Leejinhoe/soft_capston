@@ -182,14 +182,27 @@ class _VocabPageState extends State<VocabPage> {
 
   void _openQuiz(List<VocabWord> vocabs) {
     if (vocabs.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('퀴즈를 만들려면 단어가 2개 이상 필요해요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('퀴즈를 만들려면 단어가 2개 이상 필요해요.')));
       return;
     }
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => VocabQuizPage(vocabs: vocabs)),
+    );
+  }
+
+  void _openCards(List<VocabWord> vocabs) {
+    if (vocabs.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('카드를 만들 단어가 아직 없어요.')));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => VocabFlashcardPage(vocabs: vocabs)),
     );
   }
 
@@ -246,12 +259,24 @@ class _VocabPageState extends State<VocabPage> {
                       foregroundColor: Colors.white,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => _openCards(allVocabs),
+                    icon: const Icon(Icons.style_outlined, size: 18),
+                    label: const Text('카드'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF244465),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 22),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF140028),
                   borderRadius: BorderRadius.circular(18),
@@ -300,8 +325,9 @@ class _VocabPageState extends State<VocabPage> {
                               vocab: vocab,
                               sourceStoryTitle: _sourceStoryTitle(state, vocab),
                               color: colors[index % colors.length],
-                              isDeleting:
-                                  _deletingVocabIds.contains(_vocabKey(vocab)),
+                              isDeleting: _deletingVocabIds.contains(
+                                _vocabKey(vocab),
+                              ),
                               onDelete: () => _deleteVocab(state, vocab),
                             );
                           },
@@ -311,6 +337,227 @@ class _VocabPageState extends State<VocabPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class VocabFlashcardPage extends StatefulWidget {
+  const VocabFlashcardPage({super.key, required this.vocabs});
+
+  final List<VocabWord> vocabs;
+
+  @override
+  State<VocabFlashcardPage> createState() => _VocabFlashcardPageState();
+}
+
+class _VocabFlashcardPageState extends State<VocabFlashcardPage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _flipController;
+  int _index = 0;
+  bool _showMeaning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _flipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+  }
+
+  @override
+  void dispose() {
+    _flipController.dispose();
+    super.dispose();
+  }
+
+  void _flip() {
+    if (_flipController.isAnimating) return;
+    if (_showMeaning) {
+      _flipController.reverse();
+    } else {
+      _flipController.forward();
+    }
+    setState(() => _showMeaning = !_showMeaning);
+  }
+
+  void _move(int delta) {
+    final next = _index + delta;
+    if (next < 0 || next >= widget.vocabs.length) return;
+    _flipController.reset();
+    setState(() {
+      _index = next;
+      _showMeaning = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vocab = widget.vocabs[_index];
+    return Scaffold(
+      backgroundColor: const Color(0xFF070018),
+      appBar: AppBar(title: const Text('단어 카드')),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Text(
+                    '${_index + 1} / ${widget.vocabs.length}',
+                    style: const TextStyle(color: Colors.white54),
+                  ),
+                  const SizedBox(height: 22),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _flip,
+                      child: AnimatedBuilder(
+                        animation: _flipController,
+                        builder: (context, child) {
+                          final angle = _flipController.value * pi;
+                          final showingBack = angle > pi / 2;
+                          return Transform(
+                            alignment: Alignment.center,
+                            transform: Matrix4.identity()
+                              ..setEntry(3, 2, 0.0012)
+                              ..rotateY(angle),
+                            child: showingBack
+                                ? Transform(
+                                    alignment: Alignment.center,
+                                    transform: Matrix4.identity()..rotateY(pi),
+                                    child: _FlashcardFace(
+                                      title: vocab.easy,
+                                      body: vocab.definition,
+                                      hint: '다시 누르면 단어를 볼 수 있어요',
+                                      icon: Icons.lightbulb_outline_rounded,
+                                      colors: const [
+                                        Color(0xFF0F766E),
+                                        Color(0xFF155E75),
+                                      ],
+                                    ),
+                                  )
+                                : _FlashcardFace(
+                                    title: vocab.hard,
+                                    body: '이 단어의 뜻을 떠올려 볼까요?',
+                                    hint: '카드를 눌러 뜻을 확인하세요',
+                                    icon: Icons.auto_stories_rounded,
+                                    colors: const [
+                                      Color(0xFF7C3AED),
+                                      Color(0xFFBE185D),
+                                    ],
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton.filledTonal(
+                        onPressed: _index == 0 ? null : () => _move(-1),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        tooltip: '이전 카드',
+                      ),
+                      FilledButton.icon(
+                        onPressed: _flip,
+                        icon: Icon(
+                          _showMeaning
+                              ? Icons.flip_to_front
+                              : Icons.flip_to_back,
+                        ),
+                        label: Text(_showMeaning ? '단어 보기' : '뜻 보기'),
+                      ),
+                      IconButton.filledTonal(
+                        onPressed: _index == widget.vocabs.length - 1
+                            ? null
+                            : () => _move(1),
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                        tooltip: '다음 카드',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FlashcardFace extends StatelessWidget {
+  const _FlashcardFace({
+    required this.title,
+    required this.body,
+    required this.hint,
+    required this.icon,
+    required this.colors,
+  });
+
+  final String title;
+  final String body;
+  final String hint;
+  final IconData icon;
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: Colors.white24),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 28,
+            offset: Offset(0, 14),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(34),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white70, size: 44),
+          const SizedBox(height: 28),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            body,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 38),
+          Text(
+            hint,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ],
       ),
     );
   }
@@ -345,12 +592,13 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
 
   List<String> _buildOptionsFor(VocabWord question) {
     final options = <String>{question.easy};
-    final others = widget.vocabs
-        .where((word) => word.easy != question.easy)
-        .map((word) => word.easy)
-        .where((easy) => easy.trim().isNotEmpty)
-        .toList()
-      ..shuffle();
+    final others =
+        widget.vocabs
+            .where((word) => word.easy != question.easy)
+            .map((word) => word.easy)
+            .where((easy) => easy.trim().isNotEmpty)
+            .toList()
+          ..shuffle();
     options.addAll(others.take(3));
     return options.toList()..shuffle();
   }
@@ -496,10 +744,10 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
                 final color = !_answered
                     ? const Color(0xFF140028)
                     : isCorrect
-                        ? const Color(0xFF064E3B)
-                        : isSelected
-                            ? const Color(0xFF7F1D1D)
-                            : const Color(0xFF140028);
+                    ? const Color(0xFF064E3B)
+                    : isSelected
+                    ? const Color(0xFF7F1D1D)
+                    : const Color(0xFF140028);
                 return Container(
                   width: double.infinity,
                   margin: const EdgeInsets.only(bottom: 12),
