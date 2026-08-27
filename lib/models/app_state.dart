@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import 'character_profile.dart';
 import 'story_model.dart';
 
 class AppState extends ChangeNotifier {
@@ -198,6 +199,7 @@ class AppState extends ChangeNotifier {
         genre: genre,
         age: age,
         prompt: prompt,
+        characterContext: _characterContext(selectedCharacterKey),
       );
 
       final vocab = (data['vocab'] as List? ?? [])
@@ -208,10 +210,18 @@ class AppState extends ChangeNotifier {
         chapter: 1,
         text: data['story_text']?.toString() ?? '',
         imageB64: data['image_b64'] as String?,
+        sceneContract: data['scene_contract'] is Map
+            ? Map<String, dynamic>.from(data['scene_contract'] as Map)
+            : null,
         storyEmotion: _parseEmotionAnalysis(data['story_emotion']),
       );
 
       final storyCharacters = _parseStoryCharacters(data);
+      final storyCast = _parseStoryCast(data);
+      final characterOverrides = _parseCharacterOverrides(data);
+      if (selectedCharacterKey != null && selectedCharacterKey.isNotEmpty) {
+        characterOverrides['hero'] = selectedCharacterKey;
+      }
       if (selectedCharacterKey != null &&
           selectedCharacterKey.isNotEmpty &&
           !storyCharacters.containsKey('hero')) {
@@ -232,10 +242,8 @@ class AppState extends ChangeNotifier {
         candidateVocab: vocab,
         vocab: [],
         characters: storyCharacters,
-        characterOverrides:
-            selectedCharacterKey == null || selectedCharacterKey.isEmpty
-                ? const {}
-                : {'hero': selectedCharacterKey},
+        characterOverrides: characterOverrides,
+        storyCast: storyCast,
         allChoicesMade: [],
         currentChapter: 1,
       );
@@ -268,6 +276,12 @@ class AppState extends ChangeNotifier {
         choice: choice,
         genre: session.genre,
         age: session.age,
+        characterContext: _characterContext(session.selectedHeroCharacterKey),
+        storyCast: _storyCastJson(session),
+        characterOverrides: session.characterOverrides,
+        previousSceneContract: session.chapters.isEmpty
+            ? null
+            : session.chapters.last.sceneContract,
       );
 
       final newText = data['new_text']?.toString() ?? '';
@@ -282,6 +296,9 @@ class AppState extends ChangeNotifier {
         text: newText,
         choiceMade: choice,
         imageB64: data['image_b64'] as String?,
+        sceneContract: data['scene_contract'] is Map
+            ? Map<String, dynamic>.from(data['scene_contract'] as Map)
+            : null,
         selectedChoiceEmotion: _parseEmotionAnalysis(
           data['selected_choice_emotion'],
         ),
@@ -613,6 +630,44 @@ class AppState extends ChangeNotifier {
     return const {};
   }
 
+  Map<String, String> _parseCharacterOverrides(Map<String, dynamic> data) {
+    final raw = data['character_overrides'];
+    if (raw is! Map) return <String, String>{};
+    return raw.map(
+      (key, value) => MapEntry(key.toString(), value.toString()),
+    );
+  }
+
+  List<StoryCastMember> _parseStoryCast(Map<String, dynamic> data) {
+    final raw = data['story_cast'] ?? data['storyCast'];
+    if (raw is! List) return <StoryCastMember>[];
+    return raw
+        .whereType<Map>()
+        .map(
+          (item) => StoryCastMember.fromJson(
+            item.map((key, value) => MapEntry(key.toString(), value)),
+          ),
+        )
+        .where((member) => member.role.isNotEmpty)
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _storyCastJson(StorySession session) {
+    return session.effectiveStoryCast
+        .map(
+          (member) => <String, dynamic>{
+            'role': member.role,
+            'name': member.name,
+            if (member.characterKey.trim().isNotEmpty)
+              'character_key': member.characterKey,
+            if (member.profileName != null) 'profile_name': member.profileName,
+            if (member.sourceDescription != null)
+              'source_description': member.sourceDescription,
+          },
+        )
+        .toList(growable: false);
+  }
+
   List<ChoiceOption> _buildChoiceOptions(List? rawChoices, List? rawEmotions) {
     final choices = List<String>.from(rawChoices ?? []);
     final emotions = rawEmotions ?? const [];
@@ -683,6 +738,7 @@ class AppState extends ChangeNotifier {
       stepNumber: chapter.chapter,
       storyText: chapter.text,
       choiceMade: chapter.choiceMade,
+      sceneContract: chapter.sceneContract,
       selectedChoiceEmotion: chapter.selectedChoiceEmotion?.toJson(),
       storyEmotion: chapter.storyEmotion?.toJson(),
       imageUrl: chapter.imageUrl,
@@ -728,6 +784,7 @@ class AppState extends ChangeNotifier {
       genre: session.genre,
       age: session.age,
       characterKey: session.selectedHeroCharacterKey,
+      sceneContract: chapter.sceneContract,
       includeVideo: needsVideo,
     );
 
@@ -780,6 +837,20 @@ class AppState extends ChangeNotifier {
 
   bool _isTemporaryStory(StorySession session) {
     return session.storyId.startsWith('mock_');
+  }
+
+  Map<String, dynamic>? _characterContext(String? characterKey) {
+    final normalizedKey = characterKey?.trim() ?? '';
+    if (normalizedKey.isEmpty) return null;
+    final profile = CharacterProfileCatalog.findByKey(normalizedKey);
+    return {
+      'character_key': normalizedKey,
+      if (profile != null) 'name': profile.displayName,
+      if (profile != null) 'description': profile.description,
+      if (profile != null) 'gender': profile.gender,
+      if (profile != null) 'age_group': profile.ageGroup,
+      'identity_locked': true,
+    };
   }
 
   String _storyIdentity(StorySession session) {

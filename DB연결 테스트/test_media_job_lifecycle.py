@@ -26,6 +26,31 @@ class MediaJobDocumentTests(unittest.TestCase):
         self.assertEqual(job['owner_user_id'], 'user-123')
         self.assertEqual(job['status'], 'pending')
 
+    def test_job_records_character_and_scene_contract(self):
+        payload = MediaGenerationWithStorySchema(
+            story_text='The hero examines the old key.',
+            character_key='female_04',
+            scene_contract={
+                'action': 'investigate',
+                'scene_goal': 'Examine the old key.',
+                'required_props': ['old_key'],
+                'background_direction': 'toward_target',
+            },
+        )
+
+        job = main.build_media_job_document(
+            payload,
+            story_id=None,
+            step_number=None,
+            owner_user_id='user-123',
+        )
+
+        self.assertEqual(job['character_key'], 'female_04')
+        self.assertEqual(
+            job['request']['scene_contract']['action'],
+            'investigate',
+        )
+
     def test_story_scene_job_has_a_unique_active_key(self):
         story_id = str(ObjectId())
         job = main.build_media_job_document(
@@ -46,14 +71,59 @@ class MediaJobDocumentTests(unittest.TestCase):
                 'media_job_id': 'job-1',
                 'media_status': 'partial',
                 'media_error': 'video failed',
+                'scene_contract': {
+                    'action': 'journey',
+                    'character_key': 'male_01',
+                },
             }
         )
 
         self.assertEqual(scene['media_status'], 'partial')
         self.assertEqual(scene['media_error'], 'video failed')
+        self.assertEqual(scene['scene_contract']['action'], 'journey')
 
 
 class MediaJobLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_image_only_composition_skips_video_background_read(self):
+        class FakePath:
+            def __init__(self, data, name, error=None):
+                self.data = data
+                self.name = name
+                self.error = error
+
+            def read_bytes(self):
+                if self.error:
+                    raise AssertionError(self.error)
+                return self.data
+
+        background_asset = {
+            'key': 'fantasy_castle',
+            'path': FakePath(b'background', 'castle.png'),
+            'video_path': FakePath(
+                b'',
+                'castle.mp4',
+                error='video background must not be read for image-only jobs',
+            ),
+            'video_source': 'bundled_asset',
+        }
+
+        with (
+            patch.object(main, 'download_gridfs_file', AsyncMock(return_value=b'character')),
+            patch.object(main, 'compose_story_scene', return_value=b'image'),
+        ):
+            result = await main.generate_composite_scene(
+                selected_character_asset={'image_file_id': 'character-file'},
+                genre='fantasy',
+                story_text='A child walks toward a castle.',
+                width=128,
+                height=128,
+                background_asset=background_asset,
+                include_video=False,
+            )
+
+        self.assertIsNone(result['video_background_bytes'])
+        self.assertEqual(result['image_bytes'], b'image')
+
     async def test_story_media_rejects_character_outside_saved_cast(self):
         with patch.object(
             main,

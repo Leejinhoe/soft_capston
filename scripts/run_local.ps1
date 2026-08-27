@@ -55,6 +55,12 @@ $env:DB_API_BASE_URL = if ($env:DB_API_BASE_URL) {
   "http://127.0.0.1:$BackendPort"
 }
 
+$env:AI_API_BASE_URL = if ($env:AI_API_BASE_URL) {
+  $env:AI_API_BASE_URL
+} else {
+  $env:DB_API_BASE_URL
+}
+
 $backendJob = $null
 $startedBackend = $false
 $healthUrl = "$env:DB_API_BASE_URL/"
@@ -103,7 +109,7 @@ try {
     "--dart-define=DB_API_BASE_URL=$env:DB_API_BASE_URL"
   )
 
-  foreach ($name in @("GOOGLE_CLIENT_ID", "KAKAO_NATIVE_KEY", "KAKAO_JS_KEY", "MEDIA_INCLUDE_VIDEO")) {
+  foreach ($name in @("AI_API_BASE_URL", "GOOGLE_CLIENT_ID", "KAKAO_NATIVE_KEY", "KAKAO_JS_KEY", "MEDIA_INCLUDE_VIDEO")) {
     $value = [Environment]::GetEnvironmentVariable($name)
     if ($value) {
       $flutterArgs += "--dart-define=$name=$value"

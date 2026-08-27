@@ -177,6 +177,28 @@ ACTION_CYCLE_VARIANTS = {
         "motion_cells": {"stand": list(range(8))},
         "playback": "optical-flow-adjacent-frames",
     },
+    "crawl": {
+        "pose": "crawl-cycle-sheet",
+        "emotion": "focused",
+        "quality_tier": "video_crawl_cycle_v2",
+        "tags": ("video", "sprite-sheet", "crawling", "identity-locked", "derived-pose-v2"),
+        "filename_version": "v2",
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "motion_cells": {"crawl": list(range(8))},
+        "playback": "discrete-frames",
+    },
+    "climb": {
+        "pose": "climb-cycle-sheet",
+        "emotion": "focused",
+        "quality_tier": "video_climb_cycle_v2",
+        "tags": ("video", "sprite-sheet", "climbing", "identity-locked", "derived-pose-v2"),
+        "filename_version": "v2",
+        "sheet_columns": 4,
+        "sheet_rows": 2,
+        "motion_cells": {"climb": list(range(8))},
+        "playback": "discrete-frames",
+    },
 }
 
 
@@ -300,6 +322,20 @@ def _asset_specs(character_key: str, tags: List[str]) -> List[Dict[str, Any]]:
     for action_name, variant in ACTION_CYCLE_VARIANTS.items():
         selected_variant = variant
         cycle_filename = f"motion_sheets/{character_key}_{action_name}_cycle_{variant['filename_version']}.png"
+        if action_name in {"sit", "stand"} and (
+            CHARACTER_ASSET_DIR
+            / f"motion_sheets/{character_key}_{action_name}_cycle_v2.png"
+        ).is_file():
+            selected_variant = {
+                **variant,
+                "quality_tier": f"video_{action_name}_cycle_v2",
+                "filename_version": "v2",
+                "tags": tuple(
+                    "derived-pose-v2" if tag == "identity-locked" else tag
+                    for tag in variant["tags"]
+                ),
+            }
+            cycle_filename = f"motion_sheets/{character_key}_{action_name}_cycle_v2.png"
         if not (CHARACTER_ASSET_DIR / cycle_filename).is_file() and action_name in {
             "battle", "interaction",
         }:
@@ -495,6 +531,10 @@ async def _store_character_asset(
         "video_interaction_cycle_v22",
         "video_sit_cycle_v1",
         "video_stand_cycle_v1",
+        "video_sit_cycle_v2",
+        "video_stand_cycle_v2",
+        "video_crawl_cycle_v2",
+        "video_climb_cycle_v2",
     }
     is_motion_sheet = (
         quality_tier == "video_motion_sheet_v3"
@@ -513,17 +553,27 @@ async def _store_character_asset(
         (
             (
                 (
-                    "storybook-posture-cycle-sheet-v1"
+                    "storybook-posture-cycle-sheet-v2"
+                    if quality_tier in {
+                        "video_sit_cycle_v2", "video_stand_cycle_v2"
+                    }
+                    else "storybook-posture-cycle-sheet-v1"
                     if quality_tier in {
                         "video_sit_cycle_v1", "video_stand_cycle_v1"
                     }
                     else (
-                        "storybook-action-cycle-sheet-v28"
+                        "storybook-scene-pose-cycle-sheet-v2"
                         if quality_tier in {
-                            "video_battle_cycle_v28",
-                            "video_interaction_cycle_v28",
+                            "video_crawl_cycle_v2", "video_climb_cycle_v2"
                         }
-                        else "storybook-action-cycle-sheet-v23"
+                        else (
+                            "storybook-action-cycle-sheet-v28"
+                            if quality_tier in {
+                                "video_battle_cycle_v28",
+                                "video_interaction_cycle_v28",
+                            }
+                            else "storybook-action-cycle-sheet-v23"
+                        )
                     )
                 )
                 if is_action_cycle_sheet

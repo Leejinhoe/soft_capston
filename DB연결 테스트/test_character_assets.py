@@ -219,6 +219,16 @@ class CharacterAssetSelectionTests(unittest.TestCase):
                     "image_file_id": "stand-cycle-file",
                 },
                 {
+                    "pose": "sit-cycle-sheet",
+                    "quality_tier": "video_sit_cycle_v2",
+                    "image_file_id": "sit-cycle-v2-file",
+                },
+                {
+                    "pose": "stand-cycle-sheet",
+                    "quality_tier": "video_stand_cycle_v2",
+                    "image_file_id": "stand-cycle-v2-file",
+                },
+                {
                     "pose": "default",
                     "quality_tier": "fast_action",
                     "image_file_id": "default-file",
@@ -228,14 +238,48 @@ class CharacterAssetSelectionTests(unittest.TestCase):
 
         self.assertEqual(
             select_character_action_cycle_sheet(profile, "sit")["image_file_id"],
-            "sit-cycle-file",
+            "sit-cycle-v2-file",
         )
         self.assertEqual(
             select_character_action_cycle_sheet(profile, "stand")["image_file_id"],
-            "stand-cycle-file",
+            "stand-cycle-v2-file",
         )
         self.assertEqual(
             select_character_asset(profile, "The hero sits down")["image_file_id"],
+            "default-file",
+        )
+
+    def test_selects_dedicated_travel_cycles_before_reference_fallback(self):
+        profile = {
+            "assets": [
+                {
+                    "pose": "crawl-cycle-sheet",
+                    "quality_tier": "video_crawl_cycle_v2",
+                    "image_file_id": "crawl-cycle-file",
+                },
+                {
+                    "pose": "climb-cycle-sheet",
+                    "quality_tier": "video_climb_cycle_v2",
+                    "image_file_id": "climb-cycle-file",
+                },
+                {
+                    "pose": "default",
+                    "quality_tier": "fast_action",
+                    "image_file_id": "default-file",
+                },
+            ]
+        }
+
+        self.assertEqual(
+            select_character_action_cycle_sheet(profile, "crawl")["image_file_id"],
+            "crawl-cycle-file",
+        )
+        self.assertEqual(
+            select_character_action_cycle_sheet(profile, "climb")["image_file_id"],
+            "climb-cycle-file",
+        )
+        self.assertEqual(
+            select_character_asset(profile, "The hero crawls")["image_file_id"],
             "default-file",
         )
 

@@ -1,0 +1,475 @@
+{
+  "version": "v2",
+  "character_key": "female_05",
+  "source": "tmp/female_05_pose_sheet_imagegen_v1.png",
+  "transparent_runtime_contract": {
+    "columns": 4,
+    "rows": 2,
+    "cell_size": [
+      384,
+      512
+    ]
+  },
+  "assets": [
+    {
+      "action": "crawl",
+      "filename": "motion_sheets/female_05_crawl_cycle_v2.png",
+      "quality_tier": "video_crawl_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        2,
+        3,
+        4,
+        3,
+        4,
+        3,
+        4,
+        2
+      ],
+      "phases": [
+        "prepare",
+        "act",
+        "act",
+        "act",
+        "hold",
+        "recover",
+        "recover",
+        "recover"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              14,
+              225,
+              370,
+              480
+            ],
+            "visible_pixels": 10898980
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              14,
+              268,
+              370,
+              480
+            ],
+            "visible_pixels": 8000733
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              14,
+              225,
+              370,
+              480
+            ],
+            "visible_pixels": 10898980
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              14,
+              268,
+              370,
+              480
+            ],
+            "visible_pixels": 8000733
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              14,
+              225,
+              370,
+              480
+            ],
+            "visible_pixels": 10898980
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              14,
+              268,
+              370,
+              480
+            ],
+            "visible_pixels": 8000733
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          }
+        ]
+      }
+    },
+    {
+      "action": "climb",
+      "filename": "motion_sheets/female_05_climb_cycle_v2.png",
+      "quality_tier": "video_climb_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        2,
+        5,
+        6,
+        5,
+        6,
+        5,
+        6,
+        2
+      ],
+      "phases": [
+        "prepare",
+        "act",
+        "act",
+        "act",
+        "hold",
+        "recover",
+        "recover",
+        "recover"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              108,
+              32,
+              275,
+              480
+            ],
+            "visible_pixels": 9030732
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              99,
+              32,
+              284,
+              480
+            ],
+            "visible_pixels": 9211454
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              108,
+              32,
+              275,
+              480
+            ],
+            "visible_pixels": 9030732
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              99,
+              32,
+              284,
+              480
+            ],
+            "visible_pixels": 9211454
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              108,
+              32,
+              275,
+              480
+            ],
+            "visible_pixels": 9030732
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              99,
+              32,
+              284,
+              480
+            ],
+            "visible_pixels": 9211454
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          }
+        ]
+      }
+    },
+    {
+      "action": "sit",
+      "filename": "motion_sheets/female_05_sit_cycle_v2.png",
+      "quality_tier": "video_sit_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        1,
+        2,
+        7,
+        7,
+        7,
+        7,
+        2,
+        1
+      ],
+      "phases": [
+        "prepare",
+        "lower",
+        "lower",
+        "contact",
+        "hold",
+        "hold",
+        "recover",
+        "recover"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              103,
+              32,
+              280,
+              480
+            ],
+            "visible_pixels": 10966903
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 12508604
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 12508604
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 12508604
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 12508604
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              103,
+              32,
+              280,
+              480
+            ],
+            "visible_pixels": 10966903
+          }
+        ]
+      }
+    },
+    {
+      "action": "stand",
+      "filename": "motion_sheets/female_05_stand_cycle_v2.png",
+      "quality_tier": "video_stand_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        1,
+        2,
+        1,
+        8,
+        8,
+        1,
+        2,
+        1
+      ],
+      "phases": [
+        "prepare",
+        "rise",
+        "rise",
+        "hold",
+        "hold",
+        "recover",
+        "recover",
+        "settle"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              103,
+              32,
+              280,
+              480
+            ],
+            "visible_pixels": 10966903
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              103,
+              32,
+              280,
+              480
+            ],
+            "visible_pixels": 10966903
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              15,
+              32,
+              368,
+              480
+            ],
+            "visible_pixels": 22411259
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              15,
+              32,
+              368,
+              480
+            ],
+            "visible_pixels": 22411259
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              103,
+              32,
+              280,
+              480
+            ],
+            "visible_pixels": 10966903
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              14,
+              38,
+              370,
+              480
+            ],
+            "visible_pixels": 23265884
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              103,
+              32,
+              280,
+              480
+            ],
+            "visible_pixels": 10966903
+          }
+        ]
+      }
+    }
+  ]
+}

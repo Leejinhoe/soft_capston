@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert'; // json 변환용
 
+import 'services/db_service.dart';
+
 class RegisterScreen extends StatefulWidget {
   @override
   _RegisterScreenState createState() => _RegisterScreenState();
@@ -15,8 +17,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // FastAPI 백엔드로 가입 요청을 보내는 함수
   Future<void> registerUser() async {
-    // 안드로이드 에뮬레이터용 로컬 주소 (10.0.2.2)
-    final url = Uri.parse('http://192.168.55.233:8000/api/users/register');
+    // Use the same platform-aware API base URL as the rest of the app.
+    final url = Uri.parse('${DbService.baseUrl}/api/users/register');
 
     try {
       final response = await http.post(

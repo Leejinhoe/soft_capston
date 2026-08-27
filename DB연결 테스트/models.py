@@ -50,10 +50,29 @@ class StoryCharactersSchema(BaseModel):
     user_id: Optional[str] = None
 
 
+class SceneContractSchema(BaseModel):
+    version: int = Field(default=1, ge=1, le=1)
+    character_key: Optional[str] = Field(default=None, max_length=64)
+    scene_goal: Optional[str] = Field(default=None, max_length=180)
+    action: Optional[str] = Field(default=None, max_length=40)
+    target: Optional[str] = Field(default=None, max_length=100)
+    required_props: List[str] = Field(default_factory=list, max_length=8)
+    participant_count: Optional[int] = Field(default=None, ge=0, le=4)
+    participants: List[Dict[str, Any]] = Field(default_factory=list, max_length=4)
+    character_keys: List[str] = Field(default_factory=list, max_length=4)
+    participant_roles: Dict[str, str] = Field(default_factory=dict)
+    requires_partner: Optional[bool] = None
+    requires_object: Optional[bool] = None
+    visual_anchor: Optional[str] = Field(default=None, max_length=240)
+    background_direction: Optional[str] = Field(default=None, max_length=40)
+    dialogue: Optional[str] = Field(default=None, max_length=240)
+
+
 class SceneSchema(BaseModel):
     step_number: int
     story_text: str
     choice_made: Optional[str] = None
+    scene_contract: Optional[SceneContractSchema] = None
     video_url: Optional[str] = None
     image_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -70,6 +89,9 @@ class CharacterAssetSchema(BaseModel):
     sheet_columns: Optional[int] = Field(default=None, ge=1, le=8)
     sheet_rows: Optional[int] = Field(default=None, ge=1, le=8)
     motion_cells: Dict[str, List[int]] = Field(default_factory=dict)
+    asset_version: Optional[str] = Field(default=None, max_length=80)
+    asset_fingerprint: Optional[str] = Field(default=None, max_length=128)
+    identity_context: Dict[str, str] = Field(default_factory=dict)
 
 
 class CharacterProfileUpsertSchema(BaseModel):
@@ -91,6 +113,7 @@ class MediaGenerationSchema(BaseModel):
         max_length=64,
         pattern=r"^[a-z0-9][a-z0-9_-]*$",
     )
+    scene_contract: Optional[SceneContractSchema] = None
     include_video: bool = False
     width: int = Field(default=512, ge=256, le=1536)
     height: int = Field(default=512, ge=256, le=1536)

@@ -249,6 +249,13 @@ class CharacterProfileCatalog {
     return null;
   }
 
+  static CharacterProfile? findByKey(String characterKey) {
+    for (final profile in defaults) {
+      if (profile.characterKey == characterKey) return profile;
+    }
+    return null;
+  }
+
   static List<CharacterProfile> mergeRemoteProfiles(
     List<CharacterProfile> remoteProfiles,
   ) {
