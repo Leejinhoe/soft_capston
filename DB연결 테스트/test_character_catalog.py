@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -273,8 +274,8 @@ class CharacterCatalogTests(unittest.TestCase):
                         ("battle", "v28"),
                         ("magic", "v22"),
                         ("interaction", "v28"),
-                        ("sit", "v1"),
-                        ("stand", "v1"),
+                        ("sit", "v2"),
+                        ("stand", "v2"),
                     )
                     for action_name, version in action_cycles:
                         self.assertEqual(
@@ -317,6 +318,27 @@ class CharacterCatalogTests(unittest.TestCase):
                             "optical-flow-adjacent-frames",
                         )
                         filenames = filenames[1:]
+                while filenames and filenames[0].startswith("motion_sheets/"):
+                    extra_filename = filenames.pop(0)
+                    match = re.search(
+                        r"_(?P<action>sit|stand|crawl|climb)_cycle_(?P<version>v\d+)\.png$",
+                        extra_filename,
+                    )
+                    self.assertIsNotNone(match, extra_filename)
+                    action_name = match.group("action")
+                    version = match.group("version")
+                    expected_tier = f"video_{action_name}_cycle_{version}"
+                    cycle_asset = next(
+                        asset
+                        for asset in profile["assets"]
+                        if asset["quality_tier"] == expected_tier
+                    )
+                    self.assertEqual(
+                        cycle_asset["motion_cells"][action_name],
+                        list(range(8)),
+                    )
+                    self.assertEqual(cycle_asset["sheet_columns"], 4)
+                    self.assertEqual(cycle_asset["sheet_rows"], 2)
                 self.assertEqual(filenames, expected)
                 self.assertTrue(
                     all(

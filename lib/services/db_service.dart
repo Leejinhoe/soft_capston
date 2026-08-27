@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
@@ -43,24 +44,30 @@ class DbService {
 
   static String get baseUrl {
     final defined = _definedBaseUrl.trim();
-    if (defined.isNotEmpty) return defined;
+    if (defined.isNotEmpty) return _withoutTrailingSlash(defined);
 
-    final configured = dotenv.isInitialized
-        ? dotenv.env['DB_API_BASE_URL']?.trim() ?? ''
-        : '';
-    if (configured.isNotEmpty) return configured;
+    final configured =
+        dotenv.isInitialized ? dotenv.env['DB_API_BASE_URL']?.trim() ?? '' : '';
+    if (configured.isNotEmpty) return _withoutTrailingSlash(configured);
 
+    if (kIsWeb) return 'http://127.0.0.1:8000';
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:8000';
+    }
     return 'http://127.0.0.1:8000';
   }
 
+  static String _withoutTrailingSlash(String value) =>
+      value.endsWith('/') ? value.substring(0, value.length - 1) : value;
+
   static String get ttsBaseUrl {
     final defined = _definedTtsBaseUrl.trim();
-    if (defined.isNotEmpty) return defined;
+    if (defined.isNotEmpty) return _withoutTrailingSlash(defined);
 
     final configured = dotenv.isInitialized
         ? dotenv.env['TTS_API_BASE_URL']?.trim() ?? ''
         : '';
-    if (configured.isNotEmpty) return configured;
+    if (configured.isNotEmpty) return _withoutTrailingSlash(configured);
 
     return baseUrl;
   }
@@ -307,7 +314,7 @@ class DbService {
     );
   }
 
-  static Future<List<Notice>> fetchNotices({int limit = 30}) async {
+  static Future<List<Notice>> fetchNotices({int limit = 500}) async {
     final response = await http
         .get(
           _apiUri('/api/notices').replace(queryParameters: {'limit': '$limit'}),
@@ -927,6 +934,7 @@ class DbService {
     required int stepNumber,
     required String storyText,
     String? choiceMade,
+    Map<String, dynamic>? sceneContract,
     Map<String, dynamic>? selectedChoiceEmotion,
     Map<String, dynamic>? storyEmotion,
     String? imageUrl,
@@ -941,6 +949,7 @@ class DbService {
               'step_number': stepNumber,
               'story_text': storyText,
               'choice_made': choiceMade,
+              'scene_contract': sceneContract,
               'selected_choice_emotion': selectedChoiceEmotion,
               'story_emotion': storyEmotion,
               'image_url': imageUrl,
@@ -962,6 +971,7 @@ class DbService {
     required String genre,
     required String age,
     String? characterKey,
+    Map<String, dynamic>? sceneContract,
     bool includeVideo = false,
   }) async {
     try {
@@ -975,6 +985,7 @@ class DbService {
               'age': age,
               if (characterKey?.trim().isNotEmpty == true)
                 'character_key': characterKey!.trim(),
+              if (sceneContract != null) 'scene_contract': sceneContract,
               'include_video': includeVideo,
             }),
           )
@@ -996,6 +1007,7 @@ class DbService {
           genre: genre,
           age: age,
           characterKey: characterKey,
+          sceneContract: sceneContract,
           includeVideo: includeVideo,
         );
       }
@@ -1020,12 +1032,19 @@ class DbService {
     if (pollPathOrUrl == null) return null;
 
     final deadline = DateTime.now().add(const Duration(minutes: 20));
+    var pollCount = 0;
     while (DateTime.now().isBefore(deadline)) {
       final status = latest.status?.toLowerCase();
       if (status == 'completed') return latest.hasMedia ? latest : null;
       if (status == 'partial' || status == 'failed') return latest;
 
-      await Future.delayed(const Duration(seconds: 3));
+      final delaySeconds = pollCount < 3
+          ? 1
+          : pollCount < 6
+              ? 2
+              : 3;
+      pollCount += 1;
+      await Future.delayed(Duration(seconds: delaySeconds));
       try {
         final response = await http
             .get(_apiUri(pollPathOrUrl), headers: _jsonHeaders)
@@ -1072,6 +1091,7 @@ class DbService {
     required String genre,
     required String age,
     String? characterKey,
+    Map<String, dynamic>? sceneContract,
     required bool includeVideo,
   }) async {
     try {
@@ -1085,6 +1105,7 @@ class DbService {
               'age': age,
               if (characterKey?.trim().isNotEmpty == true)
                 'character_key': characterKey!.trim(),
+              if (sceneContract != null) 'scene_contract': sceneContract,
               'include_video': includeVideo,
             }),
           )

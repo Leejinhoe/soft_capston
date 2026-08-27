@@ -1,5 +1,14 @@
 from typing import Any, Dict, Optional
 
+from character_identity import (
+    asset_fingerprint,
+    asset_version,
+    build_character_identity_context,
+    character_identity_matches,
+    identity_context_from_profile,
+    with_character_identity,
+)
+
 
 MOTION_SHEET_QUALITY_TIER = "video_motion_sheet_v3"
 TARGET_JOURNEY_SHEET_QUALITY_TIER = "video_target_journey_sheet_v4"
@@ -12,6 +21,12 @@ ACTION_CYCLE_QUALITY_TIERS = {
     "interaction": "video_interaction_cycle_v28",
     "sit": "video_sit_cycle_v1",
     "stand": "video_stand_cycle_v1",
+    "crawl": "video_crawl_cycle_v2",
+    "climb": "video_climb_cycle_v2",
+}
+POSTURE_CYCLE_QUALITY_TIERS = {
+    "sit": "video_sit_cycle_v2",
+    "stand": "video_stand_cycle_v2",
 }
 
 # Keep already-seeded GridFS assets usable while the catalog is reseeded with
@@ -34,6 +49,8 @@ LEGACY_ACTION_CYCLE_QUALITY_TIERS = {
         "video_interaction_cycle_v23",
         "video_interaction_cycle_v22",
     ),
+    "crawl": (),
+    "climb": (),
 }
 
 VIDEO_ASSET_QUALITY_TIERS = {
@@ -43,6 +60,7 @@ VIDEO_ASSET_QUALITY_TIERS = {
     JUMP_CYCLE_SHEET_QUALITY_TIER,
     ACTION_SHEET_QUALITY_TIER,
     *ACTION_CYCLE_QUALITY_TIERS.values(),
+    *POSTURE_CYCLE_QUALITY_TIERS.values(),
     *LEGACY_JUMP_CYCLE_QUALITY_TIERS,
     *LEGACY_ACTION_SHEET_QUALITY_TIERS,
     *{
@@ -252,6 +270,7 @@ def select_character_action_cycle_sheet(
     return _select_video_asset(
         assets,
         (
+            POSTURE_CYCLE_QUALITY_TIERS.get(normalized_action, ""),
             canonical_quality_tier,
             *LEGACY_ACTION_CYCLE_QUALITY_TIERS.get(normalized_action, set()),
         ),

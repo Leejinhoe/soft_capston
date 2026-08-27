@@ -370,6 +370,7 @@ class StoryChapter {
   String? mediaJobId;
   String? mediaStatus;
   String? mediaError;
+  Map<String, dynamic>? sceneContract;
   final DateTime? createdAt;
   String? imageB64;
   EmotionAnalysis? storyEmotion;
@@ -384,6 +385,7 @@ class StoryChapter {
     this.mediaJobId,
     this.mediaStatus,
     this.mediaError,
+    this.sceneContract,
     this.createdAt,
     this.imageB64,
     this.storyEmotion,
@@ -608,6 +610,9 @@ class StorySession {
             mediaJobId: scene['media_job_id']?.toString(),
             mediaStatus: scene['media_status']?.toString(),
             mediaError: scene['media_error']?.toString(),
+            sceneContract: scene['scene_contract'] is Map
+                ? Map<String, dynamic>.from(scene['scene_contract'] as Map)
+                : null,
             createdAt: DateTime.tryParse(scene['created_at']?.toString() ?? ''),
             storyEmotion: scene['story_emotion'] is Map
                 ? EmotionAnalysis.fromJson(

@@ -1,0 +1,475 @@
+{
+  "version": "v2",
+  "character_key": "male_02",
+  "source": "tmp/male_02_pose_sheet_imagegen_v1.png",
+  "transparent_runtime_contract": {
+    "columns": 4,
+    "rows": 2,
+    "cell_size": [
+      384,
+      512
+    ]
+  },
+  "assets": [
+    {
+      "action": "crawl",
+      "filename": "motion_sheets/male_02_crawl_cycle_v2.png",
+      "quality_tier": "video_crawl_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        2,
+        3,
+        4,
+        3,
+        4,
+        3,
+        4,
+        2
+      ],
+      "phases": [
+        "prepare",
+        "act",
+        "act",
+        "act",
+        "hold",
+        "recover",
+        "recover",
+        "recover"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              14,
+              238,
+              370,
+              480
+            ],
+            "visible_pixels": 10601237
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              14,
+              246,
+              370,
+              480
+            ],
+            "visible_pixels": 8672423
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              14,
+              238,
+              370,
+              480
+            ],
+            "visible_pixels": 10601237
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              14,
+              246,
+              370,
+              480
+            ],
+            "visible_pixels": 8672423
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              14,
+              238,
+              370,
+              480
+            ],
+            "visible_pixels": 10601237
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              14,
+              246,
+              370,
+              480
+            ],
+            "visible_pixels": 8672423
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          }
+        ]
+      }
+    },
+    {
+      "action": "climb",
+      "filename": "motion_sheets/male_02_climb_cycle_v2.png",
+      "quality_tier": "video_climb_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        2,
+        5,
+        6,
+        5,
+        6,
+        5,
+        6,
+        2
+      ],
+      "phases": [
+        "prepare",
+        "act",
+        "act",
+        "act",
+        "hold",
+        "recover",
+        "recover",
+        "recover"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              109,
+              32,
+              275,
+              480
+            ],
+            "visible_pixels": 7676947
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              112,
+              32,
+              272,
+              480
+            ],
+            "visible_pixels": 7694351
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              109,
+              32,
+              275,
+              480
+            ],
+            "visible_pixels": 7676947
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              112,
+              32,
+              272,
+              480
+            ],
+            "visible_pixels": 7694351
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              109,
+              32,
+              275,
+              480
+            ],
+            "visible_pixels": 7676947
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              112,
+              32,
+              272,
+              480
+            ],
+            "visible_pixels": 7694351
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          }
+        ]
+      }
+    },
+    {
+      "action": "sit",
+      "filename": "motion_sheets/male_02_sit_cycle_v2.png",
+      "quality_tier": "video_sit_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        1,
+        2,
+        7,
+        7,
+        7,
+        7,
+        2,
+        1
+      ],
+      "phases": [
+        "prepare",
+        "lower",
+        "lower",
+        "contact",
+        "hold",
+        "hold",
+        "recover",
+        "recover"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              110,
+              32,
+              273,
+              480
+            ],
+            "visible_pixels": 10395965
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 13614979
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 13614979
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 13614979
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              14,
+              177,
+              370,
+              480
+            ],
+            "visible_pixels": 13614979
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              110,
+              32,
+              273,
+              480
+            ],
+            "visible_pixels": 10395965
+          }
+        ]
+      }
+    },
+    {
+      "action": "stand",
+      "filename": "motion_sheets/male_02_stand_cycle_v2.png",
+      "quality_tier": "video_stand_cycle_v2",
+      "source": "imagegen_identity_reference_v1",
+      "source_cells": [
+        1,
+        2,
+        1,
+        8,
+        8,
+        1,
+        2,
+        1
+      ],
+      "phases": [
+        "prepare",
+        "rise",
+        "rise",
+        "hold",
+        "hold",
+        "recover",
+        "recover",
+        "settle"
+      ],
+      "validation": {
+        "size": [
+          1536,
+          1024
+        ],
+        "mode": "RGBA",
+        "cells": [
+          {
+            "cell": 1,
+            "bbox": [
+              110,
+              32,
+              273,
+              480
+            ],
+            "visible_pixels": 10395965
+          },
+          {
+            "cell": 2,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          },
+          {
+            "cell": 3,
+            "bbox": [
+              110,
+              32,
+              273,
+              480
+            ],
+            "visible_pixels": 10395965
+          },
+          {
+            "cell": 4,
+            "bbox": [
+              14,
+              58,
+              370,
+              480
+            ],
+            "visible_pixels": 19833620
+          },
+          {
+            "cell": 5,
+            "bbox": [
+              14,
+              58,
+              370,
+              480
+            ],
+            "visible_pixels": 19833620
+          },
+          {
+            "cell": 6,
+            "bbox": [
+              110,
+              32,
+              273,
+              480
+            ],
+            "visible_pixels": 10395965
+          },
+          {
+            "cell": 7,
+            "bbox": [
+              26,
+              32,
+              358,
+              480
+            ],
+            "visible_pixels": 22027243
+          },
+          {
+            "cell": 8,
+            "bbox": [
+              110,
+              32,
+              273,
+              480
+            ],
+            "visible_pixels": 10395965
+          }
+        ]
+      }
+    }
+  ]
+}

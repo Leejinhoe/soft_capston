@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
+from hf_media_common import HfMediaError
 from hf_video_provider import (
     BACKGROUND_JOURNEY_ROUTES,
     _blend_bottom_aligned,
@@ -12,6 +13,7 @@ from hf_video_provider import (
     _background_stage_spec,
     _character_motion_values,
     _draw_action_effects,
+    _draw_semantic_prop,
     _fit_background,
     _journey_route_screen_position,
     _lock_grounded_action_legs,
@@ -28,6 +30,7 @@ from hf_video_provider import (
     _select_jump_cycle_pose,
     _select_posture_cycle_pose,
     _select_run_cycle_pose,
+    _semantic_prop_kind,
     build_video_motion_plan,
     build_fairytale_video_prompt,
     generate_hf_fairytale_video,
@@ -86,6 +89,86 @@ class HfVideoProviderTests(unittest.TestCase):
         )
 
         self.assertIsNone(frame.getchannel("A").getbbox())
+
+    def test_semantic_prop_kind_and_render_make_targets_readable(self):
+        self.assertEqual(
+            _semantic_prop_kind(
+                {"target": "glowing_stone", "required_props": ["obstacle"]},
+                "jump",
+            ),
+            "stone",
+        )
+        frame = Image.new("RGBA", (320, 180), (0, 0, 0, 0))
+        _draw_semantic_prop(
+            frame=frame,
+            Image=Image,
+            ImageDraw=ImageDraw,
+            ImageFilter=ImageFilter,
+            action="jump",
+            progress=0.50,
+            motion_plan={"target": "glowing_stone"},
+            center_x=150,
+            ground_y=165,
+            character_width=60,
+            character_height=105,
+        )
+        self.assertIsNotNone(frame.getchannel("A").getbbox())
+        self.assertEqual(
+            _semantic_prop_kind({"pace": "climb", "target": "mountain_route"}, "journey"),
+            "climb_rope",
+        )
+        self.assertEqual(
+            _semantic_prop_kind({"pace": "crawl", "target": "hidden_door"}, "journey"),
+            "crawl_trail",
+        )
+
+    def test_motion_plan_preserves_prop_contract_and_crawl_pace(self):
+        plan = build_video_motion_plan(
+            story_text="The hero crawls toward the hidden door.",
+            scene_action="journey",
+            scene_target="hidden_door",
+            required_props=["door"],
+            action_semantics={
+                "animation_action": "journey",
+                "interaction_kind": "crawl",
+                "pace": "crawl",
+            },
+        )
+        self.assertEqual(plan["pace"], "crawl")
+        self.assertEqual(plan["locomotion_kind"], "crawl")
+        self.assertEqual(plan["required_props"], ["door"])
+
+    def test_explicit_idle_contract_cannot_be_overridden_by_story_keywords(self):
+        plan = build_video_motion_plan(
+            story_text="The hero turns toward the castle gate.",
+            scene_action="idle",
+            action_semantics={
+                "animation_action": "idle",
+                "interaction_kind": "turn_in_place",
+            },
+        )
+        self.assertEqual(plan["action"], "idle")
+        self.assertEqual(plan["interaction_kind"], "turn_in_place")
+
+    def test_stop_and_turn_variants_have_distinct_motion_values(self):
+        stop = _character_motion_values(
+            action="idle",
+            progress=0.20,
+            width=320,
+            height=180,
+            motion_strength=2,
+            motion_plan={"interaction_kind": "stop"},
+        )
+        turn = _character_motion_values(
+            action="idle",
+            progress=0.50,
+            width=320,
+            height=180,
+            motion_strength=2,
+            motion_plan={"interaction_kind": "turn_in_place"},
+        )
+        self.assertLess(stop["rotation"], 0.0)
+        self.assertGreater(turn["rotation"], 0.0)
 
     def test_v28_quality_review_can_suppress_decorative_effect_layers(self):
         frame = Image.new("RGBA", (320, 180), (0, 0, 0, 0))
@@ -159,6 +242,51 @@ class HfVideoProviderTests(unittest.TestCase):
         )
         self.assertIn(b"ftyp", result["video_bytes"][:64])
 
+    def test_v2_crawl_cycle_is_used_for_identity_locked_travel(self):
+        background = Image.new("RGBA", (320, 180), "#8ec7ee")
+        character = Image.new("RGBA", (80, 140), (0, 0, 0, 0))
+        ImageDraw.Draw(character).rectangle((20, 8, 60, 132), fill="#d95050")
+
+        def png_bytes(image):
+            output = BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        result = asyncio.run(
+            generate_hf_fairytale_video(
+                image_bytes=png_bytes(background),
+                story_text="The hero crawls toward the hidden door.",
+                width=256,
+                height=256,
+                num_frames=12,
+                frame_rate=6,
+                motion_context={
+                    "background_bytes": png_bytes(background),
+                    "character_bytes": png_bytes(character),
+                    "character_key": "female_01",
+                    "character_crawl_cycle_sheet_bytes": png_bytes(self._motion_sheet()),
+                    "motion_asset_version": "v2",
+                    "scene_contract": {
+                        "action": "journey",
+                        "target": "hidden_door",
+                        "required_props": ["door"],
+                    },
+                    "action_semantics": {
+                        "animation_action": "journey",
+                        "motion_mode": "journey",
+                        "pace": "crawl",
+                    },
+                },
+            )
+        )
+
+        parameters = result["parameters"]
+        self.assertEqual(parameters["animation_mode"], "identity_locked_crawl_cycle_v2")
+        self.assertEqual(parameters["motion_asset_tier"], "dedicated_travel_cycle")
+        self.assertEqual(parameters["motion_asset_version"], "v2")
+        self.assertEqual(parameters["dedicated_action_cycle_version"], "v2")
+        self.assertFalse(parameters["motion_fallback_used"])
+
     def test_missing_v28_cycle_marks_reference_fallback_in_metadata(self):
         background = Image.new("RGBA", (320, 180), "#8ec7ee")
         character = Image.new("RGBA", (80, 140), (0, 0, 0, 0))
@@ -200,6 +328,84 @@ class HfVideoProviderTests(unittest.TestCase):
             result["parameters"]["animation_mode"],
             "reference_transform_v29_semantic_fallback",
         )
+
+    def test_scene_contract_overrides_ambiguous_story_action(self):
+        background = Image.new("RGBA", (320, 180), "#8ec7ee")
+        character = Image.new("RGBA", (80, 140), (0, 0, 0, 0))
+        ImageDraw.Draw(character).rectangle((20, 8, 60, 132), fill="#d95050")
+
+        def png_bytes(image):
+            output = BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        result = asyncio.run(
+            generate_hf_fairytale_video(
+                image_bytes=png_bytes(background),
+                story_text="The hero runs toward the castle, then examines the old key.",
+                width=256,
+                height=256,
+                num_frames=6,
+                frame_rate=6,
+                motion_context={
+                    "background_bytes": png_bytes(background),
+                    "character_bytes": png_bytes(character),
+                    "character_key": "female_04",
+                    "scene_contract": {
+                        "action": "investigate",
+                        "target": "old_key",
+                        "background_direction": "toward_target",
+                        "required_props": ["old_key"],
+                    },
+                },
+            )
+        )
+
+        self.assertEqual(result["parameters"]["motion_plan"]["action"], "investigate")
+        self.assertEqual(result["parameters"]["motion_plan"]["target"], "old_key")
+        self.assertEqual(
+            result["parameters"]["motion_plan"]["directionality"],
+            "toward_target",
+        )
+        self.assertEqual(
+            result["parameters"]["motion_plan"]["scene_contract"]["action"],
+            "investigate",
+        )
+
+    def test_partner_action_is_not_silently_rendered_as_idle(self):
+        background = Image.new("RGBA", (320, 180), "#8ec7ee")
+
+        def png_bytes(image):
+            output = BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        with self.assertRaisesRegex(HfMediaError, "second character"):
+            asyncio.run(
+                generate_hf_fairytale_video(
+                    image_bytes=png_bytes(background),
+                    story_text="The hero hands a key to a friend.",
+                    width=256,
+                    height=256,
+                    num_frames=6,
+                    frame_rate=6,
+                    motion_context={
+                        "background_bytes": png_bytes(background),
+                        "character_bytes": png_bytes(background),
+                        "scene_contract": {
+                            "action": "interaction",
+                            "required_props": ["key"],
+                            "participant_count": 2,
+                            "requires_partner": True,
+                        },
+                        "action_semantics": {
+                            "animation_action": "interaction",
+                            "participant_count": 2,
+                            "requires_partner": True,
+                        },
+                    },
+                )
+            )
 
     def test_legacy_action_version_is_explicitly_marked(self):
         background = Image.new("RGBA", (320, 180), "#8ec7ee")

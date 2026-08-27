@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
@@ -28,12 +29,18 @@ class StoryStreamUnavailableException implements Exception {
 }
 
 class ApiService {
-  static const String _definedBaseUrl = String.fromEnvironment(
-    'AI_API_BASE_URL',
-  );
-  static const String _legacyDefinedBaseUrl = String.fromEnvironment(
-    'STORY_API_BASE_URL',
-  );
+  static const String _definedBaseUrl =
+      String.fromEnvironment('AI_API_BASE_URL');
+  static const String _legacyDefinedBaseUrl =
+      String.fromEnvironment('STORY_API_BASE_URL');
+  static String get _localBaseUrl {
+    if (kIsWeb) return 'http://127.0.0.1:8000';
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:8000';
+    }
+    return 'http://127.0.0.1:8000';
+  }
+
   static String get baseUrl {
     final defined = _definedBaseUrl.trim();
     if (defined.isNotEmpty) return _withoutTrailingSlash(defined);
@@ -49,7 +56,7 @@ class ApiService {
         : '';
     if (configured.isNotEmpty) return _withoutTrailingSlash(configured);
 
-    throw StateError('AI_API_BASE_URL이 설정되지 않았습니다. 프로젝트 루트의 .env를 확인하세요.');
+    return _localBaseUrl;
   }
 
   static String _withoutTrailingSlash(String value) =>
@@ -71,6 +78,17 @@ class ApiService {
       }
     } catch (_) {}
     return '$fallback (${response.statusCode})';
+  }
+
+  static String? _characterLockInstruction(
+    Map<String, dynamic>? characterContext,
+  ) {
+    if (characterContext == null) return null;
+    return '[CHARACTER LOCK] Use the selected protagonist throughout the story. '
+        'Do not replace this character. '
+        'character_key=${characterContext['character_key']}; '
+        'name=${characterContext['name']}; '
+        'appearance=${characterContext['description']}.';
   }
 
   static const List<String> _safeFallbackChoices = [
@@ -141,7 +159,16 @@ class ApiService {
     required String genre,
     required String age,
     required String prompt,
+    Map<String, dynamic>? characterContext,
+    List<Map<String, dynamic>>? storyCast,
+    Map<String, String>? characterOverrides,
   }) async {
+    final normalizedCharacterContext = characterContext == null
+        ? null
+        : Map<String, dynamic>.from(characterContext);
+    final characterInstruction = _characterLockInstruction(
+      normalizedCharacterContext,
+    );
     final response = await http
         .post(
           Uri.parse('$baseUrl/story/start'),
@@ -149,7 +176,17 @@ class ApiService {
           body: json.encode({
             'genre': genre,
             'age': age,
-            'prompt': prompt,
+            'prompt': characterInstruction == null
+                ? prompt
+                : '$prompt\n\n$characterInstruction',
+            if (normalizedCharacterContext != null)
+              'character_key': normalizedCharacterContext['character_key'],
+            if (normalizedCharacterContext != null)
+              'character_context': normalizedCharacterContext,
+            if (storyCast != null && storyCast.isNotEmpty)
+              'story_cast': storyCast,
+            if (characterOverrides != null && characterOverrides.isNotEmpty)
+              'character_overrides': characterOverrides,
             'include_image': false,
           }),
         )
@@ -169,8 +206,18 @@ class ApiService {
     required String choice,
     required String genre,
     required String age,
+    Map<String, dynamic>? characterContext,
+    Map<String, dynamic>? previousSceneContract,
+    List<Map<String, dynamic>>? storyCast,
+    Map<String, String>? characterOverrides,
     String? runtimeState,
   }) async {
+    final normalizedCharacterContext = characterContext == null
+        ? null
+        : Map<String, dynamic>.from(characterContext);
+    final characterInstruction = _characterLockInstruction(
+      normalizedCharacterContext,
+    );
     final response = await http
         .post(
           Uri.parse('$baseUrl/story/continue'),
@@ -181,6 +228,18 @@ class ApiService {
             'choice': choice,
             'genre': genre,
             'age': age,
+            if (characterInstruction != null)
+              'character_instruction': characterInstruction,
+            if (previousSceneContract != null)
+              'previous_scene_contract': previousSceneContract,
+            if (normalizedCharacterContext != null)
+              'character_key': normalizedCharacterContext['character_key'],
+            if (normalizedCharacterContext != null)
+              'character_context': normalizedCharacterContext,
+            if (storyCast != null && storyCast.isNotEmpty)
+              'story_cast': storyCast,
+            if (characterOverrides != null && characterOverrides.isNotEmpty)
+              'character_overrides': characterOverrides,
             if (runtimeState != null && runtimeState.trim().isNotEmpty)
               'runtime_state': runtimeState,
             'include_image': false,
@@ -345,6 +404,9 @@ class ApiService {
     required String storyText,
     required String genre,
     required String age,
+    Map<String, dynamic>? characterContext,
+    List<Map<String, dynamic>>? storyCast,
+    Map<String, String>? characterOverrides,
   }) async {
     try {
       final response = await http
@@ -355,6 +417,14 @@ class ApiService {
               'story_text': storyText,
               'genre': genre,
               'age': age,
+              if (characterContext != null)
+                'character_key': characterContext['character_key'],
+              if (characterContext != null)
+                'character_context': characterContext,
+              if (storyCast != null && storyCast.isNotEmpty)
+                'story_cast': storyCast,
+              if (characterOverrides != null && characterOverrides.isNotEmpty)
+                'character_overrides': characterOverrides,
             }),
           )
           .timeout(const Duration(seconds: 120));

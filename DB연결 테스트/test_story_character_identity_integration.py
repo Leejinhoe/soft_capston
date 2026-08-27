@@ -497,7 +497,14 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
                 "character_key": "female_04",
                 "selection_source": "user",
                 "source_description": "Hero 'Arin'",
-            }
+            },
+            {
+                "role": "companion",
+                "name": "Luna",
+                "character_key": "female_05",
+                "selection_source": "automatic",
+                "source_description": "Forest fairy 'Luna'",
+            },
         ]
         generate_flux = AsyncMock()
         with (
@@ -610,6 +617,16 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main, "generate_hf_fairytale_video", generate_video),
             patch.object(
                 main,
+                "inspect_generated_media",
+                return_value={
+                    "passed": True,
+                    "reasons": [],
+                    "measurements": {},
+                    "metadata": {},
+                },
+            ),
+            patch.object(
+                main,
                 "download_gridfs_file",
                 AsyncMock(
                     side_effect=[
@@ -622,7 +639,8 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await main.generate_and_store_backend_media(
                 story_id=str(ObjectId()),
-                story_text="Arin walks toward the castle.",
+                story_text="Luna ran ahead while Arin walked toward the castle.",
+                character_key="female_04",
                 include_video=True,
             )
 
@@ -637,14 +655,12 @@ class MainStoryCharacterIdentityAsyncTests(unittest.IsolatedAsyncioTestCase):
             motion_context["character_bytes"],
             b"selected-character-body",
         )
-        self.assertEqual(
-            motion_context["character_motion_sheet_bytes"],
-            b"selected-motion-sheet",
-        )
+        self.assertIsNone(motion_context["character_motion_sheet_bytes"])
         self.assertEqual(
             motion_context["character_target_journey_sheet_bytes"],
-            b"selected-target-motion-sheet",
+            b"selected-motion-sheet",
         )
+        self.assertEqual(result["metadata"]["motion_assets_loaded"], ["target"])
         self.assertEqual(motion_context["character_key"], "female_04")
 
 

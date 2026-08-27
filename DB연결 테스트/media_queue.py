@@ -115,6 +115,7 @@ def serialize_media_job_document(job: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": serialize_datetime(job.get("updated_at")),
         "started_at": serialize_optional_datetime(job.get("started_at")),
         "completed_at": serialize_optional_datetime(job.get("completed_at")),
+        "cache_key": job.get("cache_key"),
         "request": {
             "story_id": serialize_object_id(
                 job.get("story_id") if job.get("story_id") is not None else request_payload.get("story_id")
@@ -131,6 +132,8 @@ def serialize_media_job_document(job: Dict[str, Any]) -> Dict[str, Any]:
             ),
             "genre": job.get("genre") if job.get("genre") is not None else request_payload.get("genre"),
             "age": job.get("age") if job.get("age") is not None else request_payload.get("age"),
+            "character_key": job.get("character_key") if job.get("character_key") is not None else request_payload.get("character_key"),
+            "scene_contract": job.get("scene_contract") if job.get("scene_contract") is not None else request_payload.get("scene_contract"),
             "include_video": (
                 job.get("include_video")
                 if job.get("include_video") is not None

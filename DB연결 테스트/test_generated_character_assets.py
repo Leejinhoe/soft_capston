@@ -81,6 +81,16 @@ class GeneratedCharacterAssetTests(unittest.TestCase):
             "male_01_stand_cycle_v1.png",
             "male_01_crawl_cycle_v1.png",
             "male_01_climb_cycle_v1.png",
+            "male_01_crawl_cycle_v2.png",
+            "male_01_climb_cycle_v2.png",
+            "female_01_crawl_cycle_v2.png",
+            "female_01_climb_cycle_v2.png",
+            "female_01_sit_cycle_v2.png",
+            "female_01_stand_cycle_v2.png",
+        } | {
+            f"{key}_{action}_cycle_v2.png"
+            for key in KEYS
+            for action in ("crawl", "climb", "sit", "stand")
         }
         actual = {path.name for path in MOTION_SHEET_DIR.glob("*.png")}
         self.assertEqual(

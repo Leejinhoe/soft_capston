@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, Optional
 
 from hf_media_common import HfMediaError
 from motion_policy import SOLO_ANIMATION_ACTIONS, is_solo_action_semantics
+from scene_contract import apply_scene_contract, normalize_scene_contract
 
 
 LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip()
@@ -461,10 +462,15 @@ def _contains_any(text: str, terms: Iterable[str]) -> bool:
 def build_video_motion_plan(
     *,
     story_text: str,
+    scene_action: Optional[str] = None,
+    scene_target: Optional[str] = None,
+    directionality: Optional[str] = None,
     character_pose: Optional[str] = None,
     action_tags: Optional[Iterable[Any]] = None,
     effect_tags: Optional[Iterable[Any]] = None,
     motion_modifier_tags: Optional[Iterable[Any]] = None,
+    required_props: Optional[Iterable[Any]] = None,
+    visual_anchor: Optional[str] = None,
     background_key: Optional[str] = None,
     action_semantics: Optional[Dict[str, Any]] = None,
     ensemble_profile: Optional[Dict[str, Any]] = None,
@@ -476,6 +482,7 @@ def build_video_motion_plan(
     action_set = _normalized_tokens(action_tags)
     effect_set = _normalized_tokens(effect_tags)
     motion_modifier_set = _normalized_tokens(motion_modifier_tags)
+    prop_set = _normalized_tokens(required_props)
     semantics = dict(action_semantics or {})
 
     keyword_sets = {
@@ -577,9 +584,13 @@ def build_video_motion_plan(
     if {"glowing light", "whirlwind", "fire"}.intersection(effect_set):
         scores["magic"] += 2
 
-    action = max(scores, key=scores.get)
-    if scores[action] == 0:
-        action = "idle"
+    explicit_action = str(scene_action or "").strip().lower()
+    if explicit_action in scores or explicit_action == "idle":
+        action = explicit_action
+    else:
+        action = max(scores, key=scores.get)
+        if scores[action] == 0:
+            action = "idle"
     if (
         semantics.get("motion_mode") == "environmental"
         and semantic_action == "idle"
@@ -599,7 +610,7 @@ def build_video_motion_plan(
         "friendship_festival": "pavilion",
         "mystery_clocktower": "clock_door",
     }
-    target = background_targets.get(str(background_key or ""), "scene")
+    target = scene_target or background_targets.get(str(background_key or ""), "scene")
     if _contains_any(
         text,
         (
@@ -644,6 +655,8 @@ def build_video_motion_plan(
         ("library", "clue", "door", "\ub3c4\uc11c\uad00", "\ub2e8\uc11c", "\ubb38"),
     ):
         target = "clue"
+    if scene_target:
+        target = scene_target
 
     effect_by_action = {
         "magic": ["hand_rune"],
@@ -675,7 +688,7 @@ def build_video_motion_plan(
     }
     preferred_pose, preferred_emotion = asset_preferences[action]
     pace = str(semantics.get("pace") or "").strip().lower()
-    if pace not in {"walk", "run"}:
+    if pace not in {"walk", "run", "crawl", "climb"}:
         pace = "run" if "fast agile" in motion_modifier_set or "running" in action_set or _contains_any(
             text,
             (
@@ -713,6 +726,8 @@ def build_video_motion_plan(
         else action in {"battle", "rescue"}
     )
     requires_object = bool(semantics.get("requires_object", False))
+    if not prop_set and requires_object and semantics.get("object_role"):
+        prop_set.add(str(semantics["object_role"]).strip().lower().replace(" ", "_"))
     solo_action = is_solo_action_semantics(
         {
             "animation_action": action,
@@ -722,11 +737,7 @@ def build_video_motion_plan(
             "requires_object": requires_object,
         }
     )
-    locomotion_kind = (
-        ("run" if pace == "run" else "walk")
-        if action == "journey"
-        else None
-    )
+    locomotion_kind = pace if action == "journey" else None
     alignment = dict(ACTION_ALIGNMENT.get(action, {
         "gaze": "forward",
         "body_facing": "stable",
@@ -777,6 +788,8 @@ def build_video_motion_plan(
         "participant_scope": semantics.get("participant_scope"),
         "requires_partner": requires_partner,
         "requires_object": requires_object,
+        "required_props": sorted(prop_set),
+        "visual_anchor": str(visual_anchor or semantics.get("visual_anchor") or "").strip()[:240] or None,
         "solo_action": solo_action,
         "phase_timings": phase_timings,
         "motion_phases": ("prepare", "act", "recover"),
@@ -795,7 +808,7 @@ def build_video_motion_plan(
             if "continuous" in motion_modifier_set
             else None
         ),
-        "directionality": semantics.get("directionality"),
+        "directionality": directionality or semantics.get("directionality"),
         "interaction_kind": semantics.get("interaction_kind"),
         "subject_role": semantics.get("subject_role"),
         "partner_role": semantics.get("partner_role"),
@@ -915,7 +928,7 @@ def _background_camera_values(
     motion_focus = str(motion_plan.get("motion_focus") or "character")
     follow_strength = 0.42 if motion_focus == "character" else 1.0
     eased = (
-        normalized
+        _directed_journey_progress(normalized, motion_plan)
         if action == "journey" and target != "scene"
         else _ease_in_out(normalized)
     )
@@ -1286,7 +1299,7 @@ def _select_dedicated_action_cycle_pose(
         if blend < 0.5
         else motion_cells[second_index]
     )
-    if action in {"sit", "stand"}:
+    if action in {"journey", "sit", "stand"}:
         return interpolated
     return _lock_grounded_action_legs(interpolated, discrete, Image)
 
@@ -1636,7 +1649,7 @@ def _motion_timeline(
                 )
                 for index in range(steps)
             )
-        sequence = (1, 2)
+        sequence = (1, 2) if pace not in {"crawl", "climb"} else (0, 1, 2, 1)
         steps = 16 if pace == "run" else 12
         timeline = [(0.0, 0)]
         for index in range(steps):
@@ -1749,6 +1762,17 @@ def _sample_background_route(
     return catmull_rom(0), catmull_rom(1)
 
 
+def _directed_journey_progress(
+    progress: float,
+    motion_plan: Optional[Dict[str, Any]],
+) -> float:
+    normalized = min(max(float(progress), 0.0), 1.0)
+    direction = str((motion_plan or {}).get("directionality") or "").lower()
+    if direction in {"right_to_left", "reverse"}:
+        return 1.0 - normalized
+    return normalized
+
+
 def _journey_route_screen_position(
     *,
     progress: float,
@@ -1758,7 +1782,7 @@ def _journey_route_screen_position(
 ) -> Optional[tuple[float, float]]:
     route = _sample_background_route(
         str(motion_plan.get("background_key") or ""),
-        progress,
+        _directed_journey_progress(progress, motion_plan),
     )
     if route is None:
         return None
@@ -1792,9 +1816,11 @@ def _character_motion_values(
     ground_contact = 1.0
     rotation = 0.0
     if action == "journey":
+        journey_progress = _directed_journey_progress(progress, motion_plan)
+        journey_eased = _ease_in_out(journey_progress)
         scale = RUN_CHARACTER_SCALE_START + (
             RUN_CHARACTER_SCALE_END - RUN_CHARACTER_SCALE_START
-        ) * normalized
+        ) * journey_progress
         route_position = (
             _journey_route_screen_position(
                 progress=progress,
@@ -1806,19 +1832,32 @@ def _character_motion_values(
             else None
         )
         if route_position is None:
-            center_x = width * (0.16 + 0.47 * eased)
-            ground_y = height * (0.94 - 0.31 * eased)
+            center_x = width * (0.16 + 0.47 * journey_eased)
+            ground_y = height * (0.94 - 0.31 * journey_eased)
         else:
             center_x, ground_y = route_position
+        pace = str((motion_plan or {}).get("pace") or "walk")
         if (motion_plan or {}).get("path_pattern") == "erratic":
             center_x += math.sin(progress * math.pi * 7) * width * 0.025
             ground_y += math.sin(progress * math.pi * 5) * height * 0.015
         bob = 0.0
         rotation = 0.0
-        if str((motion_plan or {}).get("pace") or "walk") == "run":
+        if pace == "crawl":
+            scale = 0.39 - 0.045 * journey_progress
+            ground_y += height * 0.045
+            crawl_phase = journey_progress * math.pi * 6.0
+            bob = -abs(math.sin(crawl_phase)) * height * 0.006
+            rotation = math.sin(crawl_phase) * 1.4
+        elif pace == "climb":
+            scale = 0.46 - 0.10 * journey_progress
+            climb_phase = journey_progress * math.pi * 5.0
+            bob = -abs(math.sin(climb_phase)) * height * 0.010
+            rotation = math.sin(climb_phase) * 2.0
+        elif pace == "run":
             duration = float((motion_plan or {}).get("_duration_seconds") or 8.0)
+            cycle_progress = _directed_journey_progress(progress, motion_plan)
             cycle_phase = (
-                normalized * duration * RUN_CYCLE_CYCLES_PER_SECOND
+                cycle_progress * duration * RUN_CYCLE_CYCLES_PER_SECOND
             ) % 1.0
             bob = -abs(math.sin(cycle_phase * math.pi * 2.0)) * height * RUN_CYCLE_BOB_SCALE
             contact_phase = 0.5 + 0.5 * math.cos(cycle_phase * math.pi * 4.0)
@@ -1927,6 +1966,20 @@ def _character_motion_values(
         ground_y = height * 0.94
         bob = gesture * envelope * height * 0.0015
         rotation = gesture * envelope * 0.55
+    elif str((motion_plan or {}).get("interaction_kind") or "") == "stop":
+        settle = _phase_ease(normalized, 0.05, 0.52)
+        scale = 0.60
+        center_x = width * (0.50 - 0.018 * (1.0 - settle))
+        ground_y = height * 0.94
+        bob = -_action_pulse(progress, 0.18, 0.12) * height * 0.010
+        rotation = -_action_pulse(progress, 0.18, 0.12) * 2.0
+    elif str((motion_plan or {}).get("interaction_kind") or "") == "turn_in_place":
+        turn = _phase_ease(normalized, 0.16, 0.76)
+        scale = 0.60
+        center_x = width * 0.50
+        ground_y = height * 0.94
+        bob = -math.sin(turn * math.pi) * height * 0.006
+        rotation = math.sin(turn * math.pi) * 10.0
     else:
         pulse = math.sin(progress * math.pi * 2)
         scale = 0.60 + pulse * 0.008
@@ -1982,6 +2035,43 @@ def _paste_shadow(
     )
     shadow = shadow.filter(ImageFilter.GaussianBlur(max(2, shadow_height // 2)))
     frame.alpha_composite(shadow)
+
+
+def _apply_reference_motion_transform(character_image, *, action: str, pace: str, progress: float, Image):
+    """Give unsupported locomotion/posture verbs a bounded pose change without changing identity."""
+
+    normalized = min(max(float(progress), 0.0), 1.0)
+    if action == "journey" and pace == "crawl":
+        width_scale, height_scale = 1.16, 0.72
+    elif action == "journey" and pace == "climb":
+        width_scale, height_scale = 1.04, 0.86
+    elif action == "sit":
+        amount = _phase_ease(normalized, 0.08, 0.56)
+        width_scale = 1.0 + 0.06 * amount
+        height_scale = 1.0 - 0.20 * amount
+    elif action == "stand":
+        amount = 1.0 - _phase_ease(normalized, 0.10, 0.70)
+        width_scale = 1.0 + 0.06 * amount
+        height_scale = 1.0 - 0.20 * amount
+    else:
+        return character_image
+
+    target_width = max(8, int(round(character_image.width * width_scale)))
+    target_height = max(8, int(round(character_image.height * height_scale)))
+    transformed = character_image.resize(
+        (target_width, target_height),
+        getattr(Image, "Resampling", Image).LANCZOS,
+    )
+    canvas = Image.new(
+        "RGBA",
+        (target_width, character_image.height),
+        (0, 0, 0, 0),
+    )
+    canvas.alpha_composite(
+        transformed,
+        (0, max(0, character_image.height - target_height)),
+    )
+    return canvas
 
 
 def _paste_character_layer(
@@ -2042,13 +2132,27 @@ def _secondary_motion_values(
 ) -> Dict[str, float]:
     beat = _action_pulse(progress, 0.53, 0.18)
     if action == "battle":
-        recoil = _phase_ease(progress, 0.50, 0.68)
-        recovery = _phase_ease(progress, 0.68, 0.86)
+        first_recoil = _phase_ease(progress, 0.48, 0.64)
+        first_recovery = _phase_ease(progress, 0.64, 0.76)
+        counter_strike = _action_pulse(progress, 0.78, 0.11)
+        counter_recovery = _phase_ease(progress, 0.78, 0.94)
         return {
-            "scale": 0.53 - beat * 0.025,
-            "center_x": width * (0.72 + recoil * 0.10 - recovery * 0.03),
-            "ground_y": height * (0.94 - recoil * 0.018),
-            "rotation": recoil * 4.0 - recovery * 1.4,
+            "scale": 0.53 - beat * 0.025 + counter_strike * 0.012,
+            "center_x": width * (
+                0.72
+                + first_recoil * 0.085
+                - first_recovery * 0.025
+                - counter_recovery * 0.035
+            ),
+            "ground_y": height * (
+                0.94 - first_recoil * 0.018 - counter_strike * 0.006
+            ),
+            "rotation": (
+                first_recoil * 4.0
+                - first_recovery * 1.4
+                - counter_strike * 2.4
+                + counter_recovery * 1.0
+            ),
         }
     if action == "rescue":
         reach = _phase_ease(progress, 0.14, 0.46)
@@ -2273,6 +2377,260 @@ def _draw_atlas_action_effects(
                 character_height * 0.11,
                 opacity=sparkle,
             )
+
+
+def _semantic_prop_kind(motion_plan: Dict[str, Any], action: str) -> Optional[str]:
+    """Choose a restrained prop silhouette that makes the action legible."""
+
+    values = [
+        motion_plan.get("target"),
+        motion_plan.get("target_type"),
+        motion_plan.get("object_role"),
+        motion_plan.get("visual_anchor"),
+        *(motion_plan.get("required_props") or []),
+    ]
+    text = " ".join(
+        str(value or "").strip().lower().replace("_", " ")
+        for value in values
+    )
+    if action == "journey" and motion_plan.get("pace") == "climb":
+        return "climb_rope"
+    if action == "journey" and motion_plan.get("pace") == "crawl":
+        return "crawl_trail"
+    if any(token in text for token in ("chest", "treasure", "상자", "보물")):
+        return "chest"
+    if any(token in text for token in ("key", "열쇠")):
+        return "key"
+    if any(token in text for token in ("book", "clue", "scroll", "책", "단서", "두루마리")):
+        return "book"
+    if any(token in text for token in ("door", "문", "gate", "문")):
+        return "door"
+    if action == "jump":
+        return "stone"
+    if action == "investigate":
+        return "clue"
+    if action == "interaction":
+        return "object"
+    return None
+
+
+def _draw_semantic_prop(
+    *,
+    frame,
+    Image,
+    ImageDraw,
+    ImageFilter,
+    action: str,
+    progress: float,
+    motion_plan: Dict[str, Any],
+    center_x: float,
+    ground_y: float,
+    character_width: int,
+    character_height: int,
+):
+    """Draw one stable, readable prop instead of relying on particle effects."""
+
+    kind = _semantic_prop_kind(motion_plan, action)
+    if kind is None or action not in {"journey", "jump", "investigate", "interaction"}:
+        return
+    normalized = min(max(float(progress), 0.0), 1.0)
+    if action == "journey" and kind == "climb_rope":
+        visibility = 0.84
+        prop_x = center_x + character_width * 0.40
+        prop_ground = ground_y
+    elif action == "journey" and kind == "crawl_trail":
+        visibility = 0.64
+        prop_x = center_x - character_width * 0.24
+        prop_ground = ground_y + character_height * 0.01
+    elif action == "jump":
+        visibility = _phase_ease(normalized, 0.10, 0.20) * (
+            1.0 - _phase_ease(normalized, 0.84, 0.94)
+        )
+        prop_x = frame.width * 0.58
+        prop_ground = ground_y
+    elif action == "investigate":
+        visibility = 0.72 + 0.18 * _action_pulse(normalized, 0.54, 0.40)
+        prop_x = min(frame.width * 0.76, frame.width * 0.68)
+        prop_ground = ground_y - character_height * 0.06
+    else:
+        visibility = _phase_ease(normalized, 0.10, 0.28) * (
+            1.0 - _phase_ease(normalized, 0.78, 0.94)
+        )
+        if kind in {"chest", "door"}:
+            prop_x = frame.width * 0.62
+            prop_ground = ground_y
+        elif motion_plan.get("interaction_kind") == "handoff_receive":
+            prop_x = frame.width * 0.635 - frame.width * 0.075 * _ease_in_out(
+                min(max((normalized - 0.20) / 0.62, 0.0), 1.0)
+            )
+        else:
+            prop_x = center_x + character_width * 0.34
+        prop_ground = ground_y - character_height * 0.40
+    if visibility <= 0.01:
+        return
+
+    size = max(
+        14,
+        int(
+            character_height
+            * (
+                0.28
+                if kind in {"chest", "door"}
+                else 0.34
+                if kind in {"book", "clue"}
+                else 0.22
+                if action == "jump"
+                else 0.18
+            )
+        ),
+    )
+    glow_kind = kind in {"key", "clue"} or "glow" in " ".join(
+        str(value or "").lower() for value in (motion_plan.get("required_props") or [])
+    )
+    if glow_kind:
+        glow = Image.new("RGBA", frame.size, (0, 0, 0, 0))
+        glow_draw = ImageDraw.Draw(glow)
+        glow_radius = size * 0.72
+        glow_draw.ellipse(
+            (
+                prop_x - glow_radius,
+                prop_ground - size * 0.46 - glow_radius,
+                prop_x + glow_radius,
+                prop_ground - size * 0.46 + glow_radius,
+            ),
+            fill=(255, 218, 118, int(42 * visibility)),
+        )
+        frame.alpha_composite(
+            glow.filter(ImageFilter.GaussianBlur(max(2, size // 5)))
+        )
+
+    overlay = Image.new("RGBA", frame.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    alpha = int(220 * visibility)
+    left = prop_x - size * 0.50
+    top = prop_ground - size
+    if kind == "climb_rope":
+        rope_top = prop_ground - character_height * 1.05
+        draw.line(
+            (prop_x, rope_top, prop_x, prop_ground),
+            fill=(218, 181, 112, alpha),
+            width=max(2, size // 12),
+        )
+        for knot_index in range(3):
+            knot_y = rope_top + (prop_ground - rope_top) * (0.24 + knot_index * 0.27)
+            draw.ellipse(
+                (
+                    prop_x - size * 0.10,
+                    knot_y - size * 0.10,
+                    prop_x + size * 0.10,
+                    knot_y + size * 0.10,
+                ),
+                fill=(247, 211, 138, alpha),
+            )
+    elif kind == "crawl_trail":
+        draw.arc(
+            (
+                prop_x - size * 0.66,
+                prop_ground - size * 0.22,
+                prop_x + size * 0.66,
+                prop_ground + size * 0.08,
+            ),
+            8,
+            172,
+            fill=(220, 196, 163, alpha),
+            width=max(1, size // 15),
+        )
+    elif action == "jump" or kind == "stone":
+        draw.ellipse(
+            (left, top + size * 0.25, prop_x + size * 0.50, prop_ground),
+            fill=(85, 98, 122, alpha),
+            outline=(207, 221, 236, alpha),
+            width=max(1, size // 18),
+        )
+        draw.line(
+            (left + size * 0.23, top + size * 0.46, prop_x, top + size * 0.30),
+            fill=(239, 247, 255, int(alpha * 0.72)),
+            width=max(1, size // 24),
+        )
+    elif kind == "chest":
+        draw.rounded_rectangle(
+            (left, top + size * 0.30, prop_x + size * 0.50, prop_ground),
+            radius=max(2, size // 9),
+            fill=(142, 83, 44, alpha),
+            outline=(255, 213, 125, alpha),
+            width=max(1, size // 18),
+        )
+        draw.arc(
+            (left, top, prop_x + size * 0.50, top + size * 0.72),
+            180,
+            360,
+            fill=(255, 213, 125, alpha),
+            width=max(1, size // 18),
+        )
+        draw.line(
+            (prop_x, top + size * 0.34, prop_x, prop_ground - size * 0.03),
+            fill=(255, 232, 153, alpha),
+            width=max(1, size // 16),
+        )
+    elif kind == "key":
+        shaft_y = top + size * 0.48
+        draw.ellipse(
+            (left + size * 0.08, shaft_y - size * 0.18, left + size * 0.42, shaft_y + size * 0.18),
+            outline=(255, 230, 136, alpha),
+            width=max(1, size // 14),
+        )
+        draw.line(
+            (left + size * 0.35, shaft_y, prop_x + size * 0.48, shaft_y),
+            fill=(255, 230, 136, alpha),
+            width=max(1, size // 12),
+        )
+        draw.line(
+            (prop_x + size * 0.25, shaft_y, prop_x + size * 0.25, shaft_y + size * 0.18),
+            fill=(255, 230, 136, alpha),
+            width=max(1, size // 14),
+        )
+    elif kind in {"book", "clue"}:
+        draw.polygon(
+            (
+                (left, top + size * 0.20),
+                (prop_x, top + size * 0.34),
+                (prop_x, prop_ground - size * 0.06),
+                (left, prop_ground - size * 0.20),
+            ),
+            fill=(73, 112, 164, alpha),
+            outline=(245, 243, 190, alpha),
+        )
+        draw.line(
+            (prop_x, top + size * 0.34, prop_x, prop_ground - size * 0.06),
+            fill=(255, 241, 176, alpha),
+            width=max(1, size // 18),
+        )
+        draw.line(
+            (left + size * 0.13, top + size * 0.43, left + size * 0.38, top + size * 0.49),
+            fill=(235, 245, 255, int(alpha * 0.72)),
+            width=max(1, size // 20),
+        )
+    elif kind == "door":
+        draw.rounded_rectangle(
+            (left, top, prop_x + size * 0.50, prop_ground),
+            radius=max(2, size // 12),
+            fill=(77, 62, 96, alpha),
+            outline=(241, 206, 128, alpha),
+            width=max(1, size // 18),
+        )
+        draw.ellipse(
+            (prop_x + size * 0.19, top + size * 0.52, prop_x + size * 0.29, top + size * 0.62),
+            fill=(255, 231, 155, alpha),
+        )
+    else:
+        draw.rounded_rectangle(
+            (left, top + size * 0.20, prop_x + size * 0.50, prop_ground),
+            radius=max(2, size // 9),
+            fill=(76, 119, 145, alpha),
+            outline=(220, 242, 242, alpha),
+            width=max(1, size // 18),
+        )
+    frame.alpha_composite(overlay)
 
 
 def _draw_action_effects(
@@ -2542,6 +2900,22 @@ def _draw_action_effects(
             fill=(255, 242, 198, int(135 * gesture)),
             width=max(2, int(character_height * 0.007)),
         )
+        face_x = center_x + character_width * 0.04
+        face_y = ground_y - character_height * 0.87
+        for dot_index in range(3):
+            dot_alpha = int((80 + dot_index * 35) * gesture)
+            dot_radius = max(2, int(character_height * (0.012 + dot_index * 0.004)))
+            dot_x = face_x + dot_index * character_width * 0.10
+            dot_y = face_y - dot_index * character_height * 0.045
+            draw.ellipse(
+                (
+                    dot_x - dot_radius,
+                    dot_y - dot_radius,
+                    dot_x + dot_radius,
+                    dot_y + dot_radius,
+                ),
+                fill=(250, 239, 191, dot_alpha),
+            )
     elif action == "wave":
         envelope = math.sin(progress * math.pi) ** 2
         hand_x = center_x + character_width * 0.29
@@ -2590,6 +2964,8 @@ def _render_layered_frame(
     character_interaction_cycle_motion_cells=None,
     character_sit_cycle_motion_cells=None,
     character_stand_cycle_motion_cells=None,
+    character_crawl_cycle_motion_cells=None,
+    character_climb_cycle_motion_cells=None,
     action_fx_motion_cells=None,
     suppress_action_effects: bool = False,
     secondary_character_motion_cells=None,
@@ -2616,14 +2992,17 @@ def _render_layered_frame(
         motion_plan=motion_plan,
     )
     action = str(motion_plan.get("action") or "idle")
+    journey_pace = str(motion_plan.get("pace") or "walk")
     target_facing = bool(
         (character_run_cycle_motion_cells or character_target_journey_motion_cells)
         and action == "journey"
+        and journey_pace in {"walk", "run"}
         and str(motion_plan.get("target") or "scene") != "scene"
     )
     use_run_cycle = bool(
         character_run_cycle_motion_cells
         and action == "journey"
+        and journey_pace in {"walk", "run"}
     )
     use_jump_cycle = bool(character_jump_cycle_motion_cells and action == "jump")
     use_action_sheet = bool(
@@ -2640,6 +3019,13 @@ def _render_layered_frame(
         if action == "sit"
         else character_stand_cycle_motion_cells
         if action == "stand"
+        else None
+    )
+    dedicated_travel_cells = (
+        character_crawl_cycle_motion_cells
+        if action == "journey" and str(motion_plan.get("pace") or "") == "crawl"
+        else character_climb_cycle_motion_cells
+        if action == "journey" and str(motion_plan.get("pace") or "") == "climb"
         else None
     )
     use_posture_cycle = bool(
@@ -2674,6 +3060,16 @@ def _render_layered_frame(
             character_sit_cycle_motion_cells,
             character_stand_cycle_motion_cells,
             action=action,
+            progress=progress,
+            Image=Image,
+            cv2=cv2,
+            np=np,
+            interpolation_cache=interpolation_cache,
+        ) or character_image
+    elif dedicated_travel_cells:
+        rendered_character = _select_dedicated_action_cycle_pose(
+            dedicated_travel_cells,
+            action="journey",
             progress=progress,
             Image=Image,
             cv2=cv2,
@@ -2719,6 +3115,53 @@ def _render_layered_frame(
             interpolation_cache=interpolation_cache,
             target_facing=target_facing,
         ) or character_image
+    if (
+        action == "journey"
+        and journey_pace in {"crawl", "climb"}
+        and not dedicated_travel_cells
+    ):
+        rendered_character = _apply_reference_motion_transform(
+            character_image,
+            action=action,
+            pace=journey_pace,
+            progress=progress,
+            Image=Image,
+        )
+    elif action in {"sit", "stand"} and not use_posture_cycle:
+        rendered_character = _apply_reference_motion_transform(
+            character_image,
+            action=action,
+            pace="walk",
+            progress=progress,
+            Image=Image,
+        )
+    if (
+        action == "journey"
+        and str(motion_plan.get("directionality") or "").lower()
+        in {"right_to_left", "reverse"}
+    ):
+        rendered_character = ImageOps.mirror(rendered_character)
+    estimated_character_height = max(12, int(frame.height * values["scale"]))
+    estimated_character_width = max(
+        8,
+        int(round(
+            character_image.width
+            * (estimated_character_height / max(character_image.height, 1))
+        )),
+    )
+    _draw_semantic_prop(
+        frame=frame,
+        Image=Image,
+        ImageDraw=ImageDraw,
+        ImageFilter=ImageFilter,
+        action=action,
+        progress=progress,
+        motion_plan=motion_plan,
+        center_x=values["center_x"],
+        ground_y=values["ground_y"],
+        character_width=estimated_character_width,
+        character_height=estimated_character_height,
+    )
     if secondary_character_image is not None:
         if action == "interaction":
             rendered_secondary = secondary_character_image
@@ -2881,6 +3324,8 @@ def _generate_layered_video_bytes(
     character_interaction_cycle_sheet_bytes: Optional[bytes],
     character_sit_cycle_sheet_bytes: Optional[bytes],
     character_stand_cycle_sheet_bytes: Optional[bytes],
+    character_crawl_cycle_sheet_bytes: Optional[bytes],
+    character_climb_cycle_sheet_bytes: Optional[bytes],
     action_fx_sheet_bytes: Optional[bytes],
     suppress_action_effects: bool,
     secondary_character_motion_sheet_bytes: Optional[bytes],
@@ -2984,6 +3429,18 @@ def _generate_layered_video_bytes(
             )
             if character_stand_cycle_sheet_bytes else None
         )
+        character_crawl_cycle_motion_cells = (
+            _prepare_motion_sheet(
+                Image.open(io.BytesIO(character_crawl_cycle_sheet_bytes)), Image
+            )
+            if character_crawl_cycle_sheet_bytes else None
+        )
+        character_climb_cycle_motion_cells = (
+            _prepare_motion_sheet(
+                Image.open(io.BytesIO(character_climb_cycle_sheet_bytes)), Image
+            )
+            if character_climb_cycle_sheet_bytes else None
+        )
         action_fx_motion_cells = (
             _prepare_motion_sheet(
                 Image.open(io.BytesIO(action_fx_sheet_bytes)),
@@ -3026,6 +3483,8 @@ def _generate_layered_video_bytes(
                 or character_interaction_cycle_motion_cells is not None
                 or character_sit_cycle_motion_cells is not None
                 or character_stand_cycle_motion_cells is not None
+                or character_crawl_cycle_motion_cells is not None
+                or character_climb_cycle_motion_cells is not None
                 or secondary_character_motion_cells is not None
             )
             else 1
@@ -3062,6 +3521,8 @@ def _generate_layered_video_bytes(
                     character_interaction_cycle_motion_cells=character_interaction_cycle_motion_cells,
                     character_sit_cycle_motion_cells=character_sit_cycle_motion_cells,
                     character_stand_cycle_motion_cells=character_stand_cycle_motion_cells,
+                    character_crawl_cycle_motion_cells=character_crawl_cycle_motion_cells,
+                    character_climb_cycle_motion_cells=character_climb_cycle_motion_cells,
                     action_fx_motion_cells=action_fx_motion_cells,
                     suppress_action_effects=suppress_action_effects,
                     secondary_character_motion_cells=secondary_character_motion_cells,
@@ -3115,17 +3576,47 @@ async def generate_hf_fairytale_video(
     if not image_bytes:
         raise HfMediaError("image_bytes is empty.")
 
-    context = motion_context or {}
+    context = dict(motion_context or {})
+    scene_contract = context.get("scene_contract")
+    if scene_contract:
+        normalized_contract = normalize_scene_contract(
+            scene_contract,
+            character_key=context.get("character_key"),
+            source=str(scene_contract.get("source") or "explicit"),
+        )
+        if not normalized_contract["valid"]:
+            raise HfMediaError(
+                "Video scene contract is invalid: "
+                + ", ".join(normalized_contract["validation_errors"])
+            )
+        context = apply_scene_contract(context, normalized_contract)
+        context["scene_contract"] = normalized_contract
     motion_plan = build_video_motion_plan(
         story_text=story_text,
+        scene_action=context.get("scene_contract", {}).get("action")
+        if isinstance(context.get("scene_contract"), dict)
+        else None,
+        scene_target=context.get("scene_contract", {}).get("target")
+        if isinstance(context.get("scene_contract"), dict)
+        else None,
+        directionality=context.get("scene_contract", {}).get("background_direction")
+        if isinstance(context.get("scene_contract"), dict)
+        else None,
         character_pose=context.get("character_pose"),
         action_tags=context.get("action_tags"),
         effect_tags=context.get("effect_tags"),
         motion_modifier_tags=context.get("motion_modifier_tags"),
+        required_props=(
+            context.get("prop_tags")
+            or (context.get("scene_contract") or {}).get("required_props")
+        ),
+        visual_anchor=(context.get("scene_contract") or {}).get("visual_anchor"),
         background_key=context.get("background_key"),
         action_semantics=context.get("action_semantics"),
         ensemble_profile=context.get("ensemble_profile"),
     )
+    if scene_contract:
+        motion_plan["scene_contract"] = context["scene_contract"]
     motion_plan["motion_focus"] = str(context.get("motion_focus") or "character")
     prompt = build_fairytale_video_prompt(
         story_text=story_text,
@@ -3156,6 +3647,8 @@ async def generate_hf_fairytale_video(
     )
     character_sit_cycle_sheet_bytes = context.get("character_sit_cycle_sheet_bytes")
     character_stand_cycle_sheet_bytes = context.get("character_stand_cycle_sheet_bytes")
+    character_crawl_cycle_sheet_bytes = context.get("character_crawl_cycle_sheet_bytes")
+    character_climb_cycle_sheet_bytes = context.get("character_climb_cycle_sheet_bytes")
     action_fx_sheet_bytes = context.get("action_fx_sheet_bytes")
     requested_asset_version = str(
         context.get("motion_asset_version") or ""
@@ -3166,12 +3659,9 @@ async def generate_hf_fairytale_video(
     )
     has_secondary_character = isinstance(secondary_character_bytes, bytes)
     if motion_plan.get("requires_partner") and not has_secondary_character:
-        motion_plan = {
-            **motion_plan,
-            "action": "idle",
-            "effects": [],
-            "semantic_fallback": "partner_required",
-        }
+        raise HfMediaError(
+            "Video scene contract requires a second character, but no partner asset was provided."
+        )
     use_layered_animation = isinstance(background_bytes, bytes) and isinstance(character_bytes, bytes)
     use_motion_sheet = use_layered_animation and isinstance(
         character_motion_sheet_bytes,
@@ -3181,12 +3671,26 @@ async def generate_hf_fairytale_video(
         use_layered_animation
         and isinstance(character_target_journey_sheet_bytes, bytes)
         and motion_plan.get("action") == "journey"
+        and motion_plan.get("pace") in {"walk", "run"}
         and motion_plan.get("target") != "scene"
     )
     use_run_cycle_sheet = bool(
         use_layered_animation
         and isinstance(character_run_cycle_sheet_bytes, bytes)
         and motion_plan.get("action") == "journey"
+        and motion_plan.get("pace") in {"walk", "run"}
+    )
+    use_crawl_cycle_sheet = bool(
+        use_layered_animation
+        and isinstance(character_crawl_cycle_sheet_bytes, bytes)
+        and motion_plan.get("action") == "journey"
+        and motion_plan.get("pace") == "crawl"
+    )
+    use_climb_cycle_sheet = bool(
+        use_layered_animation
+        and isinstance(character_climb_cycle_sheet_bytes, bytes)
+        and motion_plan.get("action") == "journey"
+        and motion_plan.get("pace") == "climb"
     )
     use_jump_cycle_sheet = bool(
         use_layered_animation
@@ -3209,6 +3713,10 @@ async def generate_hf_fairytale_video(
         if motion_plan.get("action") == "sit"
         else character_stand_cycle_sheet_bytes
         if motion_plan.get("action") == "stand"
+        else character_crawl_cycle_sheet_bytes
+        if motion_plan.get("action") == "journey" and motion_plan.get("pace") == "crawl"
+        else character_climb_cycle_sheet_bytes
+        if motion_plan.get("action") == "journey" and motion_plan.get("pace") == "climb"
         else None
     )
     use_dedicated_action_cycle = bool(
@@ -3227,6 +3735,8 @@ async def generate_hf_fairytale_video(
             action_name in {"battle", "magic", "rescue", "interaction", "sit", "stand"}
             and use_dedicated_action_cycle
         )
+        or (action_name == "journey" and use_crawl_cycle_sheet)
+        or (action_name == "journey" and use_climb_cycle_sheet)
     )
     uses_reference_fallback = bool(
         use_layered_animation
@@ -3306,6 +3816,16 @@ async def generate_hf_fairytale_video(
                 and motion_plan.get("action") in {"sit", "stand"}
                 else None
             ),
+            character_crawl_cycle_sheet_bytes=(
+                character_crawl_cycle_sheet_bytes
+                if use_crawl_cycle_sheet
+                else None
+            ),
+            character_climb_cycle_sheet_bytes=(
+                character_climb_cycle_sheet_bytes
+                if use_climb_cycle_sheet
+                else None
+            ),
             action_fx_sheet_bytes=(
                 action_fx_sheet_bytes if use_action_fx_sheet else None
             ),
@@ -3325,6 +3845,12 @@ async def generate_hf_fairytale_video(
         if use_jump_cycle_sheet:
             animation_mode = (
                 f"identity_locked_jump_cycle_{requested_asset_version or 'v23'}_smoothed"
+            )
+        elif use_crawl_cycle_sheet or use_climb_cycle_sheet:
+            animation_mode = (
+                "identity_locked_crawl_cycle_v2"
+                if use_crawl_cycle_sheet
+                else "identity_locked_climb_cycle_v2"
             )
         elif use_dedicated_action_cycle:
             animation_mode = (
@@ -3365,6 +3891,8 @@ async def generate_hf_fairytale_video(
 
     if use_jump_cycle_sheet:
         motion_asset_tier = "dedicated_jump_cycle"
+    elif use_crawl_cycle_sheet or use_climb_cycle_sheet:
+        motion_asset_tier = "dedicated_travel_cycle"
     elif use_dedicated_action_cycle:
         motion_asset_tier = "dedicated_action_cycle"
     elif use_action_sheet:
@@ -3392,6 +3920,8 @@ async def generate_hf_fairytale_video(
             use_dedicated_action_cycle
             and motion_plan.get("action") in {"battle", "interaction", "rescue"}
         )
+        or use_crawl_cycle_sheet
+        or use_climb_cycle_sheet
     )
     selected_asset_version = (
         requested_asset_version or "v23"
@@ -3401,7 +3931,7 @@ async def generate_hf_fairytale_video(
     legacy_motion_asset_fallback = bool(
         versioned_action
         and requested_asset_version
-        and requested_asset_version != "v28"
+        and requested_asset_version not in {"v2", "v28"}
     )
     motion_fallback_used = bool(
         uses_reference_fallback
@@ -3410,7 +3940,7 @@ async def generate_hf_fairytale_video(
             use_layered_animation
             and action_name in {
                 "jump", "wave", "magic", "battle", "rescue",
-                "investigate", "interaction",
+                "investigate", "interaction", "journey",
             }
             and not has_semantic_action_asset
         )
@@ -3453,7 +3983,7 @@ async def generate_hf_fairytale_video(
             "dedicated_action_cycle_version": (
                 selected_asset_version
                 if use_dedicated_action_cycle
-                and motion_plan.get("action") in {"battle", "interaction", "rescue"}
+                and motion_plan.get("action") in {"battle", "interaction", "rescue", "sit", "stand", "journey"}
                 else None
             ),
             "motion_fallback_used": motion_fallback_used,
@@ -3470,6 +4000,7 @@ async def generate_hf_fairytale_video(
                 if use_motion_sheet or use_target_journey_sheet
                 or use_run_cycle_sheet or use_jump_cycle_sheet
                 or use_action_sheet or use_dedicated_action_cycle
+                or use_crawl_cycle_sheet or use_climb_cycle_sheet
                 or isinstance(secondary_character_motion_sheet_bytes, bytes)
                 else 1
             ),
