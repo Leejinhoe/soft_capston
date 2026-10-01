@@ -26,6 +26,7 @@ String _envOrDefined(String key, String defined, [String fallback = '']) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 40 << 20;
   MediaKit.ensureInitialized();
   try {
     // flutter_dotenv reads the bundled asset on web and the local file elsewhere.
@@ -98,7 +99,11 @@ class FairyTaleApp extends StatelessWidget {
           backgroundColor: AppColors.bg,
           elevation: 0,
           centerTitle: true,
-          titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
           iconTheme: IconThemeData(color: Colors.white),
         ),
       ),

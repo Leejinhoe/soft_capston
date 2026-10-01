@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'character_profile.dart';
 
 class VocabWord {
@@ -118,6 +120,24 @@ class EmotionAnalysis {
   });
 
   factory EmotionAnalysis.fromJson(Map<String, dynamic> json) {
+    final source = json['emotion_label_source']?.toString() ?? '';
+    if (json['emotion_scoring_enabled'] == false ||
+        source.startsWith('qwen_contextual') ||
+        json['score_kind'] == 'uncalibrated_model_estimate') {
+      // Older saved LLM scores remain on disk but are not used by the app.
+      return EmotionAnalysis(
+        emotionLabelSource: source,
+        emotionLabelsAreGeneric: false,
+        primaryEmotionIndex: null,
+        primaryEmotion: '',
+        primaryEmotionDisplay: '',
+        primaryScore: 0,
+        topEmotions: const [],
+        activeEmotions: const [],
+        scores: const {},
+        scoresByIndex: const {},
+      );
+    }
     final rawScores = (json['scores'] as Map<String, dynamic>? ?? {});
     final rawScoresByIndex =
         (json['scores_by_index'] as Map<String, dynamic>? ?? {});
@@ -372,7 +392,7 @@ class StoryChapter {
   String? mediaError;
   Map<String, dynamic>? sceneContract;
   final DateTime? createdAt;
-  String? imageB64;
+  Uint8List? imageBytes;
   EmotionAnalysis? storyEmotion;
   EmotionAnalysis? selectedChoiceEmotion;
 
@@ -387,7 +407,7 @@ class StoryChapter {
     this.mediaError,
     this.sceneContract,
     this.createdAt,
-    this.imageB64,
+    this.imageBytes,
     this.storyEmotion,
     this.selectedChoiceEmotion,
   });
@@ -674,10 +694,9 @@ class StorySession {
     final syncedChapterNumbers = chapters
         .map((chapter) => chapter.chapter)
         .toSet();
-    final mediaGenerationChapterNumbers = chapters
-        .where((chapter) => chapter.videoUrl?.trim().isNotEmpty ?? false)
-        .map((chapter) => chapter.chapter)
-        .toSet();
+    // Only active media requests belong here. Completed videos should not
+    // block a later manual render after restoring the story from the server.
+    final mediaGenerationChapterNumbers = <int>{};
 
     final pendingChoices = (json['pending_choices'] as List? ?? const [])
         .map((item) => item.toString())
@@ -760,17 +779,11 @@ class PsychResult {
   });
 
   factory PsychResult.fromJson(Map<String, dynamic> json) {
-    final rawTraits = json['traits'] as Map<String, dynamic>? ?? {};
     final rawInsights = json['choice_insights'] as List? ?? const [];
     return PsychResult(
       type: json['type']?.toString() ?? '탐험가',
       description: json['description']?.toString() ?? '',
-      traits: rawTraits.map(
-        (key, value) => MapEntry(
-          key,
-          value is num ? value.toInt().clamp(0, 100).toInt() : 50,
-        ),
-      ),
+      traits: const {},
       dominantEmotions: (json['dominant_emotions'] as List? ?? const [])
           .map((item) => item.toString())
           .where((item) => item.trim().isNotEmpty)

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -46,8 +45,9 @@ class DbService {
     final defined = _definedBaseUrl.trim();
     if (defined.isNotEmpty) return _withoutTrailingSlash(defined);
 
-    final configured =
-        dotenv.isInitialized ? dotenv.env['DB_API_BASE_URL']?.trim() ?? '' : '';
+    final configured = dotenv.isInitialized
+        ? dotenv.env['DB_API_BASE_URL']?.trim() ?? ''
+        : '';
     if (configured.isNotEmpty) return _withoutTrailingSlash(configured);
 
     if (kIsWeb) return 'http://127.0.0.1:8000';
@@ -178,6 +178,18 @@ class DbService {
       _extractDetailMessage(response.body) ??
           '낭독 음성 생성 실패: ${response.statusCode}',
     );
+  }
+
+  /// Prepares XTTS while the voice conversation is listening to its first turn.
+  static Future<void> warmUpNarration() async {
+    final response = await http
+        .post(_ttsUri('/api/tts/warm-up'), headers: _jsonHeaders)
+        .timeout(const Duration(seconds: 120));
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractDetailMessage(response.body) ?? '음성 합성 준비에 실패했어요.',
+      );
+    }
   }
 
   static Future<Map<String, dynamic>?> findUserByAccount(
@@ -985,7 +997,7 @@ class DbService {
               'age': age,
               if (characterKey?.trim().isNotEmpty == true)
                 'character_key': characterKey!.trim(),
-              if (sceneContract != null) 'scene_contract': sceneContract,
+              'scene_contract': ?sceneContract,
               'include_video': includeVideo,
             }),
           )
@@ -1041,8 +1053,8 @@ class DbService {
       final delaySeconds = pollCount < 3
           ? 1
           : pollCount < 6
-              ? 2
-              : 3;
+          ? 2
+          : 3;
       pollCount += 1;
       await Future.delayed(Duration(seconds: delaySeconds));
       try {
@@ -1105,7 +1117,7 @@ class DbService {
               'age': age,
               if (characterKey?.trim().isNotEmpty == true)
                 'character_key': characterKey!.trim(),
-              if (sceneContract != null) 'scene_contract': sceneContract,
+              'scene_contract': ?sceneContract,
               'include_video': includeVideo,
             }),
           )

@@ -10,11 +10,6 @@ import 'character_profile.dart';
 import 'story_model.dart';
 
 class AppState extends ChangeNotifier {
-  static const bool _generateVideosForScenes = bool.fromEnvironment(
-    'MEDIA_INCLUDE_VIDEO',
-    defaultValue: true,
-  );
-
   static const List<List<String>> _temporaryChoicePools = [
     ['반짝이는 빛을 따라 깊은 숲으로 간다', '숲속 친구들에게 함께 가자고 말한다', '별조각을 손수건에 감싸 단서를 살핀다'],
     ['작은 문에 새겨진 문양을 읽어 본다', '요정에게 길을 물어본다', '용기를 내어 문을 열고 들어간다'],
@@ -44,6 +39,8 @@ class AppState extends ChangeNotifier {
   bool isPsychLoading = false;
   String? psychAnalysisNotice;
   String? _psychResultStoryIdentity;
+  final Map<StorySession, Future<void>> _storySyncQueue = {};
+  List<VocabWord>? _allVocabularyCache;
 
   bool get hasSignedInUser =>
       (currentAccountId != null && currentAccountId!.isNotEmpty) ||
@@ -76,6 +73,9 @@ class AppState extends ChangeNotifier {
   }
 
   List<VocabWord> get allVocabulary {
+    final cached = _allVocabularyCache;
+    if (cached != null) return cached;
+
     final combined = <VocabWord>[];
     final seen = <String>{};
 
@@ -95,8 +95,11 @@ class AppState extends ChangeNotifier {
       collect(story.vocab);
     }
     collect(savedVocabulary);
+    _allVocabularyCache = combined;
     return combined;
   }
+
+  void _invalidateVocabularyCache() => _allVocabularyCache = null;
 
   void setSignedInUser({
     String? userId,
@@ -114,6 +117,7 @@ class AppState extends ChangeNotifier {
     currentEmail = email;
     currentPhone = phone;
     currentAddress = address;
+    _invalidateVocabularyCache();
     notifyListeners();
     unawaited(loadUserData());
   }
@@ -130,6 +134,7 @@ class AppState extends ChangeNotifier {
     currentStory = null;
     completedStories = [];
     savedVocabulary = [];
+    _invalidateVocabularyCache();
     _clearPsychResult();
     userDataErrorMessage = null;
     notifyListeners();
@@ -168,12 +173,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final stories = await DbService.fetchUserStories(userId);
-      final vocabularies = await DbService.fetchUserVocabularies(userId);
+      final userData = await Future.wait<Object>([
+        DbService.fetchUserStories(userId),
+        DbService.fetchUserVocabularies(userId),
+      ]);
+      final stories = userData[0] as List<StorySession>;
+      final vocabularies = userData[1] as List<VocabWord>;
       if (currentUserId != userId) return;
 
       _replaceCompletedStoriesFromDb(stories);
       savedVocabulary = vocabularies;
+      _invalidateVocabularyCache();
       if (currentStory == null && completedStories.isNotEmpty) {
         psychResult ??= _buildPsychResultFromStory(completedStories.first);
       }
@@ -211,7 +221,7 @@ class AppState extends ChangeNotifier {
       final firstChapter = StoryChapter(
         chapter: 1,
         text: data['story_text']?.toString() ?? '',
-        imageB64: data['image_b64'] as String?,
+        imageBytes: _decodeImage(data['image_b64']),
         sceneContract: data['scene_contract'] is Map
             ? Map<String, dynamic>.from(data['scene_contract'] as Map)
             : null,
@@ -251,10 +261,12 @@ class AppState extends ChangeNotifier {
         currentChapter: 1,
         readProgress: 1,
       );
+      _invalidateVocabularyCache();
       psychResult = _buildPsychResultFromStory(currentStory!);
 
       notifyListeners();
-      unawaited(_syncStoryStart(currentStory!));
+      final storyToSync = currentStory!;
+      _queueStorySync(storyToSync, () => _syncStoryStart(storyToSync));
       return true;
     } catch (e) {
       errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -300,7 +312,7 @@ class AppState extends ChangeNotifier {
         chapter: newChapter,
         text: newText,
         choiceMade: choice,
-        imageB64: data['image_b64'] as String?,
+        imageBytes: _decodeImage(data['image_b64']),
         sceneContract: data['scene_contract'] is Map
             ? Map<String, dynamic>.from(data['scene_contract'] as Map)
             : null,
@@ -328,7 +340,7 @@ class AppState extends ChangeNotifier {
       psychResult = _buildPsychResultFromStory(session);
 
       notifyListeners();
-      unawaited(_syncChapter(session, chapter));
+      _queueStorySync(session, () => _syncChapter(session, chapter));
       return true;
     } catch (e) {
       errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -357,10 +369,8 @@ class AppState extends ChangeNotifier {
         storyId: story.storyId,
         storyTitle: story.initialPrompt,
         choicesMade: story.allChoicesMade,
-        choiceEmotions: story.choiceEmotionHistory
-            .map((record) => record.toJson())
-            .toList(),
         completed: true,
+        runtimeState: story.runtimeState,
       );
       psychResult = PsychResult.fromJson(data);
       _psychResultStoryIdentity = _storyIdentity(story);
@@ -376,7 +386,7 @@ class AppState extends ChangeNotifier {
           ? '${detail.substring(0, 120)}...'
           : detail;
       psychAnalysisNotice =
-          'AI 분석 응답을 받지 못해 저장된 선택과 감정 점수로 기기에서 분석했어요.\n원인: $shortDetail';
+          'AI 해설 응답을 받지 못해 고른 선택 기록만 보여드려요.\n원인: $shortDetail';
       errorMessage = null;
     } finally {
       isPsychLoading = false;
@@ -394,11 +404,13 @@ class AppState extends ChangeNotifier {
       _clearPsychResult();
     }
     currentStory = null;
+    _invalidateVocabularyCache();
     notifyListeners();
   }
 
   void resetCurrentStory() {
     currentStory = null;
+    _invalidateVocabularyCache();
     _clearPsychResult();
     errorMessage = null;
     notifyListeners();
@@ -409,6 +421,7 @@ class AppState extends ChangeNotifier {
     completedStories.removeWhere(
       (item) => _storyIdentity(item) == _storyIdentity(story),
     );
+    _invalidateVocabularyCache();
     notifyListeners();
 
     try {
@@ -416,11 +429,13 @@ class AppState extends ChangeNotifier {
       if (dbStoryId != null && dbStoryId.isNotEmpty) {
         await DbService.deleteStory(storyId: dbStoryId, userId: currentUserId);
         savedVocabulary.removeWhere((word) => word.originStoryId == dbStoryId);
+        _invalidateVocabularyCache();
       }
       notifyListeners();
       return true;
     } catch (e) {
       completedStories = previousStories;
+      _invalidateVocabularyCache();
       errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       return false;
@@ -447,6 +462,7 @@ class AppState extends ChangeNotifier {
       } else {
         story.initialPrompt = trimmedTitle;
       }
+      _invalidateVocabularyCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -473,6 +489,7 @@ class AppState extends ChangeNotifier {
       for (final story in completedStories) {
         story.vocab.removeWhere(matches);
       }
+      _invalidateVocabularyCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -498,6 +515,7 @@ class AppState extends ChangeNotifier {
     if (!savedVocabulary.any(matches)) {
       savedVocabulary.insert(0, localWord);
     }
+    _invalidateVocabularyCache();
     notifyListeners();
 
     final userId = currentUserId;
@@ -519,6 +537,7 @@ class AppState extends ChangeNotifier {
       if (savedId != null && savedId.isNotEmpty) {
         _attachVocabId(session, localWord, savedId);
         _attachSavedVocabularyId(localWord, savedId, dbStoryId);
+        _invalidateVocabularyCache();
         session.syncedVocabKeys.add(
           '${localWord.hard}|${localWord.easy}|${localWord.definition}',
         );
@@ -558,7 +577,6 @@ class AppState extends ChangeNotifier {
           prompt: normalizedPrompt,
         ),
         imageUrl: _temporaryImageMarker(genre, 1),
-        videoUrl: _temporaryVideoMarker(genre, 1),
         storyEmotion: _temporaryStoryEmotion(genre: genre, chapter: 1),
       );
       final firstChoices = _temporaryChoicesForChapter(
@@ -593,6 +611,7 @@ class AppState extends ChangeNotifier {
         allChoicesMade: [],
         currentChapter: 1,
       );
+      _invalidateVocabularyCache();
       psychResult = _buildPsychResultFromStory(currentStory!);
       notifyListeners();
       return true;
@@ -610,6 +629,16 @@ class AppState extends ChangeNotifier {
       return EmotionAnalysis.fromJson(raw);
     }
     return null;
+  }
+
+  Uint8List? _decodeImage(dynamic raw) {
+    final encoded = raw?.toString().trim();
+    if (encoded == null || encoded.isEmpty) return null;
+    try {
+      return base64Decode(encoded);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _clearPsychResult() {
@@ -697,6 +726,25 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  void _queueStorySync(StorySession session, Future<void> Function() task) {
+    final previous = _storySyncQueue[session] ?? Future<void>.value();
+    final queued = previous.then<void>((_) async {
+      try {
+        await task();
+      } catch (_) {
+        // Local story progress remains available when a background DB sync fails.
+      }
+    });
+    _storySyncQueue[session] = queued;
+    unawaited(
+      queued.whenComplete(() {
+        if (identical(_storySyncQueue[session], queued)) {
+          _storySyncQueue.remove(session);
+        }
+      }),
+    );
+  }
+
   Future<void> _syncStoryStart(StorySession session) async {
     if (currentUserId == null || currentUserId!.isEmpty) return;
     if (session.dbStoryId == null) {
@@ -727,7 +775,7 @@ class AppState extends ChangeNotifier {
     for (final chapter in session.chapters) {
       final synced = await _syncSceneIfNeeded(session, chapter);
       changed = synced || changed;
-      await _generateMediaForChapter(session, chapter);
+      unawaited(_generateMediaForChapter(session, chapter));
     }
     await _syncReadingState(session);
 
@@ -751,7 +799,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
     await _syncReadingState(session);
-    await _generateMediaForChapter(session, chapter);
+    unawaited(_generateMediaForChapter(session, chapter));
   }
 
   Future<void> _syncReadingState(StorySession session) async {
@@ -778,9 +826,10 @@ class AppState extends ChangeNotifier {
     completedStories = completedStories
         .where((item) => _storyIdentity(item) != _storyIdentity(story))
         .toList();
+    _invalidateVocabularyCache();
     psychResult = _buildPsychResultFromStory(story);
     notifyListeners();
-    unawaited(_syncReadingState(story));
+    _queueStorySync(story, () => _syncReadingState(story));
   }
 
   Future<bool> _syncSceneIfNeeded(
@@ -810,19 +859,17 @@ class AppState extends ChangeNotifier {
 
   Future<void> _generateMediaForChapter(
     StorySession session,
-    StoryChapter chapter,
-  ) async {
+    StoryChapter chapter, {
+    bool includeVideo = false,
+  }) async {
     if (_isTemporaryStory(session)) return;
-    if (chapter.imageB64 != null || chapter.text.trim().isEmpty) return;
+    if (chapter.text.trim().isEmpty) return;
+    if (!includeVideo && chapter.imageBytes != null) return;
     if (!session.syncedChapterNumbers.contains(chapter.chapter)) return;
 
     final hasImageUrl = chapter.imageUrl?.trim().isNotEmpty ?? false;
     final hasVideoUrl = chapter.videoUrl?.trim().isNotEmpty ?? false;
-    final needsVideo = _generateVideosForScenes && !hasVideoUrl;
-    if (hasImageUrl && !needsVideo) {
-      session.mediaGenerationChapterNumbers.add(chapter.chapter);
-      return;
-    }
+    if ((!includeVideo && hasImageUrl) || (includeVideo && hasVideoUrl)) return;
 
     if (session.mediaGenerationChapterNumbers.contains(chapter.chapter)) {
       return;
@@ -835,52 +882,63 @@ class AppState extends ChangeNotifier {
     chapter.mediaStatus = 'running';
     chapter.mediaError = null;
     notifyListeners();
-    final media = await DbService.generateSceneMedia(
-      storyId: dbStoryId,
-      stepNumber: chapter.chapter,
-      storyText: chapter.text,
-      genre: session.genre,
-      age: session.age,
-      characterKey: session.selectedHeroCharacterKey,
-      sceneContract: chapter.sceneContract,
-      includeVideo: needsVideo,
-    );
+    try {
+      final media = await DbService.generateSceneMedia(
+        storyId: dbStoryId,
+        stepNumber: chapter.chapter,
+        storyText: chapter.text,
+        genre: session.genre,
+        age: session.age,
+        characterKey: session.selectedHeroCharacterKey,
+        sceneContract: chapter.sceneContract,
+        includeVideo: includeVideo,
+      );
 
-    if (media == null) {
-      session.mediaGenerationChapterNumbers.remove(chapter.chapter);
+      if (media == null) {
+        chapter.mediaStatus = 'failed';
+        chapter.mediaError = includeVideo
+            ? '영상 생성 결과를 가져오지 못했습니다.'
+            : '삽화 생성 결과를 가져오지 못했습니다.';
+        return;
+      }
+
+      chapter.mediaJobId = media.jobId;
+      chapter.mediaStatus = media.status;
+      chapter.mediaError = media.error;
+
+      if (media.imageUrl?.trim().isNotEmpty ?? false) {
+        chapter.imageUrl = media.imageUrl;
+      }
+      if (media.videoUrl?.trim().isNotEmpty ?? false) {
+        chapter.videoUrl = media.videoUrl;
+      }
+
+      final requestedVideoMissing =
+          includeVideo && !(media.videoUrl?.trim().isNotEmpty ?? false);
+      if (media.isPartial ||
+          media.status == 'failed' ||
+          requestedVideoMissing) {
+        chapter.mediaStatus = media.isPartial || requestedVideoMissing
+            ? 'partial'
+            : 'failed';
+        chapter.mediaError ??= requestedVideoMissing
+            ? '삽화는 준비됐지만 영상 생성에 실패했습니다.'
+            : includeVideo
+            ? '영상 생성에 실패했습니다.'
+            : '삽화 생성에 실패했습니다.';
+      } else if (!media.hasMedia) {
+        chapter.mediaStatus = 'failed';
+        chapter.mediaError ??= includeVideo ? '생성된 영상이 없습니다.' : '생성된 삽화가 없습니다.';
+      }
+    } catch (error) {
       chapter.mediaStatus = 'failed';
-      chapter.mediaError = '미디어 생성 결과를 가져오지 못했습니다.';
+      chapter.mediaError = includeVideo
+          ? '영상 생성 중 오류가 발생했습니다: $error'
+          : '삽화 생성 중 오류가 발생했습니다: $error';
+    } finally {
+      session.mediaGenerationChapterNumbers.remove(chapter.chapter);
       notifyListeners();
-      return;
     }
-
-    chapter.mediaJobId = media.jobId;
-    chapter.mediaStatus = media.status;
-    chapter.mediaError = media.error;
-
-    if (media.imageUrl?.trim().isNotEmpty ?? false) {
-      chapter.imageUrl = media.imageUrl;
-    }
-    if (media.videoUrl?.trim().isNotEmpty ?? false) {
-      chapter.videoUrl = media.videoUrl;
-    }
-
-    final requestedVideoMissing =
-        needsVideo && !(media.videoUrl?.trim().isNotEmpty ?? false);
-    if (media.isPartial || media.status == 'failed' || requestedVideoMissing) {
-      session.mediaGenerationChapterNumbers.remove(chapter.chapter);
-      chapter.mediaStatus = media.isPartial || requestedVideoMissing
-          ? 'partial'
-          : 'failed';
-      chapter.mediaError ??= requestedVideoMissing
-          ? '이미지는 생성됐지만 영상 생성에 실패했습니다.'
-          : '미디어 생성에 실패했습니다.';
-    } else if (!media.hasMedia) {
-      session.mediaGenerationChapterNumbers.remove(chapter.chapter);
-      chapter.mediaStatus = 'failed';
-      chapter.mediaError ??= '생성된 미디어가 없습니다.';
-    }
-    notifyListeners();
   }
 
   Future<void> retryMediaForChapter(
@@ -892,6 +950,28 @@ class AppState extends ChangeNotifier {
     chapter.mediaError = null;
     notifyListeners();
     await _generateMediaForChapter(session, chapter);
+  }
+
+  /// Videos are optional: illustrations are generated with each chapter, while
+  /// this explicit action starts the slower and more expensive video render.
+  Future<void> generateVideoForChapter(
+    StorySession session,
+    StoryChapter chapter,
+  ) async {
+    if (session.mediaGenerationChapterNumbers.contains(chapter.chapter) ||
+        (chapter.videoUrl?.trim().isNotEmpty ?? false)) {
+      return;
+    }
+
+    if (_isTemporaryStory(session)) {
+      chapter.videoUrl = _temporaryVideoMarker(session.genre, chapter.chapter);
+      chapter.mediaStatus = 'completed';
+      chapter.mediaError = null;
+      notifyListeners();
+      return;
+    }
+
+    await _generateMediaForChapter(session, chapter, includeVideo: true);
   }
 
   bool _isTemporaryStory(StorySession session) {
@@ -980,6 +1060,7 @@ class AppState extends ChangeNotifier {
       }
     }
     completedStories = merged;
+    _invalidateVocabularyCache();
   }
 
   List<String> _temporaryChoicesForChapter(
@@ -1405,7 +1486,6 @@ class AppState extends ChangeNotifier {
         text: _buildTemporaryContinuation(session, choice, newChapterNumber),
         choiceMade: choice,
         imageUrl: _temporaryImageMarker(session.genre, newChapterNumber),
-        videoUrl: _temporaryVideoMarker(session.genre, newChapterNumber),
         selectedChoiceEmotion: _temporaryChoiceEmotion(
           choice,
           newChapterNumber,
@@ -1440,7 +1520,7 @@ class AppState extends ChangeNotifier {
       psychResult = _buildPsychResultFromStory(session);
       notifyListeners();
       if (session.dbStoryId != null) {
-        unawaited(_syncChapter(session, chapter));
+        _queueStorySync(session, () => _syncChapter(session, chapter));
       }
       return true;
     } catch (e) {
@@ -1453,96 +1533,18 @@ class AppState extends ChangeNotifier {
   }
 
   PsychResult _buildPsychResultFromStory(StorySession session) {
-    final choices = session.allChoicesMade.join(' ');
-    final text = '${session.fullStoryText} $choices';
-    final cooperative = RegExp(r'함께|친구|도움|나누|손을|협동').hasMatch(text);
-    final thoughtful = RegExp(r'생각|살펴|관찰|조심|단서|문양|비밀').hasMatch(text);
-    final brave = RegExp(r'용기|따라가|나아|문을 열|모험|먼저|깊은').hasMatch(text);
-    final creative = RegExp(r'마법|별|소원|상상|빛|지도|주문').hasMatch(text);
-
-    final emotionScores = <String, double>{};
-    void collectEmotion(EmotionAnalysis? emotion) {
-      if (emotion == null) return;
-      final items = emotion.topEmotions.isNotEmpty
-          ? emotion.topEmotions
-          : emotion.activeEmotions;
-      for (final item in items.take(5)) {
-        final label = item.labelDisplay.isNotEmpty
-            ? item.labelDisplay
-            : item.label;
-        emotionScores[label] = (emotionScores[label] ?? 0) + item.score;
-      }
-    }
-
-    for (final chapter in session.chapters) {
-      collectEmotion(chapter.storyEmotion);
-      collectEmotion(chapter.selectedChoiceEmotion);
-    }
-    for (final option in session.choiceOptions) {
-      collectEmotion(option.emotion);
-    }
-
-    int score({
-      required int base,
-      required bool keyword,
-      required List<String> emotionHints,
-    }) {
-      var value = base + (keyword ? 14 : 0);
-      for (final hint in emotionHints) {
-        value += ((emotionScores[hint] ?? 0) * 8).round();
-      }
-      return value.clamp(45, 96).toInt();
-    }
-
-    final traits = <String, int>{
-      '모험적': score(
-        base: 58 + session.chapters.length * 3,
-        keyword: brave,
-        emotionHints: const ['기대감', '즐거움/신남', '신기함/관심'],
-      ),
-      '친절함': score(
-        base: 56,
-        keyword: cooperative,
-        emotionHints: const ['아껴주는', '고마움', '안심/신뢰'],
-      ),
-      '용감함': score(
-        base: 55 + session.allChoicesMade.length * 4,
-        keyword: brave,
-        emotionHints: const ['기대감', '놀람', '뿌듯함'],
-      ),
-      '창의적': score(
-        base: 60,
-        keyword: creative || thoughtful,
-        emotionHints: const ['신기함/관심', '감동/감탄', '깨달음'],
-      ),
-      '협동심': score(
-        base: 52,
-        keyword: cooperative,
-        emotionHints: const ['아껴주는', '환영/호의', '행복'],
-      ),
-    };
-
-    final sortedTraits = traits.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final strongest = sortedTraits.first.key;
-
-    final type = switch (strongest) {
-      '협동심' => '다정한 팀 리더',
-      '친절함' => '마음을 돌보는 친구',
-      '창의적' => '상상력이 반짝이는 탐험가',
-      '용감함' => '용기 있는 개척자',
-      _ => '호기심 많은 모험가',
-    };
-
-    final description = switch (strongest) {
-      '협동심' =>
-        '혼자 앞서가기보다 친구들과 함께 길을 찾는 힘이 커요. 주변을 살피며 모두가 안전하게 나아가도록 돕는 타입이에요.',
-      '친절함' => '이야기 속에서 따뜻한 선택과 배려의 단서가 많이 보였어요. 마음을 잘 읽고 누군가를 도우려는 장점이 돋보여요.',
-      '창의적' => '낯선 장면을 상상으로 풀어내는 힘이 좋아요. 작은 단서에서도 새로운 가능성을 발견하는 타입이에요.',
-      '용감함' => '두근거리는 순간에도 한 걸음 내딛는 에너지가 보여요. 어려운 길 앞에서 시도해보는 힘이 큰 장점이에요.',
-      _ => '새로운 장면을 궁금해하고 탐색하는 마음이 잘 드러나요. 차근차근 이야기를 따라가며 스스로 길을 찾는 타입이에요.',
-    };
-
-    return PsychResult(type: type, description: description, traits: traits);
+    final records = session.choiceEmotionHistory;
+    return PsychResult(
+      type: '고른 선택 기록',
+      description: records.isEmpty
+          ? '아직 고른 선택이 없어요. 엔딩까지 읽은 뒤 선택 기록을 살펴볼 수 있어요.'
+          : '이번 동화에서 고른 선택을 순서대로 기록했어요. '
+                '이 기록만으로 감정이나 성격을 점수로 판단하지 않아요. '
+                'AI 해설을 요청하면 당시 장면과 다른 선택지를 함께 살펴볼 수 있어요.',
+      traits: const {},
+      choiceInsights: records
+          .map((record) => '관찰: ${record.step}번째에 “${record.choice}”를 골랐어요.')
+          .toList(),
+    );
   }
 }

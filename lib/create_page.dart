@@ -148,8 +148,9 @@ class _CreatePageState extends State<CreatePage> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final isLoading = state.isLoading;
+    final isLoading = context.select<AppState, bool>(
+      (state) => state.isLoading,
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFF070018),
@@ -206,13 +207,13 @@ class _CreatePageState extends State<CreatePage> {
   }
 
   Widget _sectionLabel(String text) => Text(
-        text,
-        style: const TextStyle(
-          color: Colors.white70,
-          fontSize: 18,
-          fontWeight: FontWeight.w500,
-        ),
-      );
+    text,
+    style: const TextStyle(
+      color: Colors.white70,
+      fontSize: 18,
+      fontWeight: FontWeight.w500,
+    ),
+  );
 
   Widget _buildGenreSelector() {
     return SingleChildScrollView(
@@ -317,8 +318,10 @@ class _CreatePageState extends State<CreatePage> {
             return GestureDetector(
               onTap: () => _promptCtrl.text = s,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF140028),
                   borderRadius: BorderRadius.circular(20),
@@ -326,8 +329,10 @@ class _CreatePageState extends State<CreatePage> {
                 ),
                 child: Text(
                   s,
-                  style:
-                      const TextStyle(color: Colors.purpleAccent, fontSize: 11),
+                  style: const TextStyle(
+                    color: Colors.purpleAccent,
+                    fontSize: 11,
+                  ),
                 ),
               ),
             );
@@ -367,18 +372,20 @@ class _CreatePageState extends State<CreatePage> {
                   Text(
                     '동화 생성 중... (1-2분)',
                     style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700),
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               )
             : const Text(
                 '✨ 동화 시작하기',
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700),
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
       ),
     );
@@ -408,11 +415,7 @@ class _CreatePageState extends State<CreatePage> {
         const Text(
           '서버 연결이 안 될 때도 앱 흐름을 확인할 수 있도록 로컬 예시 동화를 바로 만들어요.',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppColors.gray,
-            fontSize: 11,
-            height: 1.5,
-          ),
+          style: TextStyle(color: AppColors.gray, fontSize: 11, height: 1.5),
         ),
       ],
     );

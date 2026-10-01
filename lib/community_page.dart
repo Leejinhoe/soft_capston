@@ -71,11 +71,13 @@ class _CommunityPageState extends State<CommunityPage> {
   List<CommunityPost> _visiblePosts(String? accountId) {
     final query = _query.trim();
     return _posts.where((post) {
-      final matchesMine = _selectedTab != 2 ||
+      final matchesMine =
+          _selectedTab != 2 ||
           (accountId != null &&
               accountId.isNotEmpty &&
               post.authorAccountId == accountId);
-      final matchesQuery = query.isEmpty ||
+      final matchesQuery =
+          query.isEmpty ||
           post.title.contains(query) ||
           post.preview.contains(query) ||
           post.fullText.contains(query) ||
@@ -111,9 +113,7 @@ class _CommunityPageState extends State<CommunityPage> {
     final stories = state.completedStories;
     if (stories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('서재에 저장된 동화가 없어요. 동화를 완성한 뒤 공유해보세요!'),
-        ),
+        const SnackBar(content: Text('서재에 저장된 동화가 없어요. 동화를 완성한 뒤 공유해보세요!')),
       );
       return;
     }
@@ -142,7 +142,10 @@ class _CommunityPageState extends State<CommunityPage> {
                 const Text(
                   '내 서재에 있는 완성 동화 중 하나를 골라 게시판에 올릴 수 있어요.',
                   style: TextStyle(
-                      color: AppColors.gray, fontSize: 12, height: 1.5),
+                    color: AppColors.gray,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 ConstrainedBox(
@@ -150,7 +153,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: stories.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final story = stories[index];
                       return InkWell(
@@ -165,8 +168,10 @@ class _CommunityPageState extends State<CommunityPage> {
                           ),
                           child: Row(
                             children: [
-                              Text(_storyEmoji(story.genre),
-                                  style: const TextStyle(fontSize: 28)),
+                              Text(
+                                _storyEmoji(story.genre),
+                                style: const TextStyle(fontSize: 28),
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -232,15 +237,15 @@ class _CommunityPageState extends State<CommunityPage> {
         _posts = [post, ..._posts];
         _selectedTab = 0;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('게시판에 동화를 공유했어요!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('게시판에 동화를 공유했어요!')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content:
-                Text('공유 실패: ${e.toString().replaceAll('Exception: ', '')}')),
+          content: Text('공유 실패: ${e.toString().replaceAll('Exception: ', '')}'),
+        ),
       );
     }
   }
@@ -331,9 +336,9 @@ class _CommunityPageState extends State<CommunityPage> {
       );
       if (!mounted) return;
       setState(() => _posts.removeWhere((item) => item.id == post.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('게시글을 삭제했어요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('게시글을 삭제했어요.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -398,11 +403,11 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
-  Widget _buildFeedCard(CommunityPost post) {
-    final accountId = context.watch<AppState>().currentAccountId;
+  Widget _buildFeedCard(CommunityPost post, String? accountId) {
     final isLiked = post.isLikedBy(accountId);
     final isLiking = _likingPostIds.contains(post.id);
-    final isMine = accountId != null &&
+    final isMine =
+        accountId != null &&
         accountId.isNotEmpty &&
         post.authorAccountId == accountId;
 
@@ -420,8 +425,9 @@ class _CommunityPageState extends State<CommunityPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(26)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(26),
+              ),
               child: Container(
                 height: 190,
                 width: double.infinity,
@@ -470,8 +476,9 @@ class _CommunityPageState extends State<CommunityPage> {
                         child: IconButton(
                           onPressed: () => _deletePost(post),
                           style: IconButton.styleFrom(
-                            backgroundColor:
-                                Colors.black.withValues(alpha: 0.18),
+                            backgroundColor: Colors.black.withValues(
+                              alpha: 0.18,
+                            ),
                             foregroundColor: Colors.white,
                           ),
                           icon: const Icon(Icons.delete_outline),
@@ -557,7 +564,9 @@ class _CommunityPageState extends State<CommunityPage> {
                       Text(
                         '조회 ${post.viewCount}',
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12),
+                          color: Colors.white38,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -572,7 +581,9 @@ class _CommunityPageState extends State<CommunityPage> {
 
   @override
   Widget build(BuildContext context) {
-    final accountId = context.watch<AppState>().currentAccountId;
+    final accountId = context.select<AppState, String?>(
+      (state) => state.currentAccountId,
+    );
     final visiblePosts = _visiblePosts(accountId);
     final hasFilter = _query.trim().isNotEmpty || _selectedTab == 2;
 
@@ -642,55 +653,55 @@ class _CommunityPageState extends State<CommunityPage> {
                 onRefresh: _loadPosts,
                 child: _isLoading
                     ? const Center(
-                        child:
-                            CircularProgressIndicator(color: Color(0xFF7C3AED)),
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF7C3AED),
+                        ),
                       )
                     : _error != null
-                        ? ListView(
-                            padding: const EdgeInsets.all(32),
-                            children: [
-                              const SizedBox(height: 120),
-                              const Text(
-                                '게시판을 불러오지 못했어요',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _error!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          )
-                        : visiblePosts.isEmpty
-                            ? ListView(
-                                padding: const EdgeInsets.all(32),
-                                children: [
-                                  const SizedBox(height: 120),
-                                  Text(
-                                    hasFilter
-                                        ? '조건에 맞는 게시글이 없어요.\n검색어를 바꾸거나 최신 탭을 확인해보세요.'
-                                        : '아직 공유된 동화가 없어요.\n첫 번째 이야기를 올려보세요!',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      height: 1.6,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : ListView.builder(
-                                padding:
-                                    const EdgeInsets.fromLTRB(24, 20, 24, 100),
-                                itemCount: visiblePosts.length,
-                                itemBuilder: (context, index) =>
-                                    _buildFeedCard(visiblePosts[index]),
-                              ),
+                    ? ListView(
+                        padding: const EdgeInsets.all(32),
+                        children: [
+                          const SizedBox(height: 120),
+                          const Text(
+                            '게시판을 불러오지 못했어요',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      )
+                    : visiblePosts.isEmpty
+                    ? ListView(
+                        padding: const EdgeInsets.all(32),
+                        children: [
+                          const SizedBox(height: 120),
+                          Text(
+                            hasFilter
+                                ? '조건에 맞는 게시글이 없어요.\n검색어를 바꾸거나 최신 탭을 확인해보세요.'
+                                : '아직 공유된 동화가 없어요.\n첫 번째 이야기를 올려보세요!',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              height: 1.6,
+                            ),
+                          ),
+                        ],
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
+                        itemCount: visiblePosts.length,
+                        itemBuilder: (context, index) =>
+                            _buildFeedCard(visiblePosts[index], accountId),
+                      ),
               ),
             ),
           ],
@@ -736,8 +747,9 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
       _error = null;
     });
     try {
-      final post =
-          await DbService.fetchCommunityPostDetail(widget.initialPost.id);
+      final post = await DbService.fetchCommunityPostDetail(
+        widget.initialPost.id,
+      );
       if (!mounted) return;
       setState(() => _post = post);
     } catch (e) {
@@ -778,15 +790,17 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
       if (!mounted) return;
       _commentController.clear();
       setState(() => _post = updated);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('댓글을 남겼어요!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('댓글을 남겼어요!')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(
-                '댓글 저장 실패: ${e.toString().replaceAll('Exception: ', '')}')),
+          content: Text(
+            '댓글 저장 실패: ${e.toString().replaceAll('Exception: ', '')}',
+          ),
+        ),
       );
     } finally {
       if (mounted) {
@@ -856,9 +870,9 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
         accountId: state.currentAccountId,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('게시글을 삭제했어요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('게시글을 삭제했어요.')));
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
@@ -876,7 +890,8 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
     final post = _post ?? widget.initialPost;
     final state = context.read<AppState>();
     final accountId = state.currentAccountId;
-    final canDelete = accountId != null &&
+    final canDelete =
+        accountId != null &&
         accountId.isNotEmpty &&
         (comment.authorAccountId == accountId ||
             post.authorAccountId == accountId);
@@ -890,9 +905,9 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
       );
       if (!mounted) return;
       setState(() => _post = updated);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('댓글을 삭제했어요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('댓글을 삭제했어요.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -908,9 +923,12 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
   @override
   Widget build(BuildContext context) {
     final post = _post ?? widget.initialPost;
-    final accountId = context.watch<AppState>().currentAccountId;
+    final accountId = context.select<AppState, String?>(
+      (state) => state.currentAccountId,
+    );
     final isLiked = post.isLikedBy(accountId);
-    final isMine = accountId != null &&
+    final isMine =
+        accountId != null &&
         accountId.isNotEmpty &&
         post.authorAccountId == accountId;
     return Scaffold(
@@ -1021,8 +1039,11 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                             const SizedBox(height: 16),
                             Row(
                               children: [
-                                const Icon(Icons.remove_red_eye_outlined,
-                                    size: 16, color: Colors.grey),
+                                const Icon(
+                                  Icons.remove_red_eye_outlined,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
                                 const SizedBox(width: 4),
                                 Text(
                                   '조회 ${post.viewCount}',
@@ -1032,8 +1053,11 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                const Icon(Icons.chat_bubble_outline,
-                                    size: 16, color: Colors.grey),
+                                const Icon(
+                                  Icons.chat_bubble_outline,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
                                 const SizedBox(width: 4),
                                 Text(
                                   '댓글 ${post.commentCount}',
@@ -1113,73 +1137,72 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                           ),
                         )
                       else
-                        ...post.comments.map(
-                          (comment) {
-                            final canDeleteComment = accountId != null &&
-                                accountId.isNotEmpty &&
-                                (comment.authorAccountId == accountId ||
-                                    post.authorAccountId == accountId);
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF160F38),
-                                borderRadius: BorderRadius.circular(16),
-                                border:
-                                    Border.all(color: const Color(0x338B5CF6)),
+                        ...post.comments.map((comment) {
+                          final canDeleteComment =
+                              accountId != null &&
+                              accountId.isNotEmpty &&
+                              (comment.authorAccountId == accountId ||
+                                  post.authorAccountId == accountId);
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF160F38),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: const Color(0x338B5CF6),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        comment.authorName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      comment.authorName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
                                       ),
-                                      const Spacer(),
-                                      Text(
-                                        _relativeTime(comment.createdAt),
-                                        style: const TextStyle(
-                                          color: Colors.grey,
-                                          fontSize: 11,
-                                        ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _relativeTime(comment.createdAt),
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 11,
                                       ),
-                                      if (canDeleteComment) ...[
-                                        const SizedBox(width: 8),
-                                        InkWell(
-                                          onTap: () => _deleteComment(comment),
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          child: const Padding(
-                                            padding: EdgeInsets.all(4),
-                                            child: Icon(
-                                              Icons.delete_outline,
-                                              color: Colors.white38,
-                                              size: 16,
-                                            ),
+                                    ),
+                                    if (canDeleteComment) ...[
+                                      const SizedBox(width: 8),
+                                      InkWell(
+                                        onTap: () => _deleteComment(comment),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(4),
+                                          child: Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.white38,
+                                            size: 16,
                                           ),
                                         ),
-                                      ],
+                                      ),
                                     ],
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  comment.content,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                    height: 1.5,
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    comment.content,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 13,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
                     ],
                   ),
                 ),

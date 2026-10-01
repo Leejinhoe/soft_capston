@@ -40,24 +40,41 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
+  late final List<Widget?> _pages;
 
-  void _selectTab(int index) => setState(() => _selectedIndex = index);
+  @override
+  void initState() {
+    super.initState();
+    _pages = List<Widget?>.filled(6, null);
+    _pages[0] = _createPage(0);
+  }
+
+  Widget _createPage(int index) => switch (index) {
+    0 => HomePage(onSelectTab: _selectTab),
+    1 => const CreatePage(),
+    2 => const CommunityPage(),
+    3 => const VocabPage(),
+    4 => const PsychPage(),
+    5 => const ProfilePage(),
+    _ => const SizedBox.shrink(),
+  };
+
+  void _selectTab(int index) {
+    if (index < 0 || index >= _pages.length) return;
+    setState(() {
+      _pages[index] ??= _createPage(index);
+      _selectedIndex = index;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final displayName = context.watch<AppState>().currentDisplayName;
-    final pages = [
-      HomePage(displayName: displayName, onSelectTab: _selectTab),
-      const CreatePage(),
-      const CommunityPage(),
-      const VocabPage(),
-      const PsychPage(),
-      const ProfilePage(),
-    ];
-
     return Scaffold(
       backgroundColor: const Color(0xFF070018),
-      body: IndexedStack(index: _selectedIndex, children: pages),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [for (final page in _pages) page ?? const SizedBox.shrink()],
+      ),
       bottomNavigationBar: HyeonlimBottomNav(
         selectedIndex: _selectedIndex,
         onTap: _selectTab,
@@ -148,14 +165,9 @@ class _NavItem {
 }
 
 class HomePage extends StatefulWidget {
-  final String displayName;
   final ValueChanged<int> onSelectTab;
 
-  const HomePage({
-    super.key,
-    required this.displayName,
-    required this.onSelectTab,
-  });
+  const HomePage({super.key, required this.onSelectTab});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -370,8 +382,24 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final user = widget.displayName.trim().isEmpty ? '사용자' : widget.displayName;
+    final home = context
+        .select<AppState, ({String displayName, String completedStoriesKey})>((
+          state,
+        ) {
+          final storiesKey = state.completedStories
+              .map(
+                (story) =>
+                    '${story.storyId}|${story.initialPrompt}|${story.genre}|${story.chapters.length}|${story.hasReachedEnding}|${story.choices.length}',
+              )
+              .join('\u0000');
+          return (
+            displayName: state.currentDisplayName,
+            completedStoriesKey: storiesKey,
+          );
+        });
+    final state = context.read<AppState>();
+    final displayName = home.displayName;
+    final user = displayName.trim().isEmpty ? '사용자' : displayName;
 
     return Scaffold(
       backgroundColor: const Color(0xFF070018),
@@ -471,17 +499,14 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: state.completedStories
-                        .map(
-                          (story) => Padding(
-                            padding: const EdgeInsets.only(right: 14),
-                            child: _buildCreatedStoryCard(story),
-                          ),
-                        )
-                        .toList(),
+                SizedBox(
+                  height: 180,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: state.completedStories.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 14),
+                    itemBuilder: (context, index) =>
+                        _buildCreatedStoryCard(state.completedStories[index]),
                   ),
                 ),
               ],

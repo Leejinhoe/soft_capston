@@ -208,9 +208,13 @@ class _VocabPageState extends State<VocabPage> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final displayName = state.currentDisplayName;
-    final allVocabs = state.allVocabulary;
+    final state = context.read<AppState>();
+    final displayName = context.select<AppState, String>(
+      (state) => state.currentDisplayName,
+    );
+    final allVocabs = context.select<AppState, List<VocabWord>>(
+      (state) => state.allVocabulary,
+    );
     final filteredVocabs = allVocabs.where((vocab) {
       if (_query.trim().isEmpty) return true;
       return vocab.easy.contains(_query) ||

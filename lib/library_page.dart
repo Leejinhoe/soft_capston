@@ -395,7 +395,24 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final data = context
+        .select<
+          AppState,
+          ({String storiesKey, bool isLoading, String? error})
+        >((state) {
+          final storiesKey = state.completedStories
+              .map(
+                (story) =>
+                    '${story.dbStoryId}|${story.storyId}|${story.initialPrompt}|${story.genre}|${story.chapters.length}|${story.fullStoryText.hashCode}|${story.allChoicesMade.length}|${story.currentChapter}|${story.hasReachedEnding}|${story.choices.length}',
+              )
+              .join('\u0000');
+          return (
+            storiesKey: storiesKey,
+            isLoading: state.isUserDataLoading,
+            error: state.userDataErrorMessage,
+          );
+        });
+    final state = context.read<AppState>();
     final stories = _filteredStories(state.completedStories);
     final hasFilter = _query.trim().isNotEmpty || _selectedGenre != '전체';
 
@@ -406,7 +423,7 @@ class _LibraryPageState extends State<LibraryPage> {
         backgroundColor: AppColors.bg,
         actions: [
           IconButton(
-            onPressed: state.isUserDataLoading
+            onPressed: data.isLoading
                 ? null
                 : () => context.read<AppState>().loadUserData(),
             icon: const Icon(Icons.sync),

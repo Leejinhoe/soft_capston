@@ -12,6 +12,8 @@ import 'models/story_model.dart';
 import 'services/api_service.dart';
 import 'services/db_service.dart';
 
+enum _VoiceConversationPhase { idle, listening, thinking, speaking }
+
 class CharacterChatPage extends StatefulWidget {
   final StorySession story;
 
@@ -42,15 +44,24 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   bool _isSending = false;
   bool _isRecordingVoice = false;
   bool _isTranscribingVoice = false;
+  bool _isVoiceConversationActive = false;
+  bool _voiceSpeechDetected = false;
+  bool _isFinishingVoiceTurn = false;
+  bool _resumeListeningAfterReply = false;
   int _voiceRecordSeconds = 0;
   Timer? _voiceRecordTimer;
+  Timer? _voiceSilenceTimer;
   StreamSubscription<Uint8List>? _voiceRecordingSubscription;
+  StreamSubscription<void>? _voiceReplyCompletionSubscription;
+  _VoiceConversationPhase _voicePhase = _VoiceConversationPhase.idle;
   String? _notice;
 
   @override
   void initState() {
     super.initState();
     unawaited(_voiceReplyPlayer.setReleaseMode(ReleaseMode.stop));
+    _voiceReplyCompletionSubscription = _voiceReplyPlayer.onPlayerComplete
+        .listen((_) => _resumeVoiceListeningAfterReply());
     unawaited(_loadCharacters());
   }
 
@@ -59,7 +70,9 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     _messageController.dispose();
     _messageScrollController.dispose();
     _voiceRecordTimer?.cancel();
+    _voiceSilenceTimer?.cancel();
     _voiceRecordingSubscription?.cancel();
+    _voiceReplyCompletionSubscription?.cancel();
     _voiceRecorder.dispose();
     _voiceReplyPlayer.dispose();
     super.dispose();
@@ -120,7 +133,11 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   }
 
   void _selectCharacter(StoryCharacter character) {
-    if (_isSending || character.name == _selectedCharacter?.name) return;
+    if (_isSending ||
+        _isVoiceConversationActive ||
+        character.name == _selectedCharacter?.name) {
+      return;
+    }
     setState(() {
       _selectedCharacter = character;
       _ensureConversation(character);
@@ -210,22 +227,63 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   }
 
   Future<void> _toggleVoiceConversation() async {
-    if (_isSending || _isTranscribingVoice) return;
-    if (_isRecordingVoice) {
-      await _stopVoiceConversation();
+    if (_isVoiceConversationActive) {
+      await _endVoiceConversation();
     } else {
-      await _startVoiceConversation();
+      await _beginVoiceConversation();
     }
   }
 
-  Future<void> _startVoiceConversation() async {
+  Future<void> _beginVoiceConversation() async {
+    if (_isSending || _isTranscribingVoice) return;
     try {
       if (!await _voiceRecorder.hasPermission()) {
         throw Exception('마이크 권한이 필요해요. 브라우저 또는 기기 설정에서 허용해 주세요.');
       }
       await _voiceReplyPlayer.stop();
+      if (!mounted) return;
+      setState(() {
+        _isVoiceConversationActive = true;
+        _voicePhase = _VoiceConversationPhase.listening;
+        _notice = '음성 대화를 시작했어요. 말하면 자동으로 보내 드려요.';
+      });
+      unawaited(_warmUpVoiceServices());
+      await _startListeningForVoiceTurn();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isVoiceConversationActive = false;
+        _voicePhase = _VoiceConversationPhase.idle;
+        _notice = '음성 대화를 시작하지 못했어요: $error';
+      });
+    }
+  }
+
+  Future<void> _warmUpVoiceServices() async {
+    try {
+      await Future.wait([
+        ApiService.warmUpKoreanSpeech(),
+        DbService.warmUpNarration(),
+      ]);
+    } catch (_) {
+      // The actual turn surfaces a detailed error if either remote model is unavailable.
+    }
+  }
+
+  Future<void> _startListeningForVoiceTurn() async {
+    if (!_isVoiceConversationActive ||
+        _isRecordingVoice ||
+        _isFinishingVoiceTurn ||
+        !mounted) {
+      return;
+    }
+    try {
       _voicePcm.clear();
+      _voiceSpeechDetected = false;
       _voiceRecordSeconds = 0;
+      _voiceSilenceTimer?.cancel();
+      _voiceSilenceTimer = null;
+      await _voiceRecordingSubscription?.cancel();
       final stream = await _voiceRecorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -233,66 +291,162 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
           numChannels: 1,
         ),
       );
-      _voiceRecordingSubscription = stream.listen(_voicePcm.add);
+      _voiceRecordingSubscription = stream.listen(
+        _handleVoiceChunk,
+        onError: (_) => unawaited(
+          _endVoiceConversation(notice: '마이크 입력이 끊겨 음성 대화를 종료했어요.'),
+        ),
+      );
+      _voiceRecordTimer?.cancel();
       _voiceRecordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted || !_isRecordingVoice) return;
-        if (_voiceRecordSeconds >= 20) {
-          unawaited(_stopVoiceConversation());
+        if (_voiceRecordSeconds >= 45) {
+          if (_voiceSpeechDetected) {
+            unawaited(_finishVoiceTurn());
+          } else {
+            unawaited(
+              _endVoiceConversation(
+                notice: '말소리를 듣지 못해 음성 대화를 마쳤어요. 다시 눌러 시작할 수 있어요.',
+              ),
+            );
+          }
           return;
         }
         setState(() {
           _voiceRecordSeconds++;
-          _notice = '듣고 있어요. 말을 마치면 마이크를 다시 눌러 주세요. ($_voiceTime / 00:20)';
+          _notice = _voiceSpeechDetected
+              ? '듣고 있어요. 말을 마치면 자동으로 보낼게요. ($_voiceTime / 00:45)'
+              : '듣고 있어요. 편하게 말씀해 주세요. ($_voiceTime / 00:45)';
         });
       });
-      if (!mounted) return;
+      if (!mounted || !_isVoiceConversationActive) return;
       setState(() {
         _isRecordingVoice = true;
-        _notice = '듣고 있어요. 말을 마치면 마이크를 다시 눌러 주세요. (00:00 / 00:20)';
+        _voicePhase = _VoiceConversationPhase.listening;
+        _notice = '듣고 있어요. 편하게 말씀해 주세요.';
       });
     } catch (error) {
-      if (!mounted) return;
-      setState(() => _notice = '음성 대화를 시작하지 못했어요: $error');
+      await _endVoiceConversation(notice: '마이크를 다시 시작하지 못했어요: $error');
     }
   }
 
-  Future<void> _stopVoiceConversation() async {
-    if (!_isRecordingVoice) return;
+  void _handleVoiceChunk(Uint8List chunk) {
+    if (!_isRecordingVoice || _isFinishingVoiceTurn) return;
+    _voicePcm.add(chunk);
+    if (_hasSpeechEnergy(chunk)) {
+      _voiceSpeechDetected = true;
+      _voiceSilenceTimer?.cancel();
+      _voiceSilenceTimer = null;
+      return;
+    }
+    if (_voiceSpeechDetected && _voiceSilenceTimer == null) {
+      _voiceSilenceTimer = Timer(const Duration(milliseconds: 1100), () {
+        _voiceSilenceTimer = null;
+        unawaited(_finishVoiceTurn());
+      });
+    }
+  }
+
+  bool _hasSpeechEnergy(Uint8List pcm) {
+    if (pcm.length < 4) return false;
+    var total = 0;
+    var samples = 0;
+    for (var index = 0; index + 1 < pcm.length; index += 16) {
+      var sample = pcm[index] | (pcm[index + 1] << 8);
+      if (sample >= 0x8000) sample -= 0x10000;
+      total += sample.abs();
+      samples++;
+    }
+    return samples > 0 && total / samples >= 420;
+  }
+
+  Future<void> _finishVoiceTurn() async {
+    if (!_isRecordingVoice || _isFinishingVoiceTurn) return;
+    _isFinishingVoiceTurn = true;
+    var resumeListening = false;
     _voiceRecordTimer?.cancel();
     _voiceRecordTimer = null;
+    _voiceSilenceTimer?.cancel();
+    _voiceSilenceTimer = null;
     try {
       await _voiceRecorder.stop();
       await _voiceRecordingSubscription?.cancel();
       _voiceRecordingSubscription = null;
       final pcm = _voicePcm.takeBytes();
-      const minimumBytes = 24000 * 2;
-      if (pcm.length < minimumBytes) {
-        throw Exception('1초 이상 말해 주세요.');
+      const minimumBytes = 24000;
+      if (!_voiceSpeechDetected || pcm.length < minimumBytes) {
+        if (mounted && _isVoiceConversationActive) {
+          setState(() {
+            _isRecordingVoice = false;
+            _notice = '말소리를 충분히 듣지 못했어요. 다시 말씀해 주세요.';
+          });
+          resumeListening = true;
+        }
+        return;
       }
       final wav = _pcm16ToWav(pcm);
       if (!mounted) return;
       setState(() {
         _isRecordingVoice = false;
         _isTranscribingVoice = true;
+        _voicePhase = _VoiceConversationPhase.thinking;
         _notice = '말한 내용을 이해하고 있어요...';
       });
       final transcript = await ApiService.transcribeKoreanSpeech(wav);
-      if (!mounted) return;
+      if (!mounted || !_isVoiceConversationActive) return;
       setState(() => _notice = '“$transcript”라고 말했어요. 캐릭터가 답하는 중이에요...');
       final reply = await _sendMessage(transcript);
-      if (reply == null || !mounted) return;
-      setState(() => _notice = '내 목소리로 캐릭터의 답을 들려드릴게요.');
+      if (reply == null || !mounted || !_isVoiceConversationActive) return;
+      setState(() {
+        _voicePhase = _VoiceConversationPhase.speaking;
+        _resumeListeningAfterReply = true;
+        _notice = '캐릭터가 내 목소리로 답하고 있어요...';
+      });
       final audio = await DbService.synthesizeNarration(reply, speakerWav: wav);
-      if (!mounted) return;
+      if (!mounted || !_isVoiceConversationActive) return;
       await _voiceReplyPlayer.play(BytesSource(audio));
-      if (!mounted) return;
-      setState(() => _notice = '음성 대화가 끝났어요. 다시 마이크를 눌러 말해 보세요.');
     } catch (error) {
       if (!mounted) return;
       setState(() => _notice = '음성 대화 오류: $error');
+      if (_isVoiceConversationActive) {
+        resumeListening = true;
+      }
     } finally {
+      _isFinishingVoiceTurn = false;
       if (mounted) setState(() => _isTranscribingVoice = false);
+      if (resumeListening && _isVoiceConversationActive) {
+        unawaited(_startListeningForVoiceTurn());
+      }
     }
+  }
+
+  void _resumeVoiceListeningAfterReply() {
+    if (!_isVoiceConversationActive || !_resumeListeningAfterReply) return;
+    _resumeListeningAfterReply = false;
+    unawaited(_startListeningForVoiceTurn());
+  }
+
+  Future<void> _endVoiceConversation({String? notice}) async {
+    _isVoiceConversationActive = false;
+    _resumeListeningAfterReply = false;
+    _voiceRecordTimer?.cancel();
+    _voiceRecordTimer = null;
+    _voiceSilenceTimer?.cancel();
+    _voiceSilenceTimer = null;
+    if (_isRecordingVoice) {
+      await _voiceRecorder.stop();
+    }
+    await _voiceRecordingSubscription?.cancel();
+    _voiceRecordingSubscription = null;
+    await _voiceReplyPlayer.stop();
+    _voicePcm.clear();
+    if (!mounted) return;
+    setState(() {
+      _isRecordingVoice = false;
+      _isTranscribingVoice = false;
+      _voicePhase = _VoiceConversationPhase.idle;
+      _notice = notice ?? '음성 대화를 마쳤어요.';
+    });
   }
 
   CharacterChatReply _fallbackReply(StoryCharacter character, String message) {
@@ -326,7 +480,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
 
   void _resetCurrentConversation() {
     final character = _selectedCharacter;
-    if (character == null || _isSending) return;
+    if (character == null || _isSending || _isVoiceConversationActive) return;
     setState(() {
       _conversations.remove(character.name);
       _suggestions.remove(character.name);
@@ -352,32 +506,36 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     final character = _selectedCharacter;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('이야기 속 친구와 대화'),
-            Text(
-              widget.story.initialPrompt,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.gray,
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
+      appBar: _isVoiceConversationActive
+          ? null
+          : AppBar(
+              titleSpacing: 0,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('이야기 속 친구와 대화'),
+                  Text(
+                    widget.story.initialPrompt,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.gray,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
+              actions: [
+                IconButton(
+                  tooltip: '현재 대화 새로 시작',
+                  onPressed: character == null
+                      ? null
+                      : _resetCurrentConversation,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: '현재 대화 새로 시작',
-            onPressed: character == null ? null : _resetCurrentConversation,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
       body: Stack(
         children: [
           const Positioned.fill(child: _ChatBackground()),
@@ -403,6 +561,15 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
               ),
             ),
           ),
+          if (_isVoiceConversationActive && character != null)
+            Positioned.fill(
+              child: _VoiceConversationOverlay(
+                character: character,
+                phase: _voicePhase,
+                status: _notice,
+                onEnd: _toggleVoiceConversation,
+              ),
+            ),
         ],
       ),
     );
@@ -792,6 +959,32 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     );
   }
 
+  String get _voicePhaseLabel {
+    switch (_voicePhase) {
+      case _VoiceConversationPhase.listening:
+        return '듣고 있어요';
+      case _VoiceConversationPhase.thinking:
+        return '말을 이해하고 답을 생각하고 있어요';
+      case _VoiceConversationPhase.speaking:
+        return '캐릭터가 답하고 있어요';
+      case _VoiceConversationPhase.idle:
+        return '';
+    }
+  }
+
+  IconData get _voicePhaseIcon {
+    switch (_voicePhase) {
+      case _VoiceConversationPhase.listening:
+        return Icons.graphic_eq_rounded;
+      case _VoiceConversationPhase.thinking:
+        return Icons.auto_awesome_rounded;
+      case _VoiceConversationPhase.speaking:
+        return Icons.volume_up_rounded;
+      case _VoiceConversationPhase.idle:
+        return Icons.mic_rounded;
+    }
+  }
+
   Widget _buildComposer(StoryCharacter character) {
     final suggestions = _suggestions[character.name] ?? _initialSuggestions;
     return Container(
@@ -818,7 +1011,9 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
               itemBuilder: (context, index) {
                 final suggestion = suggestions[index];
                 return ActionChip(
-                  onPressed: _isSending ? null : () => _sendMessage(suggestion),
+                  onPressed: _isSending || _isVoiceConversationActive
+                      ? null
+                      : () => _sendMessage(suggestion),
                   avatar: const Icon(
                     Icons.auto_awesome_rounded,
                     color: AppColors.p300,
@@ -842,13 +1037,51 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
             ),
           ),
           const SizedBox(height: 10),
+          if (_isVoiceConversationActive) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: AppColors.pink.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: AppColors.pink.withValues(alpha: 0.38),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(_voicePhaseIcon, color: AppColors.pink2, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _voicePhaseLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    '자동 대화',
+                    style: TextStyle(
+                      color: AppColors.pink2,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: TextField(
                   controller: _messageController,
-                  enabled: !_isSending,
+                  enabled: !_isSending && !_isVoiceConversationActive,
                   minLines: 1,
                   maxLines: 4,
                   maxLength: 300,
@@ -881,37 +1114,34 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
               ),
               const SizedBox(width: 9),
               IconButton.filled(
-                tooltip: _isRecordingVoice ? '녹음 멈추기' : '음성으로 캐릭터와 대화하기',
-                onPressed: _isSending || _isTranscribingVoice
-                    ? null
-                    : _toggleVoiceConversation,
+                tooltip: _isVoiceConversationActive
+                    ? '음성 대화 끝내기'
+                    : '음성으로 캐릭터와 대화하기',
+                onPressed: _isVoiceConversationActive
+                    ? _toggleVoiceConversation
+                    : (_isSending || _isTranscribingVoice
+                          ? null
+                          : _toggleVoiceConversation),
                 style: IconButton.styleFrom(
-                  backgroundColor: _isRecordingVoice
+                  backgroundColor: _isVoiceConversationActive
                       ? AppColors.pink
                       : const Color(0xFF2B2352),
                   disabledBackgroundColor: AppColors.card2,
                   minimumSize: const Size(48, 48),
                 ),
-                icon: _isTranscribingVoice
-                    ? const SizedBox(
-                        width: 19,
-                        height: 19,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : Icon(
-                        _isRecordingVoice
-                            ? Icons.stop_rounded
-                            : Icons.mic_rounded,
-                        color: Colors.white,
-                      ),
+                icon: Icon(
+                  _isVoiceConversationActive
+                      ? Icons.call_end_rounded
+                      : Icons.mic_rounded,
+                  color: Colors.white,
+                ),
               ),
               const SizedBox(width: 7),
               IconButton.filled(
                 tooltip: '메시지 보내기',
-                onPressed: _isSending ? null : () => _sendMessage(),
+                onPressed: _isSending || _isVoiceConversationActive
+                    ? null
+                    : () => _sendMessage(),
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.p600,
                   disabledBackgroundColor: AppColors.card2,
@@ -925,8 +1155,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
             ],
           ),
           const SizedBox(height: 7),
-          const Text(
-            '음성은 서버 한국어 인식 후 동화 기반 AI 역할극으로 답해요.',
+          Text(
+            _isVoiceConversationActive
+                ? '말을 멈추면 자동 전송되고, 답변이 끝나면 다시 듣습니다.'
+                : '음성 대화는 서버 한국어 인식 후 동화 기반 AI 역할극으로 이어집니다.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.gray2, fontSize: 9),
           ),
@@ -1068,6 +1300,318 @@ class _ChatBackground extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [Color(0xFF08051B), Color(0xFF120B2B), Color(0xFF09061D)],
         ),
+      ),
+    );
+  }
+}
+
+class _VoiceConversationOverlay extends StatefulWidget {
+  const _VoiceConversationOverlay({
+    required this.character,
+    required this.phase,
+    required this.status,
+    required this.onEnd,
+  });
+
+  final StoryCharacter character;
+  final _VoiceConversationPhase phase;
+  final String? status;
+  final VoidCallback onEnd;
+
+  @override
+  State<_VoiceConversationOverlay> createState() =>
+      _VoiceConversationOverlayState();
+}
+
+class _VoiceConversationOverlayState extends State<_VoiceConversationOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  bool get _isListening => widget.phase == _VoiceConversationPhase.listening;
+  bool get _isThinking => widget.phase == _VoiceConversationPhase.thinking;
+  bool get _isSpeaking => widget.phase == _VoiceConversationPhase.speaking;
+
+  Color get _accent {
+    if (_isListening) return const Color(0xFFFB7185);
+    if (_isSpeaking) return const Color(0xFF64D8CB);
+    return AppColors.p300;
+  }
+
+  IconData get _phaseIcon {
+    if (_isListening) return Icons.mic_rounded;
+    if (_isSpeaking) return Icons.record_voice_over_rounded;
+    return Icons.auto_awesome_rounded;
+  }
+
+  String get _phaseTitle {
+    if (_isListening) return '듣고 있어요';
+    if (_isSpeaking) return '${widget.character.name}가 말하고 있어요';
+    return '${widget.character.name}가 생각하고 있어요';
+  }
+
+  String get _phaseHint {
+    if (_isListening) return '말을 멈추면 자동으로 메시지를 보낼게요.';
+    if (_isSpeaking) return '답변이 끝나면 다시 자동으로 들을게요.';
+    return '동화 속 기억을 떠올려 답을 만들고 있어요.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.25),
+            radius: 1.2,
+            colors: [Color(0xFF281B50), Color(0xFF100A25), Color(0xFF070411)],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned(
+                top: 12,
+                left: 18,
+                right: 18,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Text(
+                        widget.character.avatarEmoji,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.character.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            '음성 대화 중',
+                            style: TextStyle(
+                              color: AppColors.gray,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '음성 대화 끝내기',
+                      onPressed: widget.onEnd,
+                      style: IconButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white.withValues(alpha: 0.08),
+                      ),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildPulseCore(),
+                        const SizedBox(height: 28),
+                        AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 240),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: _isSpeaking ? 25 : 23,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                          ),
+                          child: Text(_phaseTitle, textAlign: TextAlign.center),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _phaseHint,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: AppColors.gray,
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Container(
+                          width: double.infinity,
+                          constraints: const BoxConstraints(minHeight: 58),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Center(
+                            child: Text(
+                              widget.status?.trim().isNotEmpty == true
+                                  ? widget.status!
+                                  : _phaseHint,
+                              textAlign: TextAlign.center,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                height: 1.45,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 24,
+                right: 24,
+                bottom: 24,
+                child: FilledButton.icon(
+                  onPressed: widget.onEnd,
+                  icon: const Icon(Icons.call_end_rounded),
+                  label: const Text('음성 대화 끝내기'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    backgroundColor: const Color(0xFFCF4560),
+                    foregroundColor: Colors.white,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPulseCore() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, _) {
+        final pulse = _pulseController.value;
+        return SizedBox(
+          width: 286,
+          height: 286,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              for (final ring in [0.62, 0.79, 0.96])
+                Transform.scale(
+                  scale: ring + pulse * 0.055,
+                  child: Container(
+                    width: 248,
+                    height: 248,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: _accent.withValues(
+                          alpha: _isThinking ? 0.1 : 0.08 + pulse * 0.1,
+                        ),
+                        width: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 260),
+                width: _isSpeaking ? 142 : 130,
+                height: _isSpeaking ? 142 : 130,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _accent.withValues(alpha: 0.2),
+                  border: Border.all(
+                    color: _accent.withValues(alpha: 0.8),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accent.withValues(alpha: 0.28 + pulse * 0.2),
+                      blurRadius: 32 + pulse * 18,
+                      spreadRadius: 3 + pulse * 3,
+                    ),
+                  ],
+                ),
+                child: Icon(_phaseIcon, color: Colors.white, size: 54),
+              ),
+              Positioned(bottom: 0, child: _buildWaveform(pulse)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWaveform(double pulse) {
+    const baseHeights = [14.0, 24.0, 37.0, 50.0, 37.0, 24.0, 14.0];
+    return SizedBox(
+      height: 58,
+      width: 150,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: List.generate(baseHeights.length, (index) {
+          final direction = index.isEven ? pulse : 1 - pulse;
+          final scale = _isThinking
+              ? 0.34 + pulse * 0.12
+              : 0.46 + direction * 0.72;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 7,
+            height: baseHeights[index] * scale,
+            margin: const EdgeInsets.symmetric(horizontal: 2.5),
+            decoration: BoxDecoration(
+              color: _accent.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          );
+        }),
       ),
     );
   }

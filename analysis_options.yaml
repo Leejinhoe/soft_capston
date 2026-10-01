@@ -16,6 +16,10 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # Archived checkouts live inside this workspace but are not part of the
+    # app that Flutter builds from this root.
+    - Fairytale-HyeonlimFront/**
+    - Fairytale-HyeonlimMerged/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

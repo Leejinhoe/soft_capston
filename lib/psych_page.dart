@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:percent_indicator/percent_indicator.dart';
 import 'main.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
@@ -15,13 +14,41 @@ class PsychPage extends StatefulWidget {
 class _PsychPageState extends State<PsychPage> {
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final story = state.activePsychStory;
-    final psych = story == null ? null : state.psychResultFor(story);
+    final state = context.read<AppState>();
+    final view = context
+        .select<
+          AppState,
+          ({
+            StorySession? story,
+            PsychResult? psych,
+            bool canAnalyze,
+            bool isLoading,
+            String? notice,
+          })
+        >((state) {
+          final story = state.activePsychStory;
+          return (
+            story: story,
+            psych: story == null ? null : state.psychResultFor(story),
+            canAnalyze: story != null && state.canAnalyzeStory(story),
+            isLoading: state.isPsychLoading,
+            notice: state.psychAnalysisNotice,
+          );
+        });
 
     return Scaffold(
       backgroundColor: const Color(0xFF070018),
-      body: SafeArea(child: _buildBody(context, state, story, psych)),
+      body: SafeArea(
+        child: _buildBody(
+          context,
+          state,
+          view.story,
+          view.psych,
+          canAnalyze: view.canAnalyze,
+          isPsychLoading: view.isLoading,
+          notice: view.notice,
+        ),
+      ),
     );
   }
 
@@ -29,17 +56,20 @@ class _PsychPageState extends State<PsychPage> {
     BuildContext context,
     AppState state,
     StorySession? story,
-    PsychResult? psych,
-  ) {
+    PsychResult? psych, {
+    required bool canAnalyze,
+    required bool isPsychLoading,
+    required String? notice,
+  }) {
     if (story == null || story.chapters.isEmpty) {
       return _buildEmptyState();
     }
 
-    if (!state.canAnalyzeStory(story)) {
+    if (!canAnalyze) {
       return _buildEndingRequiredState(story);
     }
 
-    if (state.isPsychLoading) {
+    if (isPsychLoading) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -49,7 +79,7 @@ class _PsychPageState extends State<PsychPage> {
             CircularProgressIndicator(color: AppColors.p400, strokeWidth: 2),
             SizedBox(height: 16),
             Text(
-              '고른 선택과 감정 점수를 AI가 분석하고 있어요...',
+              '장면과 고른 선택을 AI가 살펴보고 있어요...',
               style: TextStyle(color: AppColors.p300, fontSize: 14),
             ),
           ],
@@ -61,7 +91,7 @@ class _PsychPageState extends State<PsychPage> {
       return _buildAnalyzePrompt(context, state, story);
     }
 
-    return _buildResult(psych, story, state);
+    return _buildResult(psych, story, notice);
   }
 
   Widget _buildEndingRequiredState(StorySession story) {
@@ -100,7 +130,7 @@ class _PsychPageState extends State<PsychPage> {
                 const SizedBox(height: 10),
                 Text(
                   '현재 ${story.allChoicesMade.length}번 선택했어요.\n'
-                  '동화의 마지막 선택까지 마치면 선택별 감정 점수를 AI에게 보내 분석 글을 만들어요.',
+                  '동화의 마지막 선택까지 마치면 장면과 선택 기록으로 AI 해설을 만들어요.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white70,
@@ -126,7 +156,7 @@ class _PsychPageState extends State<PsychPage> {
         children: [
           const SizedBox(height: 10),
           const Text(
-            'AI 선택·감정 분석',
+            'AI 선택 해설',
             style: TextStyle(
               color: Colors.white,
               fontSize: 34,
@@ -135,7 +165,7 @@ class _PsychPageState extends State<PsychPage> {
           ),
           const SizedBox(height: 10),
           const Text(
-            '엔딩까지 고른 선택과 감정 점수를 AI가 함께 읽어요',
+            '엔딩까지 고른 선택과 당시 장면을 AI가 함께 읽어요',
             style: TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const Spacer(),
@@ -183,7 +213,7 @@ class _PsychPageState extends State<PsychPage> {
       children: [
         SizedBox(height: 10),
         Text(
-          'AI 선택·감정 분석',
+          'AI 선택 해설',
           style: TextStyle(
             color: Colors.white,
             fontSize: 34,
@@ -192,7 +222,7 @@ class _PsychPageState extends State<PsychPage> {
         ),
         SizedBox(height: 10),
         Text(
-          '완결된 동화의 선택과 감정 점수로 만든 분석을 확인해보세요',
+          '완결된 동화의 장면과 선택 기록으로 만든 해설을 확인해보세요',
           style: TextStyle(color: Colors.white70, fontSize: 16),
         ),
       ],
@@ -225,7 +255,7 @@ class _PsychPageState extends State<PsychPage> {
                 const Text('🔮', style: TextStyle(fontSize: 60)),
                 const SizedBox(height: 16),
                 const Text(
-                  '내 성격 알아보기',
+                  '내 선택 돌아보기',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -234,7 +264,7 @@ class _PsychPageState extends State<PsychPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${history.length}번의 선택과 각 선택에서 감지된 감정 점수를 바탕으로\n나의 이야기 탐험 성향을 분석해요.',
+                  '${history.length}번의 선택과 당시 장면을 함께 살펴봐요.\n감정이나 성격을 점수로 판단하지 않아요.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
@@ -263,7 +293,7 @@ class _PsychPageState extends State<PsychPage> {
                       ),
                     ),
                     child: const Text(
-                      '🧠 선택 감정으로 AI 분석',
+                      '🧠 선택 기록으로 AI 해설',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 15,
@@ -282,8 +312,6 @@ class _PsychPageState extends State<PsychPage> {
   }
 
   Widget _buildChoiceEmotionPreview(StoryChoiceEmotion record) {
-    final emotion = record.emotion;
-    final top = emotion?.topEmotions.take(3).toList() ?? const [];
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
@@ -327,24 +355,6 @@ class _PsychPageState extends State<PsychPage> {
                     height: 1.45,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  top.isEmpty
-                      ? '감정 점수 없음'
-                      : top
-                            .map((item) {
-                              final label = item.labelDisplay.isNotEmpty
-                                  ? item.labelDisplay
-                                  : item.label;
-                              return '$label ${(item.score * 100).round()}%';
-                            })
-                            .join(' · '),
-                  style: const TextStyle(
-                    color: AppColors.p300,
-                    fontSize: 10,
-                    height: 1.4,
-                  ),
-                ),
               ],
             ),
           ),
@@ -353,15 +363,7 @@ class _PsychPageState extends State<PsychPage> {
     );
   }
 
-  Widget _buildResult(PsychResult psych, StorySession story, AppState state) {
-    const traitColors = {
-      '모험적': AppColors.p500,
-      '친절함': AppColors.pink,
-      '용감함': Color(0xFFF59E0B),
-      '창의적': AppColors.teal,
-      '협동심': Color(0xFF10B981),
-    };
-
+  Widget _buildResult(PsychResult psych, StorySession story, String? notice) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -369,7 +371,7 @@ class _PsychPageState extends State<PsychPage> {
         children: [
           _buildPageTitle(),
           const SizedBox(height: 30),
-          if (state.psychAnalysisNotice != null) ...[
+          if (notice != null) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
@@ -381,7 +383,7 @@ class _PsychPageState extends State<PsychPage> {
                 ),
               ),
               child: Text(
-                state.psychAnalysisNotice!,
+                notice,
                 style: const TextStyle(
                   color: Color(0xFFFCD34D),
                   fontSize: 11,
@@ -486,72 +488,6 @@ class _PsychPageState extends State<PsychPage> {
             const SizedBox(height: 18),
           ],
 
-          // 특성 분석
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF140028),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '특성 분석',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ...psych.traits.entries.map((e) {
-                  final color = traitColors[e.key] ?? AppColors.p400;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              e.key,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              '${e.value}%',
-                              style: TextStyle(
-                                color: color,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        LinearPercentIndicator(
-                          percent: (e.value / 100).clamp(0.0, 1.0),
-                          lineHeight: 8,
-                          barRadius: const Radius.circular(4),
-                          backgroundColor: color.withValues(alpha: 0.15),
-                          progressColor: color,
-                          padding: EdgeInsets.zero,
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
           // 선택 이력
           Container(
             padding: const EdgeInsets.all(20),
@@ -564,7 +500,7 @@ class _PsychPageState extends State<PsychPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '선택과 감정 근거',
+                  '고른 선택 기록',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 15,

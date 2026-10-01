@@ -130,11 +130,13 @@ class _StoryVideoPlayerState extends State<StoryVideoPlayer>
         )) {
           received += chunk.length;
           if (received > _maxWebVideoBytes) {
-            throw StateError('Video is too large to play safely in the browser.');
+            throw StateError(
+              'Video is too large to play safely in the browser.',
+            );
           }
           bytes.add(chunk);
         }
-        return Media.memory(
+        return await Media.memory(
           bytes.takeBytes(),
           type: response.headers['content-type'] ?? 'video/mp4',
         );

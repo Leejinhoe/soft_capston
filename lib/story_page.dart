@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -380,50 +379,68 @@ class _StoryPageState extends State<StoryPage> {
               children: [
                 _buildHeader(context, story),
                 Expanded(
-                  child: SingleChildScrollView(
+                  child: CustomScrollView(
                     controller: _scrollCtrl,
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildChapterInfo(story),
-                        if (story.effectiveStoryCast.isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          StoryCastWidget(members: story.effectiveStoryCast),
-                        ],
-                        const SizedBox(height: 16),
-                        _buildTtsPanel(story),
-                        const SizedBox(height: 16),
-                        if (story.candidateVocab.isNotEmpty) ...[
-                          _buildDifficultWordGuide(story),
-                          const SizedBox(height: 16),
-                        ],
-                        _buildStoryEmotionGraph(story),
-                        const SizedBox(height: 16),
-                        ...story.chapters.map(
-                          (chapter) => _buildChapterCard(
-                            context,
-                            state,
-                            story,
-                            chapter,
-                            story.chapters.length,
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            _buildChapterInfo(story),
+                            if (story.effectiveStoryCast.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              StoryCastWidget(
+                                members: story.effectiveStoryCast,
+                              ),
+                            ],
+                            const SizedBox(height: 16),
+                            _buildTtsPanel(story),
+                            const SizedBox(height: 16),
+                            if (story.candidateVocab.isNotEmpty) ...[
+                              _buildDifficultWordGuide(story),
+                              const SizedBox(height: 16),
+                            ],
+                            _buildStoryEmotionGraph(story),
+                            const SizedBox(height: 16),
+                          ]),
+                        ),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildChapterCard(
+                              context,
+                              state,
+                              story,
+                              story.chapters[index],
+                              story.chapters.length,
+                            ),
+                            childCount: story.chapters.length,
                           ),
                         ),
-                        if (state.isLoading) _buildLoadingCard(),
-                        if (!state.isLoading &&
-                            widget.preloadedStory == null) ...[
-                          const SizedBox(height: 24),
-                          if (story.choices.isNotEmpty)
-                            _buildChoices(context, story, state)
-                          else
-                            _buildStoryCompleteCard(context, state),
-                        ],
-                        if (story.vocab.isNotEmpty) ...[
-                          const SizedBox(height: 24),
-                          _buildVocabSection(story.vocab),
-                        ],
-                      ],
-                    ),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            if (state.isLoading) _buildLoadingCard(),
+                            if (!state.isLoading &&
+                                widget.preloadedStory == null) ...[
+                              const SizedBox(height: 24),
+                              if (story.choices.isNotEmpty)
+                                _buildChoices(context, story, state)
+                              else
+                                _buildStoryCompleteCard(context, state),
+                            ],
+                            if (story.vocab.isNotEmpty) ...[
+                              const SizedBox(height: 24),
+                              _buildVocabSection(story.vocab),
+                            ],
+                          ]),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1274,19 +1291,11 @@ class _StoryPageState extends State<StoryPage> {
     StoryChapter chapter,
     int totalChapters,
   ) {
-    final animationCharacterKey = story.selectedHeroCharacterKey;
     final isLatestChapter = identical(chapter, story.chapters.last);
     final remoteVideoUrl = _isRemoteMediaUrl(chapter.videoUrl)
         ? chapter.videoUrl!.trim()
         : null;
-    final showLocalCharacterAnimation =
-        isLatestChapter &&
-        remoteVideoUrl == null &&
-        animationCharacterKey != null &&
-        StoryCharacterAnimation.supports(
-          characterKey: animationCharacterKey,
-          storyText: chapter.text,
-        );
+    final characterKey = story.selectedHeroCharacterKey;
     final selectedVideo = remoteVideoUrl != null || chapter.choiceMade == null
         ? null
         : StoryVideoCatalog.forChapter(
@@ -1294,8 +1303,18 @@ class _StoryPageState extends State<StoryPage> {
             choice: chapter.choiceMade,
             chapter: chapter.chapter,
             genre: story.genre,
-            characterKey: animationCharacterKey,
+            characterKey: characterKey,
           );
+    final supportsLocalMotion =
+        characterKey != null &&
+        StoryCharacterAnimation.supports(
+          characterKey: characterKey,
+          storyText: chapter.text,
+        );
+    final hasIllustration =
+        chapter.imageBytes != null ||
+        _isRemoteMediaUrl(chapter.imageUrl) ||
+        (chapter.imageUrl?.startsWith('mock://image/') == true);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1329,8 +1348,8 @@ class _StoryPageState extends State<StoryPage> {
           const SizedBox(height: 12),
         ] else
           const SizedBox(height: 12),
-        if (chapter.imageB64 != null) ...[
-          _buildStoryImage(chapter.imageB64!),
+        if (chapter.imageBytes != null) ...[
+          _buildStoryImage(chapter.imageBytes!),
           const SizedBox(height: 12),
         ] else if (_isRemoteMediaUrl(chapter.imageUrl)) ...[
           _buildNetworkStoryImage(chapter.imageUrl!),
@@ -1349,21 +1368,40 @@ class _StoryPageState extends State<StoryPage> {
         ] else if (remoteVideoUrl != null) ...[
           _buildArchivedVideoButton(context, videoUrl: remoteVideoUrl),
           const SizedBox(height: 12),
-        ] else if (selectedVideo != null && isLatestChapter) ...[
-          StoryVideoPlayer(clip: selectedVideo, autoplay: true),
-          const SizedBox(height: 12),
-        ] else if (selectedVideo != null) ...[
-          _buildArchivedVideoButton(context, clip: selectedVideo),
-          const SizedBox(height: 12),
-        ] else if (showLocalCharacterAnimation) ...[
-          StoryCharacterAnimation(
-            characterKey: animationCharacterKey,
-            storyText: chapter.text,
-            genre: story.genre,
-          ),
-          const SizedBox(height: 12),
         ] else if (chapter.videoUrl?.startsWith('mock://video/') == true) ...[
           _buildTemporaryVideoCard(chapter),
+          const SizedBox(height: 12),
+        ] else if (hasIllustration) ...[
+          _buildVideoGenerationPanel(state, story, chapter),
+          const SizedBox(height: 12),
+        ],
+        if (remoteVideoUrl == null &&
+            (selectedVideo != null || supportsLocalMotion)) ...[
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => Dialog(
+                  backgroundColor: AppColors.card2,
+                  insetPadding: const EdgeInsets.all(20),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    // Decode sprites and open players only when requested.
+                    child: selectedVideo != null
+                        ? StoryVideoPlayer(clip: selectedVideo, autoplay: true)
+                        : StoryCharacterAnimation(
+                            characterKey: characterKey!,
+                            storyText: chapter.text,
+                            genre: story.genre,
+                          ),
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+              label: const Text('캐릭터 움직임 보기'),
+            ),
+          ),
           const SizedBox(height: 12),
         ],
         if (chapter.mediaStatus == 'partial' ||
@@ -1415,77 +1453,74 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
-  Widget _buildStoryImage(String imageB64) {
-    try {
-      final bytes = base64Decode(imageB64);
-      return Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 280),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.card,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.p700.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+  Widget _buildStoryImage(Uint8List bytes) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 280),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.p700.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
+                child: AspectRatio(
+                  aspectRatio: 1.0,
+                  child: Image.memory(
+                    bytes,
+                    cacheWidth: 640,
+                    filterQuality: FilterQuality.low,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
                   ),
-                  child: AspectRatio(
-                    aspectRatio: 1.0,
-                    child: Image.memory(
-                      bytes,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    const Text('🎨', style: TextStyle(fontSize: 12)),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'AI 삽화',
+                      style: TextStyle(
+                        color: AppColors.teal,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      const Text('🎨', style: TextStyle(fontSize: 12)),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'AI 삽화',
-                        style: TextStyle(
-                          color: AppColors.teal,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    const Spacer(),
+                    Text(
+                      'Dreamshaper 8',
+                      style: TextStyle(
+                        color: AppColors.gray.withValues(alpha: 0.6),
+                        fontSize: 10,
                       ),
-                      const Spacer(),
-                      Text(
-                        'Dreamshaper 8',
-                        style: TextStyle(
-                          color: AppColors.gray.withValues(alpha: 0.6),
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      );
-    } catch (_) {
-      return const SizedBox.shrink();
-    }
+      ),
+    );
   }
 
   bool _isRemoteMediaUrl(String? value) {
@@ -1523,6 +1558,8 @@ class _StoryPageState extends State<StoryPage> {
                   child: Image.network(
                     imageUrl,
                     headers: DbService.mediaHeaders,
+                    cacheWidth: 640,
+                    filterQuality: FilterQuality.low,
                     fit: BoxFit.cover,
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) return child;
@@ -1763,8 +1800,7 @@ class _StoryPageState extends State<StoryPage> {
 
   Widget _buildArchivedVideoButton(
     BuildContext context, {
-    StoryVideoClip? clip,
-    String? videoUrl,
+    required String videoUrl,
   }) {
     return Container(
       width: double.infinity,
@@ -1784,7 +1820,7 @@ class _StoryPageState extends State<StoryPage> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              clip?.title ?? '이전 장면 영상',
+              '이전 장면 영상',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -1804,13 +1840,11 @@ class _StoryPageState extends State<StoryPage> {
                   insetPadding: const EdgeInsets.all(20),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 720),
-                    child: clip != null
-                        ? StoryVideoPlayer(clip: clip, autoplay: true)
-                        : StoryVideoPlayer.network(
-                            videoUrl: videoUrl!,
-                            httpHeaders: DbService.mediaHeaders,
-                            autoplay: true,
-                          ),
+                    child: StoryVideoPlayer.network(
+                      videoUrl: videoUrl,
+                      httpHeaders: DbService.mediaHeaders,
+                      autoplay: true,
+                    ),
                   ),
                 ),
               );
@@ -1853,12 +1887,89 @@ class _StoryPageState extends State<StoryPage> {
             ),
           ),
           IconButton(
-            tooltip: '다시 생성',
+            tooltip: chapter.mediaStatus == 'partial' ? '영상 다시 생성' : '삽화 다시 생성',
             onPressed: chapter.mediaStatus == 'running'
                 ? null
-                : () => state.retryMediaForChapter(story, chapter),
+                : () => chapter.mediaStatus == 'partial'
+                      ? state.generateVideoForChapter(story, chapter)
+                      : state.retryMediaForChapter(story, chapter),
             icon: const Icon(Icons.refresh_rounded),
             color: AppColors.p300,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoGenerationPanel(
+    AppState state,
+    StorySession story,
+    StoryChapter chapter,
+  ) {
+    final isGenerating =
+        chapter.mediaStatus == 'running' ||
+        story.mediaGenerationChapterNumbers.contains(chapter.chapter);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.p600.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.p400.withValues(alpha: 0.36)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.p500.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              isGenerating
+                  ? Icons.hourglass_top_rounded
+                  : Icons.movie_creation_outlined,
+              color: AppColors.p300,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isGenerating ? '영상으로 만드는 중' : '이 장면을 영상으로 만들까요?',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  '삽화는 바로 준비되고, 영상은 시간이 더 걸릴 수 있어요.',
+                  style: TextStyle(
+                    color: AppColors.gray,
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: isGenerating
+                ? null
+                : () => state.generateVideoForChapter(story, chapter),
+            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+            label: const Text('영상 만들기'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.p600,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
           ),
         ],
       ),

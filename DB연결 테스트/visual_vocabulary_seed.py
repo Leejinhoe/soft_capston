@@ -4,7 +4,7 @@ import time
 import unicodedata
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pymongo import UpdateOne
 
@@ -26,7 +26,7 @@ ENSEMBLE_PROFILE_PATH = (
     / "vocabulary_ensemble"
     / "merged_visual_vocabulary.json"
 )
-_ENSEMBLE_PROFILES: Dict[str, Dict[str, Any]] | None = None
+_ENSEMBLE_PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 def _ensemble_key(value: Any) -> str:
@@ -53,7 +53,7 @@ def load_ensemble_profiles() -> Dict[str, Dict[str, Any]]:
     return _ENSEMBLE_PROFILES
 
 
-def ensemble_profile_for_document(document: Dict[str, Any]) -> Dict[str, Any] | None:
+def ensemble_profile_for_document(document: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     profiles = load_ensemble_profiles()
     candidates = (
         document.get("word"),

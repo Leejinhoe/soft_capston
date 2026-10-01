@@ -85,7 +85,7 @@ class StoryCastWidget extends StatelessWidget {
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
                   itemCount: members.length,
-                  separatorBuilder: (_, __) =>
+                  separatorBuilder: (_, _) =>
                       const Divider(height: 1, color: Color(0x337C3AED)),
                   itemBuilder: (context, index) {
                     final member = members[index];

@@ -245,6 +245,8 @@ class _ProfileImage extends StatelessWidget {
     if (localAsset != null) {
       return Image.asset(
         localAsset,
+        cacheWidth: 256,
+        filterQuality: FilterQuality.low,
         fit: BoxFit.cover,
         alignment: Alignment.topCenter,
         errorBuilder: (_, _, _) => _placeholder(),
@@ -256,6 +258,8 @@ class _ProfileImage extends StatelessWidget {
       return Image.network(
         imageUrl,
         headers: DbService.mediaHeaders,
+        cacheWidth: 256,
+        filterQuality: FilterQuality.low,
         fit: BoxFit.cover,
         alignment: Alignment.topCenter,
         errorBuilder: (_, _, _) => _placeholder(),

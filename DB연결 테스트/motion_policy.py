@@ -58,7 +58,7 @@ def validate_motion_semantics(semantics: Mapping[str, Any] | None) -> list[str]:
     return list(dict.fromkeys(errors))
 
 
-def is_solo_action_semantics(semantics: Mapping[str, Any] | None) -> bool:
+def is_solo_action_semantics(semantics: Optional[Mapping[str, Any]]) -> bool:
     """Return whether a semantic action is safe for single-character training."""
 
     if not semantics:

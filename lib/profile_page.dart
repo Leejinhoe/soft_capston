@@ -10,8 +10,30 @@ import 'psych_page.dart';
 import 'services/api_service.dart';
 import 'services/db_service.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  late Future<bool> _storyServerHealth;
+  late Future<bool> _databaseHealth;
+
+  @override
+  void initState() {
+    super.initState();
+    _storyServerHealth = ApiService.checkHealth();
+    _databaseHealth = DbService.checkHealth();
+  }
+
+  void _refreshServerHealth() {
+    setState(() {
+      _storyServerHealth = ApiService.checkHealth();
+      _databaseHealth = DbService.checkHealth();
+    });
+  }
 
   Future<void> _showWithdrawalDialog(
     BuildContext context,
@@ -122,8 +144,9 @@ class ProfilePage extends StatelessWidget {
             ),
             actions: [
               TextButton(
-                onPressed:
-                    isSubmitting ? null : () => Navigator.pop(dialogContext),
+                onPressed: isSubmitting
+                    ? null
+                    : () => Navigator.pop(dialogContext),
                 child: const Text('취소'),
               ),
               FilledButton(
@@ -258,8 +281,9 @@ class ProfilePage extends StatelessWidget {
               ),
               actions: [
                 TextButton(
-                  onPressed:
-                      isSubmitting ? null : () => Navigator.pop(dialogContext),
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.pop(dialogContext),
                   child: const Text('취소'),
                 ),
                 ElevatedButton(
@@ -393,18 +417,50 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final displayName = state.currentDisplayName;
-    final totalStories = state.completedStories.length;
-    final totalChoices = state.completedStories.fold(
-      0,
-      (sum, story) => sum + story.allChoicesMade.length,
-    );
-    final totalWords = state.allVocabulary.length;
-    final email = state.currentEmail?.trim();
-    final phone = state.currentPhone?.trim();
-    final address = state.currentAddress?.trim();
-    final providerLabel = switch (state.currentProvider) {
+    final profile = context
+        .select<
+          AppState,
+          ({
+            String displayName,
+            int totalStories,
+            int totalChoices,
+            int totalWords,
+            String? email,
+            String? phone,
+            String? address,
+            String? provider,
+            String? accountId,
+            bool isUserDataLoading,
+            String? userDataErrorMessage,
+          })
+        >((state) {
+          final stories = state.completedStories;
+          return (
+            displayName: state.currentDisplayName,
+            totalStories: stories.length,
+            totalChoices: stories.fold(
+              0,
+              (sum, story) => sum + story.allChoicesMade.length,
+            ),
+            totalWords: state.allVocabulary.length,
+            email: state.currentEmail?.trim(),
+            phone: state.currentPhone?.trim(),
+            address: state.currentAddress?.trim(),
+            provider: state.currentProvider,
+            accountId: state.currentAccountId,
+            isUserDataLoading: state.isUserDataLoading,
+            userDataErrorMessage: state.userDataErrorMessage,
+          );
+        });
+    final state = context.read<AppState>();
+    final displayName = profile.displayName;
+    final totalStories = profile.totalStories;
+    final totalChoices = profile.totalChoices;
+    final totalWords = profile.totalWords;
+    final email = profile.email;
+    final phone = profile.phone;
+    final address = profile.address;
+    final providerLabel = switch (profile.provider) {
       'google' => 'Google 로그인',
       'kakao' => 'Kakao 로그인',
       'local' => '일반 로그인',
@@ -509,17 +565,29 @@ class ProfilePage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '서버 연결',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '서버 연결',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _refreshServerHealth,
+                          tooltip: '서버 상태 다시 확인',
+                          icon: const Icon(Icons.refresh_rounded),
+                          color: Colors.white70,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 14),
                     _statusLine(
-                      future: ApiService.checkHealth(),
+                      future: _storyServerHealth,
                       okText: '동화 서버 연결 정상',
                       badText: '동화 서버 연결 확인 필요',
                       icon: Icons.cloud_done,
@@ -527,7 +595,7 @@ class ProfilePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     _statusLine(
-                      future: DbService.checkHealth(),
+                      future: _databaseHealth,
                       okText: 'DB API 연결 정상',
                       badText: 'DB API 연결 확인 필요',
                       icon: Icons.storage,
@@ -565,8 +633,9 @@ class ProfilePage extends StatelessWidget {
               const SizedBox(height: 20),
               _menuButton(
                 icon: Icons.sync,
-                title:
-                    state.isUserDataLoading ? 'DB 기록 불러오는 중...' : 'DB 기록 새로고침',
+                title: state.isUserDataLoading
+                    ? 'DB 기록 불러오는 중...'
+                    : 'DB 기록 새로고침',
                 onTap: () async {
                   await context.read<AppState>().loadUserData();
                   if (!context.mounted) return;

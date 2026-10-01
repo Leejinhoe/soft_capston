@@ -58,31 +58,34 @@ class _NoticePageState extends State<NoticePage> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? _ErrorState(message: _error!, onRetry: _load)
-                : _notices.isEmpty
-                    ? ListView(
-                        children: const [
-                          SizedBox(height: 170),
-                          Icon(Icons.campaign_outlined,
-                              size: 52, color: Colors.white38),
-                          SizedBox(height: 12),
-                          Center(
-                            child: Text(
-                              '새로운 공지사항이 없습니다.',
-                              style: TextStyle(color: Colors.white60),
-                            ),
-                          ),
-                        ],
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
-                        itemCount: _notices.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) => _NoticeCard(
-                          notice: _notices[index],
-                          onTap: () => _showNotice(_notices[index]),
-                        ),
-                      ),
+            ? _ErrorState(message: _error!, onRetry: _load)
+            : _notices.isEmpty
+            ? ListView(
+                children: const [
+                  SizedBox(height: 170),
+                  Icon(
+                    Icons.campaign_outlined,
+                    size: 52,
+                    color: Colors.white38,
+                  ),
+                  SizedBox(height: 12),
+                  Center(
+                    child: Text(
+                      '새로운 공지사항이 없습니다.',
+                      style: TextStyle(color: Colors.white60),
+                    ),
+                  ),
+                ],
+              )
+            : ListView.separated(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+                itemCount: _notices.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) => _NoticeCard(
+                  notice: _notices[index],
+                  onTap: () => _showNotice(_notices[index]),
+                ),
+              ),
       ),
     );
   }
@@ -106,8 +109,10 @@ class _NoticePageState extends State<NoticePage> {
                   if (notice.isPinned)
                     const Padding(
                       padding: EdgeInsets.only(right: 8),
-                      child:
-                          Icon(Icons.push_pin_rounded, color: AppColors.pink2),
+                      child: Icon(
+                        Icons.push_pin_rounded,
+                        color: AppColors.pink2,
+                      ),
                     ),
                   Expanded(
                     child: Text(
@@ -134,7 +139,10 @@ class _NoticePageState extends State<NoticePage> {
               SelectableText(
                 notice.content,
                 style: const TextStyle(
-                    color: Colors.white, height: 1.75, fontSize: 15),
+                  color: Colors.white,
+                  height: 1.75,
+                  fontSize: 15,
+                ),
               ),
             ],
           ),
@@ -176,9 +184,10 @@ class _NoticeCard extends StatelessWidget {
             color: AppColors.card,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-                color: notice.isPinned
-                    ? AppColors.pink2.withValues(alpha: 0.5)
-                    : Colors.white10),
+              color: notice.isPinned
+                  ? AppColors.pink2.withValues(alpha: 0.5)
+                  : Colors.white10,
+            ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -208,7 +217,9 @@ class _NoticeCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.w900),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -216,12 +227,19 @@ class _NoticeCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Colors.white60, height: 1.4, fontSize: 12),
+                        color: Colors.white60,
+                        height: 1.4,
+                        fontSize: 12,
+                      ),
                     ),
                     const SizedBox(height: 9),
-                    Text(date(notice.publishedAt ?? notice.createdAt),
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 11)),
+                    Text(
+                      date(notice.publishedAt ?? notice.createdAt),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -249,9 +267,11 @@ class _ErrorState extends StatelessWidget {
         const SizedBox(height: 120),
         const Icon(Icons.cloud_off_rounded, color: AppColors.pink2, size: 48),
         const SizedBox(height: 12),
-        Text(message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70)),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white70),
+        ),
         const SizedBox(height: 16),
         Center(
           child: FilledButton.icon(

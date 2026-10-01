@@ -80,5 +80,23 @@ void main() {
 
     expect(result.dominantEmotions, ['기대감', '안심/신뢰']);
     expect(result.choiceInsights.single, contains('탐색 성향'));
+    expect(result.traits, isEmpty);
+  });
+
+  test('기존에 저장한 LLM 감정 점수는 앱에서 사용하지 않는다', () {
+    final emotion = EmotionAnalysis.fromJson({
+      'emotion_label_source': 'qwen_contextual_analysis_v3',
+      'primary_emotion': '걱정',
+      'primary_score': 0.9,
+      'top_emotions': [
+        {'label': '걱정', 'score': 0.9},
+      ],
+      'scores': {'걱정': 0.9},
+    });
+
+    expect(emotion.displayLabel, isEmpty);
+    expect(emotion.topEmotions, isEmpty);
+    expect(emotion.activeEmotions, isEmpty);
+    expect(emotion.scores, isEmpty);
   });
 }

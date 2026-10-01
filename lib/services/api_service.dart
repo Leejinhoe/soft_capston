@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -29,10 +28,12 @@ class StoryStreamUnavailableException implements Exception {
 }
 
 class ApiService {
-  static const String _definedBaseUrl =
-      String.fromEnvironment('AI_API_BASE_URL');
-  static const String _legacyDefinedBaseUrl =
-      String.fromEnvironment('STORY_API_BASE_URL');
+  static const String _definedBaseUrl = String.fromEnvironment(
+    'AI_API_BASE_URL',
+  );
+  static const String _legacyDefinedBaseUrl = String.fromEnvironment(
+    'STORY_API_BASE_URL',
+  );
   static String get _localBaseUrl {
     if (kIsWeb) return 'http://127.0.0.1:8000';
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -120,6 +121,11 @@ class ApiService {
 
   static Map<String, dynamic> _normalizeStoryResponse(dynamic decoded) {
     final result = Map<String, dynamic>.from(decoded as Map);
+    // Ignore scoring payloads from both current and older LLM servers.
+    result['emotion_scoring_enabled'] = false;
+    result['choice_emotions'] = const <dynamic>[];
+    result['story_emotion'] = null;
+    result['selected_choice_emotion'] = null;
     final chapter = int.tryParse(result['chapter']?.toString() ?? '');
     final completed =
         result['completed'] == true || (chapter != null && chapter >= 8);
@@ -131,9 +137,7 @@ class ApiService {
       return result;
     }
     final rawChoices = result['choices'] as List? ?? const [];
-    final rawEmotions = result['choice_emotions'] as List? ?? const [];
     final choices = <String>[];
-    final emotions = <dynamic>[];
 
     for (var index = 0; index < rawChoices.length; index++) {
       final choice = rawChoices[index];
@@ -141,7 +145,6 @@ class ApiService {
       final text = choice.toString().trim();
       if (choices.contains(text)) continue;
       choices.add(text);
-      if (index < rawEmotions.length) emotions.add(rawEmotions[index]);
       if (choices.length == 3) break;
     }
 
@@ -150,7 +153,6 @@ class ApiService {
       result['choice_emotions'] = const [];
     } else {
       result['choices'] = choices;
-      result['choice_emotions'] = emotions;
     }
     return result;
   }
@@ -181,8 +183,7 @@ class ApiService {
                 : '$prompt\n\n$characterInstruction',
             if (normalizedCharacterContext != null)
               'character_key': normalizedCharacterContext['character_key'],
-            if (normalizedCharacterContext != null)
-              'character_context': normalizedCharacterContext,
+            'character_context': ?normalizedCharacterContext,
             if (storyCast != null && storyCast.isNotEmpty)
               'story_cast': storyCast,
             if (characterOverrides != null && characterOverrides.isNotEmpty)
@@ -218,30 +219,31 @@ class ApiService {
     final characterInstruction = _characterLockInstruction(
       normalizedCharacterContext,
     );
+    final normalizedRuntimeState = runtimeState?.trim() ?? '';
     final response = await http
         .post(
           Uri.parse('$baseUrl/story/continue'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
             'story_id': storyId,
-            'story_so_far': storySoFar,
             'choice': choice,
             'genre': genre,
             'age': age,
-            if (characterInstruction != null)
-              'character_instruction': characterInstruction,
-            if (previousSceneContract != null)
-              'previous_scene_contract': previousSceneContract,
+            'character_instruction': ?characterInstruction,
+            'previous_scene_contract': ?previousSceneContract,
             if (normalizedCharacterContext != null)
               'character_key': normalizedCharacterContext['character_key'],
-            if (normalizedCharacterContext != null)
-              'character_context': normalizedCharacterContext,
+            'character_context': ?normalizedCharacterContext,
             if (storyCast != null && storyCast.isNotEmpty)
               'story_cast': storyCast,
             if (characterOverrides != null && characterOverrides.isNotEmpty)
               'character_overrides': characterOverrides,
-            if (runtimeState != null && runtimeState.trim().isNotEmpty)
-              'runtime_state': runtimeState,
+            // The integrated 8-stage server restores its plan from runtime_state.
+            // Older servers still receive the full story when no state is available.
+            if (normalizedRuntimeState.isNotEmpty)
+              'runtime_state': normalizedRuntimeState
+            else
+              'story_so_far': storySoFar,
             'include_image': false,
           }),
         )
@@ -282,12 +284,22 @@ class ApiService {
     return text;
   }
 
+  /// Starts the GPU speech model before the child finishes their first turn.
+  static Future<void> warmUpKoreanSpeech() async {
+    final response = await http
+        .post(Uri.parse('$baseUrl/api/stt/warm-up'))
+        .timeout(const Duration(seconds: 120));
+    if (response.statusCode != 200) {
+      throw Exception(_responseError(response, '음성 인식 준비에 실패했어요'));
+    }
+  }
+
   static Future<Map<String, dynamic>> analyzePsychology({
     required String storyId,
     required String storyTitle,
     required List<String> choicesMade,
-    required List<Map<String, dynamic>> choiceEmotions,
     required bool completed,
+    String? runtimeState,
   }) async {
     final response = await http
         .post(
@@ -297,7 +309,9 @@ class ApiService {
             'story_id': storyId,
             'story_title': storyTitle,
             'choices_made': choicesMade,
-            'choice_emotions': choiceEmotions,
+            if (runtimeState?.trim().isNotEmpty == true)
+              'runtime_state': runtimeState,
+            'emotion_scoring_enabled': false,
             'completed': completed,
           }),
         )
@@ -419,8 +433,7 @@ class ApiService {
               'age': age,
               if (characterContext != null)
                 'character_key': characterContext['character_key'],
-              if (characterContext != null)
-                'character_context': characterContext,
+              'character_context': ?characterContext,
               if (storyCast != null && storyCast.isNotEmpty)
                 'story_cast': storyCast,
               if (characterOverrides != null && characterOverrides.isNotEmpty)

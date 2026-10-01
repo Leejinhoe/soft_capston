@@ -1,91 +1,95 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert'; // json 변환용
 
 import 'services/db_service.dart';
 
 class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
   @override
-  _RegisterScreenState createState() => _RegisterScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  // 사용자가 입력할 텍스트 컨트롤러
-  final TextEditingController idController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
-  final TextEditingController nicknameController = TextEditingController();
+  final _idController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _nicknameController = TextEditingController();
+  bool _isSubmitting = false;
 
-  // FastAPI 백엔드로 가입 요청을 보내는 함수
-  Future<void> registerUser() async {
-    // Use the same platform-aware API base URL as the rest of the app.
-    final url = Uri.parse('${DbService.baseUrl}/api/users/register');
+  @override
+  void dispose() {
+    _idController.dispose();
+    _passwordController.dispose();
+    _nicknameController.dispose();
+    super.dispose();
+  }
 
-    try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        // DB 스키마에 맞춰서 JSON 데이터 전송
-        body: jsonEncode({
-          "account_id": idController.text,
-          "password": passwordController.text,
-          "nickname": nicknameController.text,
-          "provider": "local", // 일단 일반 가입으로 테스트
-        }),
+  Future<void> _registerUser() async {
+    if (_isSubmitting) return;
+
+    final accountId = _idController.text.trim();
+    final password = _passwordController.text;
+    final nickname = _nicknameController.text.trim();
+    if (accountId.isEmpty || password.isEmpty || nickname.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('아이디, 비밀번호, 닉네임을 모두 입력해주세요.')),
       );
+      return;
+    }
 
-      if (response.statusCode == 200) {
-        // 가입 성공!
-        final responseData = jsonDecode(response.body);
-        print("서버 응답: ${responseData['message']}");
-
-        // 성공 팝업 띄우기
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${nicknameController.text}님 가입 성공! DB 확인해보세요!'),
-          ),
-        );
-      } else {
-        // 백엔드에는 도착했으나 처리 중 에러 발생
-        print("가입 실패: 상태 코드 ${response.statusCode}");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('가입 실패: 상태 코드 ${response.statusCode}')),
-        );
-      }
-    } catch (e) {
-      // 서버 연결 자체가 실패한 경우 (폰 화면에 에러 원인 출력)
-      print("서버 연결 에러: $e");
+    setState(() => _isSubmitting = true);
+    try {
+      await DbService.registerUser(
+        accountId: accountId,
+        password: password,
+        nickname: nickname,
+      );
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('통신 에러 원인: $e')));
+      ).showSnackBar(SnackBar(content: Text('$nickname님, 회원가입이 완료됐어요.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('회원가입 테스트')),
+      appBar: AppBar(title: const Text('회원가입')),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(24),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
-              controller: idController,
-              decoration: InputDecoration(labelText: '아이디'),
+              controller: _idController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: '아이디'),
             ),
+            const SizedBox(height: 12),
             TextField(
-              controller: passwordController,
-              decoration: InputDecoration(labelText: '비밀번호'),
+              controller: _passwordController,
               obscureText: true,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: '비밀번호'),
             ),
+            const SizedBox(height: 12),
             TextField(
-              controller: nicknameController,
-              decoration: InputDecoration(labelText: '닉네임 (ex: 꼬마토끼)'),
+              controller: _nicknameController,
+              onSubmitted: (_) => _registerUser(),
+              decoration: const InputDecoration(labelText: '닉네임'),
             ),
-            SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: registerUser, // 버튼 누르면 통신 함수 실행
-              child: Text('가입하기 (DB로 쏘기)'),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: _isSubmitting ? null : _registerUser,
+              child: Text(_isSubmitting ? '가입 중...' : '회원가입'),
             ),
           ],
         ),
