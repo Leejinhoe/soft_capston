@@ -9,6 +9,8 @@ from typing import Any, Dict, Iterable, Optional
 from hf_media_common import HfMediaError
 from motion_policy import SOLO_ANIMATION_ACTIONS, is_solo_action_semantics
 from scene_contract import apply_scene_contract, normalize_scene_contract
+from story_background_pack import STORY_BACKGROUND_ROUTES, STORY_BACKGROUND_HORIZONS
+from story_background_pack import prefers_rear_journey as _journey_prefers_rear
 
 
 LOCAL_VIDEO_PROVIDER = (os.getenv("VIDEO_PROVIDER") or "local-animation").strip()
@@ -128,6 +130,7 @@ BACKGROUND_JOURNEY_ROUTES = {
         (0.75, 0.47),
     ),
 }
+BACKGROUND_JOURNEY_ROUTES.update(STORY_BACKGROUND_ROUTES)
 MOTION_SHEET_COLUMNS = 4
 MOTION_SHEET_ROWS = 2
 MOTION_SHEET_CELL_COUNT = MOTION_SHEET_COLUMNS * MOTION_SHEET_ROWS
@@ -347,6 +350,7 @@ def get_hf_video_config() -> Dict[str, Any]:
         "video_motion_focus_default": "character",
         "video_solo_actions": sorted(SOLO_ANIMATION_ACTIONS),
         "video_animation_modes": [
+            "sprite_journey_rear_v4",
             "sprite_run_cycle_road_v16_stride_amplified",
             "sprite_walk_cycle_road_v16_slow_stride",
             "motion_sheet_jump_v5",
@@ -1762,15 +1766,31 @@ def _sample_background_route(
     return catmull_rom(0), catmull_rom(1)
 
 
+def _journey_animation_progress(progress, motion_plan):
+    normalized = min(max(float(progress), 0.0), 1.0)
+    if str((motion_plan or {}).get('background_key') or '') in STORY_BACKGROUND_ROUTES:
+        return normalized * normalized * (3.0 - 2.0 * normalized)
+    return normalized
+
+
 def _directed_journey_progress(
     progress: float,
     motion_plan: Optional[Dict[str, Any]],
 ) -> float:
-    normalized = min(max(float(progress), 0.0), 1.0)
+    normalized = _journey_animation_progress(progress, motion_plan)
     direction = str((motion_plan or {}).get("directionality") or "").lower()
     if direction in {"right_to_left", "reverse"}:
         return 1.0 - normalized
     return normalized
+
+
+def _journey_faces_left(motion_plan):
+    reverse = str(motion_plan.get('directionality') or '').lower() in {'right_to_left', 'reverse'}
+    route = STORY_BACKGROUND_ROUTES.get(str(motion_plan.get('background_key') or ''))
+    # Use the route's overall direction, not framewise camera motion, to avoid
+    # abrupt flipping around small curves or near-vertical paths.
+    leftward = bool(route and route[-1][0] - route[0][0] < -0.05)
+    return leftward != reverse
 
 
 def _journey_route_screen_position(
@@ -1792,8 +1812,19 @@ def _journey_route_screen_position(
         progress,
         motion_plan,
     )
-    center_x = route[0] * camera["stage_width"] - camera["crop_x"]
-    ground_y = route[1] * camera["stage_height"] - camera["crop_y"]
+    stage_width, stage_height = camera["stage_width"], camera["stage_height"]
+    if str(motion_plan.get("background_key") or "") in STORY_BACKGROUND_ROUTES:
+        # Pack routes use the original 3:2 image coordinates. Match ImageOps.fit's
+        # centered cover crop before applying the animated camera offset.
+        fitted_width = max(stage_width, stage_height * 1.5)
+        fitted_height = fitted_width / 1.5
+        center_x = route[0] * fitted_width - (fitted_width - stage_width) / 2
+        ground_y = route[1] * fitted_height - (fitted_height - stage_height) / 2
+    else:
+        center_x = route[0] * stage_width
+        ground_y = route[1] * stage_height
+    center_x -= camera["crop_x"]
+    ground_y -= camera["crop_y"]
     return (
         min(max(center_x, width * 0.08), width * 0.92),
         min(max(ground_y, height * 0.38), height * 0.96),
@@ -1831,6 +1862,13 @@ def _character_motion_values(
             if motion_plan
             else None
         )
+        background_key = str((motion_plan or {}).get('background_key') or '')
+        if background_key in STORY_BACKGROUND_HORIZONS:
+            route_point = _sample_background_route(background_key, journey_progress)
+            horizon = STORY_BACKGROUND_HORIZONS[background_key]
+            near_y = STORY_BACKGROUND_ROUTES[background_key][0][1]
+            perspective = (route_point[1] - horizon) / max(near_y - horizon, .01)
+            scale = RUN_CHARACTER_SCALE_START * min(max(perspective, .22), 1.0)
         if route_position is None:
             center_x = width * (0.16 + 0.47 * journey_eased)
             ground_y = height * (0.94 - 0.31 * journey_eased)
@@ -2007,6 +2045,7 @@ def _character_motion_values(
         "scale": scale,
         "center_x": center_x,
         "ground_y": ground_y + bob,
+        "shadow_ground_y": ground_y,
         "rotation": rotation,
         "ground_contact": ground_contact,
     }
@@ -2086,6 +2125,7 @@ def _paste_character_layer(
     scale: float,
     rotation: float,
     ground_contact: float = 1.0,
+    shadow_ground_y: Optional[float] = None,
 ):
     target_height = max(12, int(frame.height * scale))
     resize_scale = target_height / character_image.height
@@ -2100,7 +2140,7 @@ def _paste_character_layer(
         ImageDraw,
         ImageFilter,
         center_x,
-        ground_y,
+        ground_y if shadow_ground_y is None else shadow_ground_y,
         target_width,
         target_height,
         ground_contact,
@@ -3046,8 +3086,10 @@ def _render_layered_frame(
         ) or character_image
     elif use_run_cycle:
         rendered_character = _select_run_cycle_pose(
-            character_run_cycle_motion_cells,
-            progress=progress,
+            (character_target_journey_motion_cells
+             if character_target_journey_motion_cells and _journey_prefers_rear(motion_plan)
+             else character_run_cycle_motion_cells),
+            progress=_journey_animation_progress(progress, motion_plan),
             pace=str(motion_plan.get("pace") or "walk"),
             duration_seconds=float(motion_plan.get("_duration_seconds") or 8.0),
             Image=Image,
@@ -3137,8 +3179,7 @@ def _render_layered_frame(
         )
     if (
         action == "journey"
-        and str(motion_plan.get("directionality") or "").lower()
-        in {"right_to_left", "reverse"}
+        and _journey_faces_left(motion_plan)
     ):
         rendered_character = ImageOps.mirror(rendered_character)
     estimated_character_height = max(12, int(frame.height * values["scale"]))
@@ -3206,6 +3247,9 @@ def _render_layered_frame(
         scale=values["scale"],
         rotation=values["rotation"],
         ground_contact=values.get("ground_contact", 1.0),
+        shadow_ground_y=(values.get('shadow_ground_y')
+                         if motion_plan.get('background_key') in STORY_BACKGROUND_ROUTES
+                         else None),
     )
     _draw_action_effects(
         frame=frame,
@@ -3680,6 +3724,11 @@ async def generate_hf_fairytale_video(
         and motion_plan.get("action") == "journey"
         and motion_plan.get("pace") in {"walk", "run"}
     )
+    use_rear_cycle = bool(
+        use_run_cycle_sheet
+        and isinstance(character_target_journey_sheet_bytes, bytes)
+        and _journey_prefers_rear(motion_plan)
+    )
     use_crawl_cycle_sheet = bool(
         use_layered_animation
         and isinstance(character_crawl_cycle_sheet_bytes, bytes)
@@ -3864,7 +3913,8 @@ async def generate_hf_fairytale_video(
             )
         elif use_run_cycle_sheet:
             animation_mode = (
-                "sprite_run_cycle_road_v16_stride_amplified"
+                "sprite_journey_rear_v4"
+                if use_rear_cycle else "sprite_run_cycle_road_v16_stride_amplified"
                 if motion_plan.get("pace") == "run"
                 else "sprite_walk_cycle_road_v16_slow_stride"
             )
@@ -4017,6 +4067,7 @@ async def generate_hf_fairytale_video(
                 use_target_journey_sheet or use_run_cycle_sheet
             ),
             "identity_locked_run_cycle": use_run_cycle_sheet,
+            "journey_view": "rear" if use_rear_cycle else "side_or_three_quarter",
             "run_cycle_character_key": (
                 context.get("character_key") if use_run_cycle_sheet else None
             ),

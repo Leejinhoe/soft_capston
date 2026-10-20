@@ -1515,6 +1515,7 @@ class HfVideoProviderTests(unittest.TestCase):
                 self.assertEqual(plan["background_key"], background_key)
 
     def test_each_panorama_route_moves_forward_and_deeper(self):
+        from story_background_pack import STORY_BACKGROUND_ROUTES
         for background_key in BACKGROUND_JOURNEY_ROUTES:
             with self.subTest(background_key=background_key):
                 plan = build_video_motion_plan(
@@ -1533,9 +1534,12 @@ class HfVideoProviderTests(unittest.TestCase):
                 self.assertTrue(all(position is not None for position in positions))
                 x_values = [position[0] for position in positions]
                 y_values = [position[1] for position in positions]
-                self.assertEqual(x_values, sorted(x_values))
+                # Legacy panoramas travel right; landscape paths can turn left
+                # or recede straight into the scene instead.
+                if background_key not in STORY_BACKGROUND_ROUTES:
+                    self.assertEqual(x_values, sorted(x_values))
+                    self.assertGreater(x_values[-1] - x_values[0], 80)
                 self.assertEqual(y_values, sorted(y_values, reverse=True))
-                self.assertGreater(x_values[-1] - x_values[0], 80)
                 self.assertGreater(y_values[0] - y_values[-1], 100)
 
     def test_castle_route_stays_on_the_visible_road(self):

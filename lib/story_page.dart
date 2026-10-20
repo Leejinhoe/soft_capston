@@ -71,6 +71,12 @@ class _StoryPageState extends State<StoryPage> {
   void initState() {
     super.initState();
     _initTts();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = context.read<AppState>();
+      final story = widget.preloadedStory ?? state.currentStory;
+      if (story != null) state.restoreMediaJobs(story);
+    });
   }
 
   @override

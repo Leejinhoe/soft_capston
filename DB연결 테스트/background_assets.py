@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any, Dict, Optional
+from story_background_pack import STORY_BACKGROUND_ASSETS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -116,6 +117,9 @@ BACKGROUND_ASSETS = [
 ]
 
 
+BACKGROUND_ASSETS.extend(STORY_BACKGROUND_ASSETS)
+
+
 def _normalize(value: Optional[str]) -> str:
     return " ".join((value or "").strip().lower().split())
 
@@ -132,6 +136,11 @@ def select_background_asset(
 ) -> Optional[Dict[str, Any]]:
     normalized_genre = _normalize_genre(genre)
     normalized_story = _normalize(story_text)
+    context = visual_context if isinstance(visual_context, dict) else {}
+    raw_keys = context.get("background_keys", [])
+    background_keys = {
+        key for key in raw_keys if isinstance(key, str)
+    } if isinstance(raw_keys, (list, tuple)) else set()
     candidates = [
         asset
         for asset in BACKGROUND_ASSETS
@@ -140,6 +149,11 @@ def select_background_asset(
     ]
     if not candidates:
         candidates = BACKGROUND_ASSETS
+    else:
+        candidates = [
+            asset for asset in BACKGROUND_ASSETS
+            if asset in candidates or asset["key"] in background_keys
+        ]
 
     best_asset = None
     best_score = -1
@@ -155,8 +169,10 @@ def select_background_asset(
             for keyword in asset["scene_keywords"]
             if _normalize(keyword) in normalized_story
         )
-        context = visual_context or {}
-        direct_score = 8 if asset["key"] in context.get("background_keys", []) else 0
+        direct_score = 8 if asset["key"] in background_keys else 0
+        if asset.get("requires_scene_match") and not (keyword_score or direct_score):
+            continue
+        keyword_score *= asset.get("keyword_weight", 1)
         context_tags = set(context.get("effect_tags", []))
         tag_score = 2 * len(context_tags.intersection(asset.get("visual_tags", [])))
         score = genre_score + keyword_score + direct_score + tag_score
@@ -170,7 +186,7 @@ def select_background_asset(
                 "path": path,
                 "video_path": video_path,
                 "video_source": (
-                    "panorama_asset"
+                    asset.get("video_source", "panorama_asset")
                     if asset.get("video_filename")
                     else "standard_asset"
                 ),

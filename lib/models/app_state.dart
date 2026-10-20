@@ -830,6 +830,22 @@ class AppState extends ChangeNotifier {
     psychResult = _buildPsychResultFromStory(story);
     notifyListeners();
     _queueStorySync(story, () => _syncReadingState(story));
+    restoreMediaJobs(story);
+  }
+
+  void restoreMediaJobs(StorySession story) {
+    for (final chapter in story.chapters) {
+      if (chapter.mediaStatus != 'pending' && chapter.mediaStatus != 'running') continue;
+      if (story.mediaGenerationChapterNumbers.contains(chapter.chapter)) continue;
+      final jobId = chapter.mediaJobId;
+      if (jobId == null || jobId.isEmpty) {
+        chapter.mediaStatus = 'failed';
+        chapter.mediaError = '저장된 생성 작업을 찾을 수 없습니다. 다시 시도해주세요.';
+        notifyListeners();
+        continue;
+      }
+      unawaited(_generateMediaForChapter(story, chapter, resumeJobId: jobId));
+    }
   }
 
   Future<bool> _syncSceneIfNeeded(
@@ -861,15 +877,16 @@ class AppState extends ChangeNotifier {
     StorySession session,
     StoryChapter chapter, {
     bool includeVideo = false,
+    String? resumeJobId,
   }) async {
     if (_isTemporaryStory(session)) return;
     if (chapter.text.trim().isEmpty) return;
-    if (!includeVideo && chapter.imageBytes != null) return;
+    if (resumeJobId == null && !includeVideo && chapter.imageBytes != null) return;
     if (!session.syncedChapterNumbers.contains(chapter.chapter)) return;
 
     final hasImageUrl = chapter.imageUrl?.trim().isNotEmpty ?? false;
     final hasVideoUrl = chapter.videoUrl?.trim().isNotEmpty ?? false;
-    if ((!includeVideo && hasImageUrl) || (includeVideo && hasVideoUrl)) return;
+    if (resumeJobId == null && ((!includeVideo && hasImageUrl) || (includeVideo && hasVideoUrl))) return;
 
     if (session.mediaGenerationChapterNumbers.contains(chapter.chapter)) {
       return;
@@ -892,6 +909,7 @@ class AppState extends ChangeNotifier {
         characterKey: session.selectedHeroCharacterKey,
         sceneContract: chapter.sceneContract,
         includeVideo: includeVideo,
+        resumeJobId: resumeJobId,
       );
 
       if (media == null) {

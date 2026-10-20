@@ -1,4 +1,5 @@
 import unittest
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -84,6 +85,52 @@ class MediaJobDocumentTests(unittest.TestCase):
 
 
 class MediaJobLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_receding_run_loads_rear_asset_in_backend(self):
+        class StopBeforeStorage(BaseException):
+            pass
+
+        rear = AsyncMock(return_value=({'quality_tier': 'rear_v4'}, b'rear'))
+        run = AsyncMock(return_value=({'quality_tier': 'run_v16'}, b'run'))
+        renderer = AsyncMock(side_effect=StopBeforeStorage)
+        profile = {'character_key': 'male_01', 'name': 'Hero'}
+        plan = {'action': 'journey', 'pace': 'run', 'target': 'scene',
+                'background_key': 'mystery_grand_library'}
+        contract = {'valid': True, 'action': 'journey'}
+        with ExitStack() as stack:
+            for name, value in {
+                'load_story_cast': [], 'load_visual_context': {},
+                'load_active_character_profile': profile,
+                'generate_composite_scene': {'image_bytes': b'image', 'content_type': 'image/png',
+                                             'provider': 'composite', 'model': 'test'},
+                'upload_generated_media_file': {},
+            }.items():
+                stack.enter_context(patch.object(main, name, AsyncMock(return_value=value)))
+            for name, value in {
+                'select_background_asset': {'key': 'mystery_grand_library'},
+                'build_video_motion_plan': plan,
+                'select_character_asset': {'pose': 'walking'},
+                'select_character_action_cycle_sheet': None,
+                'select_character_action_sheet': None,
+                'select_character_run_cycle_sheet': {'key': 'run'},
+                'select_character_target_journey_sheet': {'key': 'rear'},
+                'resolve_scene_contract': contract,
+                'bind_scene_contract_participants': contract,
+            }.items():
+                stack.enter_context(patch.object(main, name, return_value=value))
+            stack.enter_context(patch.object(main, 'download_profile_target_journey_sheet', rear))
+            stack.enter_context(patch.object(main, 'download_profile_run_cycle_sheet', run))
+            stack.enter_context(patch.object(main, 'inspect_generated_media', return_value={'passed': True}))
+            stack.enter_context(patch.object(main, 'generate_hf_fairytale_video', renderer))
+            with self.assertRaises(StopBeforeStorage):
+                await main.generate_and_store_backend_media(
+                    story_text='The hero runs into the library.', character_key='male_01', include_video=True,
+                )
+        rear.assert_awaited_once_with(profile)
+        run.assert_awaited_once_with(profile)
+        renderer.assert_awaited_once()
+        self.assertEqual(renderer.await_args.kwargs['motion_context']['character_target_journey_sheet_bytes'], b'rear')
+        self.assertEqual(renderer.await_args.kwargs['motion_context']['character_run_cycle_sheet_bytes'], b'run')
+
     async def test_image_only_composition_skips_video_background_read(self):
         class FakePath:
             def __init__(self, data, name, error=None):
