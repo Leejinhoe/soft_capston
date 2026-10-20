@@ -187,9 +187,9 @@ def identity_context_from_profile(profile: Optional[Mapping[str, Any]]) -> Dict[
     if not isinstance(profile, Mapping):
         return {}
     assets = profile.get("assets")
+    assets = [item for item in assets if isinstance(item, Mapping)] if isinstance(assets, list) else []
     selected = next(
-        (item for item in assets if item.get("quality_tier") == "premium_reference")
-        if isinstance(assets, list) else (),
+        (item for item in assets if item.get("quality_tier") == "premium_reference"),
         None,
     )
     if selected is None and isinstance(assets, list):

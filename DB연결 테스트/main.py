@@ -33,6 +33,7 @@ from account_moderation import (
     serialize_warning,
 )
 from background_assets import select_background_asset
+from story_background_pack import prefers_rear_journey
 from character_assets import (
     build_character_action_hint,
     select_character_asset,
@@ -76,6 +77,7 @@ from media_queue import (
     serialize_optional_datetime,
 )
 from media_cache import build_media_cache_key
+from media_revision import render_revision
 from media_quality_gate import evaluate_media_quality
 from media_compositor import compose_background_scene, compose_story_scene
 from hf_media_provider import (
@@ -1596,7 +1598,7 @@ async def generate_and_store_backend_media(
         target_asset_available = bool(
             planned_action == "journey"
             and pace in {"walk", "run"}
-            and asset_motion_plan.get("target") != "scene"
+            and (asset_motion_plan.get("target") != "scene" or prefers_rear_journey(asset_motion_plan))
             and select_character_target_journey_sheet(character_profile)
         )
         run_asset_available = bool(
@@ -1619,7 +1621,7 @@ async def generate_and_store_backend_media(
         use_target_asset = bool(
             not use_dedicated_asset
             and not use_action_asset
-            and not use_run_asset
+            and (not use_run_asset or prefers_rear_journey(asset_motion_plan))
             and target_asset_available
         )
         use_jump_asset = bool(
@@ -1743,7 +1745,7 @@ async def generate_and_store_backend_media(
         )
         version_match = re.search(r"(_v\d+)$", selected_quality_tier)
         motion_asset_version = version_match.group(1)[1:] if version_match else None
-        video_task = asyncio.create_task(generate_hf_fairytale_video(
+        video_task = lambda: generate_hf_fairytale_video(
             image_bytes=(
                 generated.get("video_background_bytes")
                 if environment_only
@@ -1804,7 +1806,7 @@ async def generate_and_store_backend_media(
                 "background_key": generated.get("background_key"),
                 "motion_focus": visual_context.get("motion_focus", "character"),
             },
-        ))
+        )
 
     identity_metadata = {
         key: value
@@ -1857,7 +1859,7 @@ async def generate_and_store_backend_media(
     video_quality_report = None
     if video_task is not None:
         try:
-            video_generated = await video_task
+            video_generated = await video_task()
             video_quality_report = inspect_generated_media(
                 video_generated["video_bytes"],
                 content_type=video_generated["content_type"],
@@ -2235,6 +2237,18 @@ async def execute_media_generation(
     return {**result, "saved": media["scene_saved"]}
 
 
+async def cached_media_files_exist(job, include_video):
+    fields = ['image_file_id'] + (['video_file_id'] if include_video else [])
+    for field in fields:
+        file_id = coerce_object_id(job.get(field))
+        if file_id is None:
+            return False
+        files = await media_files_bucket.find({'_id': file_id}).to_list(length=1)
+        if not files:
+            return False
+    return True
+
+
 def build_active_media_job_key(
     owner_user_id: str,
     story_id: Optional[str],
@@ -2388,6 +2402,11 @@ async def enqueue_media_job(
             story_id=story_id,
             step_number=step_number,
         )
+        revision = await asyncio.to_thread(render_revision, Path(__file__).resolve().parent.parent)
+        if payload.character_key:
+            profile = await character_profiles_collection.find_one({'character_key': payload.character_key})
+            revision += hashlib.sha256(json.dumps(profile, sort_keys=True, default=str).encode('utf-8')).hexdigest()
+        cache_key = f"{cache_key}:{revision}"
         active_key = build_active_media_job_key(
             owner_user_id,
             story_id,
@@ -2422,6 +2441,12 @@ async def enqueue_media_job(
                 "status": "completed",
             }
         )
+        if cached_job and not await cached_media_files_exist(cached_job, payload.include_video):
+            await media_jobs_collection.update_one(
+                {'_id': cached_job['_id'], 'status': 'completed'},
+                {'$unset': {'cache_key': ''}},
+            )
+            cached_job = None
         if cached_job:
             if story_id is not None and step_number is not None:
                 await persist_scene_media(
@@ -2454,6 +2479,7 @@ async def enqueue_media_job(
             step_number=step_number,
             owner_user_id=owner_user_id,
         )
+        job['cache_key'] = cache_key
         try:
             result = await media_jobs_collection.insert_one(job)
         except DuplicateKeyError:

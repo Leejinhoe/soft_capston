@@ -11,6 +11,12 @@ from character_identity import (
 
 
 class CharacterIdentityTests(unittest.TestCase):
+    def test_missing_or_malformed_assets_keep_profile_identity(self):
+        for assets in (None, {}, [None, 'invalid']):
+            with self.subTest(assets=assets):
+                context = identity_context_from_profile({'character_key': 'male_01', 'assets': assets})
+                self.assertEqual(context['character_key'], 'male_01')
+
     def test_context_uses_key_and_face_asset_without_display_name(self):
         context = build_character_identity_context(
             character_key="female_01",

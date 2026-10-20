@@ -985,8 +985,12 @@ class DbService {
     String? characterKey,
     Map<String, dynamic>? sceneContract,
     bool includeVideo = false,
+    String? resumeJobId,
   }) async {
     try {
+      if (resumeJobId != null && resumeJobId.isNotEmpty) {
+        return await _pollSceneMediaJob({'job_id': resumeJobId, 'status': 'pending'});
+      }
       final response = await http
           .post(
             _apiUri('/api/stories/$storyId/scenes/$stepNumber/media/jobs'),
