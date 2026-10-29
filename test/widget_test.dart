@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:fairytale_hyeonlim_merged/login_page.dart';
 import 'package:fairytale_hyeonlim_merged/main.dart';
+import 'package:fairytale_hyeonlim_merged/models/app_state.dart';
 
 void main() {
   testWidgets('login screen renders title', (WidgetTester tester) async {
@@ -11,7 +13,12 @@ void main() {
   });
 
   testWidgets('dark app bar titles remain readable', (tester) async {
-    await tester.pumpWidget(const FairyTaleApp());
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AppState(),
+        child: const FairyTaleApp(),
+      ),
+    );
     final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(app.theme!.appBarTheme.titleTextStyle!.color, Colors.white);
   });

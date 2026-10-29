@@ -288,6 +288,9 @@ class _StoryPageState extends State<StoryPage> {
         speakerWav: _recordedVoiceWav,
       );
       if (!mounted || requestNumber != _ttsRequestNumber) return;
+      setState(() {
+        _ttsStatus = '음성이 도착했어요. 재생을 시작합니다';
+      });
       await _narrationPlayer.play(BytesSource(audioBytes));
       if (!mounted || requestNumber != _ttsRequestNumber) return;
       setState(() {

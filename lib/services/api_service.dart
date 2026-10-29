@@ -171,7 +171,7 @@ class ApiService {
     final characterInstruction = _characterLockInstruction(
       normalizedCharacterContext,
     );
-    final response = await http
+    var response = await http
         .post(
           Uri.parse('$baseUrl/story/start'),
           headers: {'Content-Type': 'application/json'},
@@ -191,14 +191,47 @@ class ApiService {
             'include_image': false,
           }),
         )
-        .timeout(const Duration(seconds: 600));
+        .timeout(const Duration(seconds: 30));
+
+    if (response.statusCode == 202) {
+      final startJob = json.decode(utf8.decode(response.bodyBytes)) as Map;
+      final jobId = startJob['job_id']?.toString();
+      if (jobId == null || jobId.isEmpty) {
+        throw Exception('동화 생성 작업 ID를 받지 못했습니다.');
+      }
+
+      final deadline = DateTime.now().add(const Duration(minutes: 15));
+      while (DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        response = await http
+            .get(
+              Uri.parse(
+                '$baseUrl/story/start/jobs/${Uri.encodeComponent(jobId)}',
+              ),
+            )
+            .timeout(const Duration(seconds: 30));
+        if (response.statusCode != 200) {
+          throw Exception(_responseError(response, '동화 생성 상태 확인 실패'));
+        }
+
+        final job = json.decode(utf8.decode(response.bodyBytes)) as Map;
+        switch (job['status']) {
+          case 'completed':
+            final result = Map<String, dynamic>.from(job['result'] as Map);
+            return _normalizeStoryResponse(result);
+          case 'failed':
+            throw Exception(job['error']?.toString() ?? '동화 생성에 실패했습니다.');
+        }
+      }
+      throw Exception('동화 생성이 오래 걸리고 있어요. 잠시 후 다시 시도해 주세요.');
+    }
 
     if (response.statusCode == 200) {
       return _normalizeStoryResponse(
         json.decode(utf8.decode(response.bodyBytes)),
       );
     }
-    throw Exception('동화 생성 실패: ${response.statusCode}');
+    throw Exception(_responseError(response, '동화 생성 실패'));
   }
 
   static Future<Map<String, dynamic>> continueStory({

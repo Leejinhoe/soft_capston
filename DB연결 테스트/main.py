@@ -155,6 +155,19 @@ def route_access_policy(path: str, method: str) -> str:
         return "account_owner"
     if path.startswith("/api/media/"):
         return "authenticated"
+    if path == "/api/auth/session" and normalized_method == "GET":
+        return "authenticated"
+    if path == "/api/vocabularies/add" and normalized_method == "POST":
+        return "authenticated"
+    if re.fullmatch(r"/api/vocabularies/[^/]+", path) and normalized_method == "DELETE":
+        return "authenticated"
+    if path.startswith("/api/community/") and normalized_method in {
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+    }:
+        return "authenticated"
     if path == "/api/community/reports" and normalized_method == "POST":
         return "authenticated"
     if path.startswith("/api/stories/") and normalized_method in {
@@ -503,6 +516,24 @@ def authenticated_user_id(request: Request) -> str:
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication is required.")
     return user_id
+
+
+def authenticated_account_id(request: Request) -> str:
+    auth = getattr(request.state, "auth", None) or {}
+    account_id = str(auth.get("account_id") or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=401, detail="Authentication is required.")
+    return account_id
+
+
+async def authenticated_user_profile(request: Request) -> Dict[str, Any]:
+    user_id = authenticated_user_id(request)
+    if not ObjectId.is_valid(user_id):
+        raise HTTPException(status_code=401, detail="Invalid authenticated user.")
+    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user or user.get("account_status") == "deleted":
+        raise HTTPException(status_code=401, detail="User session is no longer valid.")
+    return user
 
 
 def is_shared_character_asset(metadata: Dict[str, Any]) -> bool:
@@ -3383,6 +3414,20 @@ async def verify_email_code(payload: EmailVerificationVerifySchema):
     }
 
 
+@app.get("/api/auth/session")
+async def get_auth_session(request: Request):
+    user = await authenticated_user_profile(request)
+    return {
+        "id": str(user["_id"]),
+        "account_id": user.get("account_id"),
+        "nickname": user.get("nickname"),
+        "provider": user.get("provider", "local"),
+        "email": user.get("email"),
+        "phone": user.get("phone"),
+        "address": user.get("address"),
+    }
+
+
 @app.post("/api/users/register", response_description="Register user")
 async def register_user(user: UserSchema):
     if is_admin_account_id(user.account_id):
@@ -4712,11 +4757,15 @@ async def update_story(story_id: str, update: StoryUpdateSchema, request: Reques
 
 
 @app.post("/api/vocabularies/add", response_description="紐⑤Ⅴ???⑥뼱 異붽?")
-async def add_vocabulary(vocab: VocabularySchema):
+async def add_vocabulary(vocab: VocabularySchema, request: Request):
     if not ObjectId.is_valid(vocab.user_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?ъ슜??ID?낅땲??")
     if not ObjectId.is_valid(vocab.origin_story_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?숉솕 ID?낅땲??")
+    user_id = authenticated_user_id(request)
+    if vocab.user_id != user_id:
+        raise HTTPException(status_code=403, detail="본인 단어장에만 단어를 저장할 수 있습니다.")
+    await require_story_owner(vocab.origin_story_id, request)
 
     now = vocab.created_at or datetime.utcnow()
     meaning = vocab.definition or vocab.easy
@@ -4775,6 +4824,7 @@ async def list_user_vocabularies(user_id: str):
 @app.delete("/api/vocabularies/{vocab_id}", response_description="?⑥뼱????ぉ ??젣")
 async def delete_vocabulary(
     vocab_id: str,
+    request: Request,
     owner: OwnerActionSchema,
 ):
     if not ObjectId.is_valid(vocab_id):
@@ -4785,11 +4835,8 @@ async def delete_vocabulary(
     if not vocab:
         raise HTTPException(status_code=404, detail="?⑥뼱瑜?李얠쓣 ???놁뒿?덈떎.")
 
-    if owner.user_id:
-        if not ObjectId.is_valid(owner.user_id):
-            raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?ъ슜??ID?낅땲??")
-        if not owner_matches(vocab.get("user_id"), owner.user_id):
-            raise HTTPException(status_code=403, detail="???⑥뼱留???젣?????덉뒿?덈떎.")
+    if not owner_matches(vocab.get("user_id"), authenticated_user_id(request)):
+        raise HTTPException(status_code=403, detail="본인 단어만 삭제할 수 있습니다.")
 
     await vocabularies_collection.delete_one({"_id": vocab_object_id})
     return {"message": "?⑥뼱媛 ??젣?섏뿀?듬땲??", "vocab_id": vocab_id}
@@ -4859,11 +4906,15 @@ async def list_community_posts(sort: str = "latest"):
 
 
 @app.post("/api/community/posts", response_description="?숉솕 寃뚯떆湲 怨듭쑀")
-async def create_community_post(post: CommunityPostSchema):
+async def create_community_post(post: CommunityPostSchema, request: Request):
     post_dict = post.model_dump()
+    author = await authenticated_user_profile(request)
+    post_dict["author_account_id"] = authenticated_account_id(request)
+    post_dict["author_name"] = author.get("nickname") or post_dict["author_account_id"]
     if post.story_id:
         if not ObjectId.is_valid(post.story_id):
             raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ?숉솕 ID?낅땲??")
+        await require_story_owner(post.story_id, request)
         post_dict["story_id"] = post.story_id
 
     post_dict["comments"] = []
@@ -4904,38 +4955,31 @@ async def get_community_post(post_id: str):
 
 
 @app.post("/api/community/posts/{post_id}/like", response_description="Like community post")
-async def like_community_post(post_id: str, like: LikeSchema):
+async def like_community_post(post_id: str, like: LikeSchema, request: Request):
     if not ObjectId.is_valid(post_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? 寃뚯떆湲 ID?낅땲??")
 
     post_object_id = ObjectId(post_id)
-    account_id = like.account_id.strip() if like.account_id else None
-
-    if account_id:
-        post = await community_posts_collection.find_one({"_id": post_object_id})
-        if not post:
-            raise HTTPException(status_code=404, detail="寃뚯떆湲??李얠쓣 ???놁뒿?덈떎.")
-        liked_by = post.get("liked_by", [])
-        if account_id in liked_by:
-            await community_posts_collection.update_one(
-                {"_id": post_object_id},
-                {
-                    "$inc": {"like_count": -1, "likes": -1},
-                    "$pull": {"liked_by": account_id},
-                },
-            )
-        else:
-            await community_posts_collection.update_one(
-                {"_id": post_object_id},
-                {
-                    "$inc": {"like_count": 1, "likes": 1},
-                    "$addToSet": {"liked_by": account_id},
-                },
-            )
+    account_id = authenticated_account_id(request)
+    post = await community_posts_collection.find_one({"_id": post_object_id})
+    if not post:
+        raise HTTPException(status_code=404, detail="寃뚯떆湲??李얠쓣 ???놁뒿?덈떎.")
+    liked_by = post.get("liked_by", [])
+    if account_id in liked_by:
+        await community_posts_collection.update_one(
+            {"_id": post_object_id},
+            {
+                "$inc": {"like_count": -1, "likes": -1},
+                "$pull": {"liked_by": account_id},
+            },
+        )
     else:
         await community_posts_collection.update_one(
             {"_id": post_object_id},
-            {"$inc": {"like_count": 1, "likes": 1}},
+            {
+                "$inc": {"like_count": 1, "likes": 1},
+                "$addToSet": {"liked_by": account_id},
+            },
         )
 
     post = await community_posts_collection.find_one({"_id": post_object_id})
@@ -4945,11 +4989,18 @@ async def like_community_post(post_id: str, like: LikeSchema):
 
 
 @app.post("/api/community/posts/{post_id}/comments", response_description="寃뚯떆湲 ?볤? ?묒꽦")
-async def add_community_comment(post_id: str, comment: CommunityCommentSchema):
+async def add_community_comment(
+    post_id: str,
+    comment: CommunityCommentSchema,
+    request: Request,
+):
     if not ObjectId.is_valid(post_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? 寃뚯떆湲 ID?낅땲??")
 
     comment_dict = comment.model_dump()
+    author = await authenticated_user_profile(request)
+    comment_dict["author_account_id"] = authenticated_account_id(request)
+    comment_dict["author_name"] = author.get("nickname") or comment_dict["author_account_id"]
     comment_dict["_id"] = ObjectId()
     comment_dict["schema_version"] = 2
     comment_dict["moderation_status"] = "visible"
@@ -4973,17 +5024,20 @@ async def add_community_comment(post_id: str, comment: CommunityCommentSchema):
 
 
 @app.delete("/api/community/posts/{post_id}", response_description="寃뚯떆湲 ??젣")
-async def delete_community_post(post_id: str, owner: OwnerActionSchema):
+async def delete_community_post(
+    post_id: str,
+    owner: OwnerActionSchema,
+    request: Request,
+):
     if not ObjectId.is_valid(post_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? 寃뚯떆湲 ID?낅땲??")
-    if not owner.account_id:
-        raise HTTPException(status_code=401, detail="濡쒓렇??怨꾩젙 ?뺣낫媛 ?꾩슂?⑸땲??")
+    account_id = authenticated_account_id(request)
 
     post_object_id = ObjectId(post_id)
     post = await community_posts_collection.find_one({"_id": post_object_id})
     if not post:
         raise HTTPException(status_code=404, detail="寃뚯떆湲??李얠쓣 ???놁뒿?덈떎.")
-    if post.get("author_account_id") != owner.account_id:
+    if post.get("author_account_id") != account_id:
         raise HTTPException(status_code=403, detail="??寃뚯떆湲留???젣?????덉뒿?덈떎.")
 
     await community_posts_collection.delete_one({"_id": post_object_id})
@@ -4998,11 +5052,11 @@ async def delete_community_comment(
     post_id: str,
     comment_id: str,
     owner: OwnerActionSchema,
+    request: Request,
 ):
     if not ObjectId.is_valid(post_id) or not ObjectId.is_valid(comment_id):
         raise HTTPException(status_code=400, detail="?좏슚?섏? ?딆? ID?낅땲??")
-    if not owner.account_id:
-        raise HTTPException(status_code=401, detail="濡쒓렇??怨꾩젙 ?뺣낫媛 ?꾩슂?⑸땲??")
+    account_id = authenticated_account_id(request)
 
     post_object_id = ObjectId(post_id)
     comment_object_id = ObjectId(comment_id)
@@ -5018,8 +5072,8 @@ async def delete_community_comment(
     if not target_comment:
         raise HTTPException(status_code=404, detail="?볤???李얠쓣 ???놁뒿?덈떎.")
 
-    is_comment_owner = target_comment.get("author_account_id") == owner.account_id
-    is_post_owner = post.get("author_account_id") == owner.account_id
+    is_comment_owner = target_comment.get("author_account_id") == account_id
+    is_post_owner = post.get("author_account_id") == account_id
     if not is_comment_owner and not is_post_owner:
         raise HTTPException(status_code=403, detail="???볤?留???젣?????덉뒿?덈떎.")
 

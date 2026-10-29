@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../services/vocabulary_catalog.dart';
 import 'character_profile.dart';
 import 'story_model.dart';
 
@@ -117,9 +118,40 @@ class AppState extends ChangeNotifier {
     currentEmail = email;
     currentPhone = phone;
     currentAddress = address;
+    unawaited(
+      DbService.persistSessionUser({
+        'id': userId,
+        'account_id': accountId,
+        'nickname': nickname,
+        'provider': provider,
+        'email': email,
+        'phone': phone,
+        'address': address,
+      }),
+    );
     _invalidateVocabularyCache();
     notifyListeners();
     unawaited(loadUserData());
+  }
+
+  Future<bool> restoreSignedInUser() async {
+    final user = await DbService.restoreSession();
+    if (user == null) return false;
+    final accountId = user['account_id']?.toString().trim() ?? '';
+    if (accountId.isEmpty) {
+      DbService.clearAccessToken();
+      return false;
+    }
+    setSignedInUser(
+      userId: user['id']?.toString(),
+      accountId: accountId,
+      nickname: user['nickname']?.toString() ?? accountId,
+      provider: user['provider']?.toString() ?? 'local',
+      email: user['email']?.toString(),
+      phone: user['phone']?.toString(),
+      address: user['address']?.toString(),
+    );
+    return true;
   }
 
   void clearSignedInUser() {
@@ -214,13 +246,19 @@ class AppState extends ChangeNotifier {
         characterContext: _characterContext(selectedCharacterKey),
       );
 
-      final vocab = (data['vocab'] as List? ?? [])
+      final firstStoryText = data['story_text']?.toString() ?? '';
+      final serverVocab = (data['vocab'] as List? ?? [])
           .map((e) => VocabWord.fromJson(e as Map<String, dynamic>))
           .toList();
+      final catalogVocab = await VocabularyCatalog.findMatches(
+        firstStoryText,
+        sourceStoryTitle: prompt,
+      );
+      final vocab = _mergeTemporaryVocab(serverVocab, catalogVocab);
 
       final firstChapter = StoryChapter(
         chapter: 1,
-        text: data['story_text']?.toString() ?? '',
+        text: firstStoryText,
         imageBytes: _decodeImage(data['image_b64']),
         sceneContract: data['scene_contract'] is Map
             ? Map<String, dynamic>.from(data['scene_contract'] as Map)
@@ -304,9 +342,14 @@ class AppState extends ChangeNotifier {
       final newText = data['new_text']?.toString() ?? '';
       final newChapter = session.currentChapter + 1;
 
-      final vocab = (data['vocab'] as List? ?? [])
+      final serverVocab = (data['vocab'] as List? ?? [])
           .map((e) => VocabWord.fromJson(e as Map<String, dynamic>))
           .toList();
+      final catalogVocab = await VocabularyCatalog.findMatches(
+        newText,
+        sourceStoryTitle: session.initialPrompt,
+      );
+      final vocab = _mergeTemporaryVocab(serverVocab, catalogVocab);
 
       final chapter = StoryChapter(
         chapter: newChapter,

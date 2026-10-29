@@ -370,7 +370,7 @@ class _CreatePageState extends State<CreatePage> {
                   ),
                   SizedBox(width: 12),
                   Text(
-                    '동화 생성 중... (1-2분)',
+                    '이야기와 첫 장면을 만들고 있어요',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 15,

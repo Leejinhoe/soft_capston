@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
@@ -13,13 +15,98 @@ import '../models/story_model.dart';
 
 class DbService {
   static String? _accessToken;
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  static const String _accessTokenKey = 'fairytale.access_token';
+  static const String _sessionUserKey = 'fairytale.session_user';
 
-  static void setAccessToken(String? token) {
+  static Future<void> setAccessToken(String? token) async {
     final normalized = token?.trim();
     _accessToken = normalized == null || normalized.isEmpty ? null : normalized;
+    try {
+      if (_accessToken == null) {
+        await _secureStorage.delete(key: _accessTokenKey);
+      } else {
+        await _secureStorage.write(key: _accessTokenKey, value: _accessToken);
+      }
+    } catch (error) {
+      debugPrint('Could not persist login token: $error');
+    }
   }
 
-  static void clearAccessToken() => _accessToken = null;
+  static void clearAccessToken() {
+    _accessToken = null;
+    unawaited(_deletePersistedSession());
+  }
+
+  static Future<void> _deletePersistedSession() async {
+    try {
+      await _secureStorage.delete(key: _accessTokenKey);
+      await _secureStorage.delete(key: _sessionUserKey);
+    } catch (error) {
+      debugPrint('Could not clear saved login session: $error');
+    }
+  }
+
+  static Future<Map<String, dynamic>?> restoreSession() async {
+    String? token;
+    Map<String, dynamic>? cachedUser;
+    try {
+      token = await _secureStorage.read(key: _accessTokenKey);
+      final cachedJson = await _secureStorage.read(key: _sessionUserKey);
+      if (cachedJson != null) {
+        final decoded = jsonDecode(cachedJson);
+        if (decoded is Map<String, dynamic>) cachedUser = decoded;
+      }
+    } catch (error) {
+      debugPrint('Could not read saved login session: $error');
+      return null;
+    }
+
+    if (token == null || token.trim().isEmpty) return null;
+    _accessToken = token;
+
+    try {
+      final response = await http
+          .get(_apiUri('/api/auth/session'), headers: _jsonHeaders)
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final user = jsonDecode(response.body) as Map<String, dynamic>;
+        await persistSessionUser(user);
+        return user;
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        clearAccessToken();
+        return null;
+      }
+      return cachedUser;
+    } catch (error) {
+      debugPrint('Session validation unavailable; using saved profile: $error');
+      return cachedUser;
+    }
+  }
+
+  static Future<void> persistSessionUser(Map<String, dynamic> user) async {
+    final snapshot = <String, dynamic>{
+      for (final key in const [
+        'id',
+        'account_id',
+        'nickname',
+        'provider',
+        'email',
+        'phone',
+        'address',
+      ])
+        if (user[key] != null) key: user[key],
+    };
+    try {
+      await _secureStorage.write(
+        key: _sessionUserKey,
+        value: jsonEncode(snapshot),
+      );
+    } catch (error) {
+      debugPrint('Could not persist saved profile: $error');
+    }
+  }
 
   static Map<String, String> get _jsonHeaders {
     final headers = <String, String>{'Content-Type': 'application/json'};
@@ -170,7 +257,12 @@ class DbService {
       final streamed = await request.send().timeout(
         const Duration(seconds: 180),
       );
-      response = await http.Response.fromStream(streamed);
+      // send() only waits for the response headers. Bound the body read too,
+      // otherwise a stalled tunnel can leave narration showing as "generating"
+      // forever after XTTS has already finished.
+      response = await http.Response.fromStream(streamed).timeout(
+        const Duration(seconds: 180),
+      );
     }
 
     if (response.statusCode == 200) return response.bodyBytes;
@@ -241,7 +333,7 @@ class DbService {
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      setAccessToken(data['access_token']?.toString());
+      await setAccessToken(data['access_token']?.toString());
       return data;
     }
     throw Exception(
@@ -295,7 +387,7 @@ class DbService {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      setAccessToken(data['access_token']?.toString());
+      await setAccessToken(data['access_token']?.toString());
       return data;
     }
     throw Exception(

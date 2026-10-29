@@ -6,7 +6,9 @@ import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
+import 'admin_page.dart';
 import 'login_page.dart';
+import 'main_screen.dart';
 import 'models/app_state.dart';
 
 const String _definedKakaoNativeKey = String.fromEnvironment(
@@ -107,7 +109,43 @@ class FairyTaleApp extends StatelessWidget {
           iconTheme: IconThemeData(color: Colors.white),
         ),
       ),
-      home: const LoginPage(),
+      home: const SessionGate(),
     );
+  }
+}
+
+class SessionGate extends StatefulWidget {
+  const SessionGate({super.key});
+
+  @override
+  State<SessionGate> createState() => _SessionGateState();
+}
+
+class _SessionGateState extends State<SessionGate> {
+  bool _isRestoring = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      await context.read<AppState>().restoreSignedInUser();
+    } finally {
+      if (mounted) setState(() => _isRestoring = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isRestoring) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final accountId = context.watch<AppState>().currentAccountId;
+    if (accountId == null || accountId.isEmpty) return const LoginPage();
+    if (accountId == '1111') return AdminPage(adminAccountId: accountId);
+    return const MainScreen();
   }
 }
