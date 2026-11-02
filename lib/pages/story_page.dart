@@ -669,55 +669,6 @@ class _StoryPageState extends State<StoryPage> {
             ),
             const SizedBox(height: 40),
             if (storyText.isNotEmpty) ...[
-              // 🔊 동화 듣기 (TTS) 버튼
-              GestureDetector(
-                onTap: playTTS,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 20,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isPlayingTTS
-                        ? const Color(0xFF5B21B6)
-                        : const Color(0xFF8B5CF6),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (isPlayingTTS
-                            ? const Color(0xFF5B21B6)
-                            : const Color(0xFF8B5CF6))
-                            .withOpacity(0.4),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        isPlayingTTS
-                            ? Icons.pause_circle_filled
-                            : Icons.volume_up_rounded,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        isPlayingTTS ? '동화 읽어주는 중...' : '🔊 동화 듣기',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
               // 📖 동화 본문 카드 (단어 클릭 가능)
               Container(
                 width: double.infinity,
@@ -746,28 +697,68 @@ class _StoryPageState extends State<StoryPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              // 🌐 커뮤니티에 동화 공유하기 단일 버튼
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF8B5CF6),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+              // 🔊 동화 듣기 + 🌐 커뮤니티 공유 버튼 (한 줄에 나란히)
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isPlayingTTS
+                            ? const Color(0xFF5B21B6)
+                            : const Color(0xFF8B5CF6),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: playTTS,
+                      icon: Icon(
+                        isPlayingTTS
+                            ? Icons.pause_circle_filled
+                            : Icons.volume_up_rounded,
+                        color: Colors.white,
+                      ),
+                      label: Text(
+                        isPlayingTTS ? '동화 읽어주는 중...' : '동화 듣기',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
-                  onPressed: shareStoryToCommunity,
-                  icon: const Icon(Icons.share, color: Colors.white),
-                  label: const Text(
-                    '커뮤니티에 이 동화 공유하기 🌐',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF8B5CF6),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: shareStoryToCommunity,
+                      icon: const Icon(Icons.share, color: Colors.white),
+                      label: const Text(
+                        '커뮤니티에 이 동화 공유하기',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ],
             const SizedBox(height: 30),

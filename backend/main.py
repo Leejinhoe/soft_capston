@@ -92,7 +92,37 @@ async def fetch_korean_dict_definition(word: str) -> str:
 # Gemini API 설정
 # ----------------------------------------
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-llm_model = genai.GenerativeModel("gemini-1.5-flash")
+# gemini-1.5-flash는 지원 종료(404). 바꾸고 싶으면 .env에 GEMINI_MODEL=... 지정
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+llm_model = genai.GenerativeModel(GEMINI_MODEL)
+
+
+def log_gemini_error(where: str, e: Exception) -> None:
+    """Gemini 호출 실패 시 예비 동작으로 넘어가기 전에 서버 터미널에 원인을 남깁니다."""
+    print(
+        f"[Gemini 오류] {where} 실패 → 예비 동작 사용 "
+        f"(model={GEMINI_MODEL}) {type(e).__name__}: {e}",
+        flush=True,
+    )
+
+
+def word_in_story(item: dict, story_text: str) -> bool:
+    """추천 단어가 동화 본문에 실제로 들어 있는지 확인합니다.
+
+    - surface: Gemini가 알려준 '본문에 쓰인 그대로'의 표현
+    - hard: 기본형 (용언이면 끝의 '다'를 뗀 어간도 확인. 예: '떠나다' → '떠나')
+    """
+    surface = (item.get("surface") or "").strip()
+    hard = (item.get("hard") or "").strip()
+    if surface and surface in story_text:
+        return True
+    if not hard:
+        return False
+    if hard in story_text:
+        return True
+    if hard.endswith("다") and len(hard) >= 3 and hard[:-1] in story_text:
+        return True
+    return False
 
 
 # ----------------------------------------
@@ -194,7 +224,7 @@ async def normalize_word_with_gemini(raw_word: str) -> str:
         normalized = response.text.strip().replace(" ", "").replace("\n", "")
         return normalized if normalized else clean_raw
     except Exception as e:
-        print(f"Gemini 단어 정제 오류: {e}")
+        log_gemini_error("단어 원형 정제", e)
         clean = re.sub(r"[^\w\s가-힣]", "", clean_raw)
         return re.sub(r"(은|는|이|가|을|를|과|와|으로|로|에서|에게|도|만|의|에)$", "", clean)
 
@@ -293,6 +323,7 @@ async def search_vocabulary_with_context(body: ContextSearchRequest):
             "definition": detailed_def
         }
     except Exception as e:
+        log_gemini_error("단어 클릭 뜻풀이(search-context)", e)
         clean_word = re.sub(r"[^\w\s가-힣]", "", raw_word)
         official_def = await fetch_korean_dict_definition(clean_word)
         return {
@@ -342,7 +373,7 @@ async def generate_story(body: GenerateStoryRequest):
         story_response = llm_model.generate_content(story_prompt)
         story_text = story_response.text.strip()
     except Exception as e:
-        print(f"동화 생성 오류: {e}")
+        log_gemini_error("동화 생성", e)
         story_text = f"옛날 옛날에 {body.prompt}이(가) 살고 있었어요.\n어느 날 {body.genre} 분위기가 물씬 풍기는 신비한 숲 속으로 여행을 떠났답니다.\n숲 속에서 반짝이는 별을 발견하고 행복하게 웃었어요."
 
     # 1. 💾 [신규] 생성된 동화 무조건 자동 저장 (보관함 수동 저장 버튼 제거 대응)
@@ -367,13 +398,15 @@ async def generate_story(body: GenerateStoryRequest):
     {story_text}
 
     [필수 규칙]
-    1. 'hard' 항목은 동화 텍스트에 쓰인 단어의 조사/어미를 뗀 기본형/원형으로 작성할 것. (예: 본문에 '날아갔어요'가 있으면 '날아가다')
-    2. 절대 동화 텍스트 본문에 없는 단어를 지어내지 마!
-    3. 'definition': 아이 눈높이에 맞춘 다정한 뜻풀이 1문장.
+    1. 'surface' 항목은 동화 텍스트에 쓰인 모습 그대로 복사할 것. (예: '날아갔어요')
+    2. 'hard' 항목은 그 단어의 조사/어미를 뗀 기본형/원형으로 작성할 것. (예: '날아가다')
+    3. 절대 동화 텍스트 본문에 없는 단어를 지어내지 마!
+    4. 'definition': 아이 눈높이에 맞춘 다정한 뜻풀이 1문장.
 
     반드시 아래 JSON 배열 형식으로만 응답해줘:
     [
       {{
+        "surface": "본문에 쓰인 그대로의 표현",
         "hard": "본문에 있는 단어 원형",
         "definition": "다정한 뜻풀이"
       }}
@@ -386,22 +419,31 @@ async def generate_story(body: GenerateStoryRequest):
             generation_config={"response_mime_type": "application/json"}
         )
         raw_vocab = json.loads(vocab_response.text)
-
-        # 본문 포함 여부 2차 파이썬 정밀 검증
-        vocab_list = []
-        for item in raw_vocab:
-            word_stem = item.get("hard", "").replace("다", "")
-            if word_stem and (word_stem in story_text or item.get("hard") in story_text):
-                vocab_list.append(item)
-            elif len(vocab_list) < 3:
-                vocab_list.append(item)
-
+        if not isinstance(raw_vocab, list):
+            raise ValueError(f"추천 단어 응답이 배열이 아님: {type(raw_vocab).__name__}")
     except Exception as e:
-        print(f"추천 단어 추출 오류: {e}")
-        vocab_list = [
+        log_gemini_error("추천 단어 추출", e)
+        raw_vocab = [
             {"hard": "여행", "definition": "새로운 곳으로 떠나는 즐거운 길이에요."},
             {"hard": "친구", "definition": "서로 사이좋게 지내는 다정한 사이예요."}
         ]
+
+    # 최종 목록: 동화 본문에 실제로 들어 있는 단어만 (예비용 기본 단어도 동일하게 검증)
+    vocab_list = []
+    seen = set()
+    for item in raw_vocab:
+        if not isinstance(item, dict):
+            continue
+        hard = (item.get("hard") or "").strip()
+        if not hard or hard in seen:
+            continue
+        if word_in_story(item, story_text):
+            vocab_list.append(item)
+            seen.add(hard)
+        else:
+            print(f"[추천 단어 제외] 본문에 없음: {hard!r}", flush=True)
+        if len(vocab_list) >= 5:
+            break
 
     return {
         "story_id": story_id,
