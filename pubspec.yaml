@@ -1,0 +1,68 @@
+name: test1
+description: "A new Flutter project."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+# Dependencies specify other packages that your package needs in order to work.
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0
+
+  # [추가] 갤러리/카메라 이미지 선택 패키지
+  image_picker: ^1.2.4
+
+  # 아이콘 패키지
+  cupertino_icons: ^1.0.8
+
+  # 카카오 로그인 SDK
+  kakao_flutter_sdk_common: ^2.0.0+1
+  kakao_flutter_sdk_user: ^2.0.0+1
+
+  # [추가] 로컬 저장소 (프로필 정보 저장용)
+  shared_preferences: ^2.2.2
+
+  # [이동] 차트 패키지 (dev_dependencies에서 dependencies로 이동)
+  fl_chart: ^0.68.0
+  just_audio: ^0.10.6
+  image_cropper: ^12.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices.
+  flutter_lints: ^6.0.0
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application.
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/a_dot_burr.jpeg
+  #   - images/a_dot_ham.jpeg
+
+  # To add custom fonts to your application, add a fonts section here.
