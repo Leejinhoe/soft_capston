@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/auth_service.dart';
 import 'user_list_page.dart';
 import 'report_list_page.dart';
 
@@ -193,7 +194,7 @@ class AdminPage extends StatelessWidget {
               height: 55,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  Navigator.pop(context);
+                  AuthService.logout();
                 },
                 icon: const Icon(Icons.logout),
                 label: const Text("로그아웃"),

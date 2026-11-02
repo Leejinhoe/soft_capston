@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../core/api_client.dart';
 
 class ReportDetailPage extends StatefulWidget {
   final Map<String, dynamic> report;
@@ -25,11 +25,8 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
     }
 
     try {
-      final response = await http.put(
-        Uri.parse("http://127.0.0.1:8000/admin/warning/$authorName"),
-        headers: {
-          "Content-Type": "application/json",
-        },
+      final response = await ApiClient.put(
+        "/admin/warning/${Uri.encodeComponent(authorName)}",
       );
 
       if (response.statusCode == 200) {

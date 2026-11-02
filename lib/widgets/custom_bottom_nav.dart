@@ -10,13 +10,11 @@ import '../pages/profile_page.dart';
 class CustomBottomNav extends StatelessWidget {
   final String currentPage;
   final String displayName;
-  final String userId;
 
   const CustomBottomNav({
     super.key,
     required this.currentPage,
     required this.displayName,
-    this.userId = 'user123',
   });
 
   void movePage(
@@ -99,7 +97,6 @@ class CustomBottomNav extends StatelessWidget {
             icon: Icons.home,
             label: '홈',
             page: HomePage(
-              userId: userId,
               displayName: displayName,
             ),
             selected: currentPage == 'home',
@@ -110,7 +107,6 @@ class CustomBottomNav extends StatelessWidget {
             icon: Icons.auto_awesome,
             label: '동화',
             page: StoryPage(
-              userId: userId,
               displayName: displayName,
             ),
             selected: currentPage == 'story',
@@ -121,7 +117,6 @@ class CustomBottomNav extends StatelessWidget {
             icon: Icons.forum,
             label: '커뮤니티',
             page: BoardPage(
-              userId: userId,
               displayName: displayName,
             ),
             selected: currentPage == 'board',
@@ -132,7 +127,6 @@ class CustomBottomNav extends StatelessWidget {
             icon: Icons.menu_book,
             label: '단어장',
             page: VocabularyPage(
-              userId: userId,
               displayName: displayName,
             ),
             selected: currentPage == 'vocabulary',
@@ -143,7 +137,6 @@ class CustomBottomNav extends StatelessWidget {
             icon: Icons.psychology,
             label: '심리',
             page: MindPage(
-              userId: userId,
               userName: displayName,
             ),
             selected: currentPage == 'mind',
@@ -154,7 +147,6 @@ class CustomBottomNav extends StatelessWidget {
             icon: Icons.person,
             label: '프로필',
             page: ProfilePage(
-              userId: userId,
               userName: displayName,
             ),
             selected: currentPage == 'profile',

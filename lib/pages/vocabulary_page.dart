@@ -1,15 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../core/api_client.dart';
 import '../widgets/custom_bottom_nav.dart';
 
 class VocabularyPage extends StatefulWidget {
-  final String userId;
   final String displayName;
 
   const VocabularyPage({
     super.key,
-    this.userId = 'user123',
     required this.displayName,
   });
 
@@ -30,12 +27,11 @@ class _VocabularyPageState extends State<VocabularyPage> {
   // 📥 DB에서 내 저장 단어 목록 실시간 조회
   Future<void> fetchMyVocabularies() async {
     try {
-      final response = await http.get(
-        Uri.parse('http://127.0.0.1:8000/api/vocabularies/user/${widget.userId}'),
-      );
+      final response = await ApiClient.get('/api/vocabularies/me');
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
+        final List<dynamic> data = ApiClient.decode(response) ?? [];
         setState(() {
           myVocabList = data;
           isLoading = false;
@@ -142,7 +138,6 @@ class _VocabularyPageState extends State<VocabularyPage> {
       backgroundColor: const Color(0xFF070018),
       bottomNavigationBar: CustomBottomNav(
         currentPage: 'vocabulary',
-        userId: widget.userId,
         displayName: widget.displayName,
       ),
       body: SafeArea(

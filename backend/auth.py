@@ -1,14 +1,12 @@
+"""소셜 로그인(OAuth) 토큰 교환/사용자 정보 조회. JWT 발급은 security.py에서 합니다."""
 import httpx
 import os
-from datetime import datetime, timedelta
-from jose import jwt
 from dotenv import load_dotenv
 
 load_dotenv()
 
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
-JWT_SECRET = os.getenv("JWT_SECRET")
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
@@ -140,11 +138,3 @@ async def get_google_user_info(access_token: str) -> dict:
         "profile_image": data.get("picture", ""),
         "name": data.get("name", ""),
     }
-
-
-def create_jwt(social_id: str) -> str:
-    payload = {
-        "sub": social_id,
-        "exp": datetime.utcnow() + timedelta(days=7),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")

@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import '../core/api_client.dart';
 
 import '../widgets/custom_bottom_nav.dart';
 
 class BoardPage extends StatefulWidget {
-  final String userId;
   final String displayName;
 
   const BoardPage({
     super.key,
-    this.userId = 'user123',
     required this.displayName,
   });
 
@@ -164,7 +161,6 @@ class _BoardPageState extends State<BoardPage> {
       backgroundColor: const Color(0xFF070018),
       bottomNavigationBar: CustomBottomNav(
         currentPage: 'board',
-        userId: widget.userId,
         displayName: widget.displayName,
       ),
       body: SafeArea(
@@ -228,18 +224,14 @@ class _BoardPageState extends State<BoardPage> {
 
   Future<void> reportStory(String author, String title) async {
     try {
-      final response = await http.post(
-        Uri.parse("http://127.0.0.1:8000/report"),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: jsonEncode({
-          "reporter": widget.displayName,
-          "reporter_id": widget.userId,
+      // 신고자는 서버가 토큰으로 확인합니다.
+      final response = await ApiClient.post(
+        "/report",
+        body: {
           "author": author,
           "story_title": title,
           "reason": "부적절한 내용",
-        }),
+        },
       );
 
       if (response.statusCode == 200) {

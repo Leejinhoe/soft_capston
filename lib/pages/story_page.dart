@@ -1,17 +1,14 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../core/api_client.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../widgets/custom_bottom_nav.dart';
 
 class StoryPage extends StatefulWidget {
-  final String userId;
   final String displayName;
 
   const StoryPage({
     super.key,
-    this.userId = 'user123',
     required this.displayName,
   });
 
@@ -71,11 +68,9 @@ class _StoryPageState extends State<StoryPage> {
   // 🔊 백엔드 DB에 단어 저장 API 호출
   Future<void> saveVocabularyToDB(Map<String, dynamic> wordItem) async {
     try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/api/vocabularies/add'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'user_id': widget.userId,
+      final response = await ApiClient.post(
+        '/api/vocabularies/add',
+        body: {
           'hard': wordItem['hard'],
           'easy': '',
           'definition': wordItem['definition'],
@@ -83,7 +78,7 @@ class _StoryPageState extends State<StoryPage> {
               ? '신비한 동화 이야기'
               : promptController.text,
           'origin_story_id': '650000000000000000000001',
-        }),
+        },
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -113,16 +108,14 @@ class _StoryPageState extends State<StoryPage> {
   // 🌐 커뮤니티 공유 전용 API 호출 함수 ('보관함 저장'은 동화 생성 시 자동 완료됨)
   Future<void> shareStoryToCommunity() async {
     try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/api/stories/save'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'user_id': widget.userId,
+      final response = await ApiClient.post(
+        '/api/stories/save',
+        body: {
           'title': promptController.text.isEmpty ? '신비한 동화 이야기' : promptController.text,
           'content': storyText,
           'genre': selectedGenre,
           'is_public': true, // 커뮤니티 공유 처리
-        }),
+        },
       );
 
       if (response.statusCode == 200) {
@@ -154,20 +147,19 @@ class _StoryPageState extends State<StoryPage> {
     );
 
     try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/api/vocabularies/search-context'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final response = await ApiClient.post(
+        '/api/vocabularies/search-context',
+        body: {
           'word': cleanWord,
           'sentence': fullSentence,
           'age': selectedAge,
-        }),
+        },
       );
 
       if (mounted) Navigator.pop(context); // 로딩 닫기
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final data = ApiClient.decode(response);
         showVocabularyDialog({
           'hard': data['hard'] ?? cleanWord,
           'definition': data['definition'] ?? '표준 사전 정보 없음',
@@ -302,7 +294,7 @@ class _StoryPageState extends State<StoryPage> {
     try {
       await _audioPlayer.setAudioSource(
         AudioSource.uri(
-          Uri.parse('http://127.0.0.1:8000/api/tts'),
+          ApiClient.uri('/api/tts'),
         ),
       );
       await _audioPlayer.play();
@@ -340,18 +332,17 @@ class _StoryPageState extends State<StoryPage> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/api/generate-story'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final response = await ApiClient.post(
+        '/api/generate-story',
+        body: {
           'prompt': promptController.text,
           'genre': selectedGenre,
           'age': selectedAge,
-        }),
+        },
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final data = ApiClient.decode(response);
         setState(() {
           storyText = data['story'] ?? '';
           vocabList = data['vocab_list'] ?? [];
@@ -534,7 +525,6 @@ class _StoryPageState extends State<StoryPage> {
       ),
       bottomNavigationBar: CustomBottomNav(
         currentPage: 'story',
-        userId: widget.userId,
         displayName: widget.displayName,
       ),
       body: SingleChildScrollView(

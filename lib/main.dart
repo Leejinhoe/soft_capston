@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:kakao_flutter_sdk_common/kakao_flutter_sdk_common.dart';
 
-// 페이지 파일 import (프로젝트 구조에 맞게 경로 확인)
+import 'core/api_client.dart';
+import 'core/auth_service.dart';
 import 'pages/login_page.dart';
-import 'pages/profile_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +12,9 @@ Future<void> main() async {
   KakaoSdk.init(
     nativeAppKey: 'fa2f07355c5d24ed9b226ff59a91d57a',
   );
+
+  // 토큰 만료/정지 시 로그인 화면으로 보내는 처리 등록
+  AuthService.init();
 
   runApp(const FairyTaleApp());
 }
@@ -27,14 +30,14 @@ class FairyTaleApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.purple,
       ),
+      navigatorKey: appNavigatorKey,
+      scaffoldMessengerKey: appMessengerKey,
 
-      // 1. 앱 시작 시 로그인 페이지를 첫 화면으로 설정
-      initialRoute: '/login',
+      // 앱 시작: 저장된 토큰이 있으면 자동 로그인, 없으면 로그인 화면
+      home: const AuthGate(),
 
-      // 2. 라우트 이름 등록 (로그아웃 시 /login 이동을 위해 필요)
       routes: {
         '/login': (context) => const LoginPage(),
-        '/profile': (context) => const ProfilePage(userName: ''),
       },
     );
   }

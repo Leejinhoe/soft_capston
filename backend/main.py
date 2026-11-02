@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 import bcrypt
 import google.generativeai as genai
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -18,7 +18,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from auth import (
-    create_jwt,
     get_google_access_token,
     get_google_user_info,
     get_kakao_access_token,
@@ -36,8 +35,36 @@ from database import (
     notifications_collection,
     vocabularies_collection,
 )
+from security import (
+    ROLE_ADMIN,
+    ROLE_USER,
+    STATUS_ACTIVE,
+    BANNED_MESSAGE,
+    banned_exception,
+    create_access_token,
+    get_current_user,
+    is_banned,
+    new_user_defaults,
+    public_user_id,
+    require_admin,
+    user_summary,
+)
 
 app = FastAPI()
+
+
+# ----------------------------------------
+# 기존 사용자 문서에 role / status / warnings 기본값 채우기 (이미 있으면 건드리지 않음)
+# ----------------------------------------
+@app.on_event("startup")
+async def backfill_user_fields():
+    defaults = {"role": ROLE_USER, "status": STATUS_ACTIVE, "warnings": []}
+    for field, value in defaults.items():
+        result = await users_collection.update_many(
+            {field: {"$exists": False}}, {"$set": {field: value}}
+        )
+        if result.modified_count:
+            print(f"[users] '{field}' 기본값 채움: {result.modified_count}명", flush=True)
 
 # ----------------------------------------
 # 정적 파일 (프로필 이미지 업로드 디렉토리) 설정
@@ -142,10 +169,26 @@ class IdRequest(BaseModel):
     id: str
 
 class ReportRequest(BaseModel):
-    reporter: str
+    # 신고자는 토큰에서 꺼냅니다. (요청 본문의 reporter 값은 무시)
     author: str
     story_title: str
     reason: str
+
+class WarningRequest(BaseModel):
+    reason: Optional[str] = ""
+
+class UserSummary(BaseModel):
+    id: str
+    name: str
+    role: str
+    status: str
+
+class AuthResponse(BaseModel):
+    success: bool
+    message: str = ""
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
+    user: Optional[UserSummary] = None
 
 class SignUpRequest(BaseModel):
     id: str
@@ -177,7 +220,7 @@ class GenerateStoryRequest(BaseModel):
     age: str
 
 class VocabularySchema(BaseModel):
-    user_id: str
+    # user_id는 토큰에서 꺼냅니다.
     hard: str
     easy: Optional[str] = ""
     definition: Optional[str] = ""
@@ -186,7 +229,7 @@ class VocabularySchema(BaseModel):
     created_at: Optional[datetime] = None
 
 class SaveStoryRequest(BaseModel):
-    user_id: str
+    # user_id는 토큰에서 꺼냅니다.
     title: str
     content: str
     genre: str
@@ -233,14 +276,15 @@ async def normalize_word_with_gemini(raw_word: str) -> str:
 # [신규] 단어장 추가 API (국립국어원 연동)
 # ----------------------------------------
 @app.post("/api/vocabularies/add", response_description="모르는 단어 추가")
-async def add_vocabulary(vocab: VocabularySchema):
+async def add_vocabulary(vocab: VocabularySchema, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
     now = vocab.created_at or datetime.utcnow()
     official_definition = await fetch_korean_dict_definition(vocab.hard)
 
     final_meaning = vocab.definition or vocab.easy or official_definition
 
     vocab_dict = {
-        "user_id": vocab.user_id,
+        "user_id": user_id,
         "word": vocab.hard,
         "meaning": final_meaning,
         "official_definition": official_definition,
@@ -260,12 +304,12 @@ async def add_vocabulary(vocab: VocabularySchema):
     }
 
     result = await vocabularies_collection.update_one(
-        {"user_id": vocab.user_id, "word": vocab.hard},
+        {"user_id": user_id, "word": vocab.hard},
         {"$setOnInsert": vocab_dict},
         upsert=True,
     )
     saved = await vocabularies_collection.find_one(
-        {"user_id": vocab.user_id, "word": vocab.hard},
+        {"user_id": user_id, "word": vocab.hard},
     )
     if saved:
         return {
@@ -282,7 +326,9 @@ async def add_vocabulary(vocab: VocabularySchema):
 # 💡 단어 클릭 실시간 조회 (쉬운 뜻 제거 및 다정한 설명 단일화)
 # ----------------------------------------
 @app.post("/api/vocabularies/search-context")
-async def search_vocabulary_with_context(body: ContextSearchRequest):
+async def search_vocabulary_with_context(
+    body: ContextSearchRequest, current_user: dict = Depends(get_current_user)
+):
     raw_word = body.word.strip()
     sentence = body.sentence.strip()
     age = body.age or "5-7세"
@@ -336,9 +382,9 @@ async def search_vocabulary_with_context(body: ContextSearchRequest):
 # ----------------------------------------
 # [신규] 유저별 내 단어장 실시간 조회 API
 # ----------------------------------------
-@app.get("/api/vocabularies/user/{user_id}")
-async def get_user_vocabularies(user_id: str):
-    clean_id = user_id.strip()
+@app.get("/api/vocabularies/me")
+async def get_my_vocabularies(current_user: dict = Depends(get_current_user)):
+    clean_id = current_user["user_id"]
     vocab_list = []
 
     cursor = vocabularies_collection.find({"user_id": clean_id}).sort("saved_at", -1)
@@ -359,7 +405,7 @@ async def get_user_vocabularies(user_id: str):
 # 💡 동화 생성 + 자동 DB 저장 + 본문 실존 단어 3~5개 추천 API
 # ----------------------------------------
 @app.post("/api/generate-story")
-async def generate_story(body: GenerateStoryRequest):
+async def generate_story(body: GenerateStoryRequest, current_user: dict = Depends(get_current_user)):
     story_prompt = f"""
     주제: {body.prompt}
     장르: {body.genre}
@@ -379,7 +425,7 @@ async def generate_story(body: GenerateStoryRequest):
     # 1. 💾 [신규] 생성된 동화 무조건 자동 저장 (보관함 수동 저장 버튼 제거 대응)
     now = datetime.utcnow()
     story_doc = {
-        "user_id": "user123",
+        "user_id": current_user["user_id"],
         "title": body.prompt.strip() or "신비한 동화 이야기",
         "content": story_text,
         "genre": body.genre,
@@ -456,10 +502,11 @@ async def generate_story(body: GenerateStoryRequest):
 # [신규] 생성된 동화 저장 / 커뮤니티 업로드 API
 # ----------------------------------------
 @app.post("/api/stories/save")
-async def save_story(body: SaveStoryRequest):
+async def save_story(body: SaveStoryRequest, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
     now = datetime.utcnow()
     story_doc = {
-        "user_id": body.user_id,
+        "user_id": user_id,
         "title": body.title,
         "content": body.content,
         "genre": body.genre,
@@ -473,7 +520,7 @@ async def save_story(body: SaveStoryRequest):
     if body.is_public:
         post_doc = {
             "story_id": story_id,
-            "user_id": body.user_id,
+            "user_id": user_id,
             "title": body.title,
             "content": body.content,
             "genre": body.genre,
@@ -486,11 +533,11 @@ async def save_story(body: SaveStoryRequest):
 
 
 # ----------------------------------------
-# [신규] 사용자 통계 수치 조회 API
+# 내 정보 (로그인한 사용자 기준, 토큰에서 user_id를 꺼냄)
 # ----------------------------------------
-@app.get("/api/users/{user_id}/stats")
-async def get_user_stats(user_id: str):
-    clean_id = user_id.strip()
+@app.get("/api/users/me/stats")
+async def get_my_stats(current_user: dict = Depends(get_current_user)):
+    clean_id = current_user["user_id"]
 
     story_count = await stories_collection.count_documents({"user_id": clean_id})
     post_count = await posts_collection.count_documents({"user_id": clean_id})
@@ -509,12 +556,9 @@ async def get_user_stats(user_id: str):
     }
 
 
-# ----------------------------------------
-# [신규] 유저 알림 목록 조회 API
-# ----------------------------------------
-@app.get("/api/users/{user_id}/notifications")
-async def get_user_notifications(user_id: str):
-    clean_id = user_id.strip()
+@app.get("/api/users/me/notifications")
+async def get_my_notifications(current_user: dict = Depends(get_current_user)):
+    clean_id = current_user["user_id"]
     notifications = []
 
     cursor = notifications_collection.find({"user_id": clean_id}).sort("created_at", -1)
@@ -530,66 +574,21 @@ async def get_user_notifications(user_id: str):
     return notifications
 
 
-# ----------------------------------------
-# 사용자 프로필 조회 API (GET)
-# ----------------------------------------
-@app.get("/api/users/{user_id}")
-async def get_user_profile(user_id: str):
-    clean_id = user_id.strip()
-
-    user = await users_collection.find_one({
-        "$or": [
-            {"id": clean_id},
-            {"social_id": clean_id},
-            {"kakao_id": clean_id},
-            {"name": clean_id},
-            {"nickname": clean_id}
-        ]
-    })
-
-    if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-
+@app.get("/api/users/me")
+async def get_my_profile(current_user: dict = Depends(get_current_user)):
+    user = current_user
     return {
+        **user_summary(user),
         "nickname": user.get("nickname") or user.get("name") or "사용자",
         "email": user.get("email") or "",
         "bio": user.get("bio") or "상상력이 풍부한 동화 탐험가 ✨",
         "profileImageUrl": user.get("profile_image_url") or None,
-        "warning_count": user.get("warning_count", 0)
+        "warning_count": user.get("warning_count", 0),
     }
 
 
-# ----------------------------------------
-# 사용자 프로필 수정 API (PATCH)
-# ----------------------------------------
-@app.patch("/api/users/{user_id}")
-async def update_user_profile(user_id: str, body: ProfileUpdateRequest):
-    clean_id = user_id.strip()
-
-    user = await users_collection.find_one({
-        "$or": [
-            {"id": clean_id},
-            {"social_id": clean_id},
-            {"kakao_id": clean_id},
-            {"name": clean_id},
-            {"nickname": clean_id}
-        ]
-    })
-
-    if not user:
-        new_user = {
-            "id": clean_id,
-            "name": body.nickname or "사용자",
-            "nickname": body.nickname or "사용자",
-            "email": body.email or "",
-            "bio": body.bio or "상상력이 풍부한 동화 탐험가 ✨",
-            "role": "user",
-            "warning_count": 0,
-            "created_at": datetime.utcnow()
-        }
-        await users_collection.insert_one(new_user)
-        return {"success": True, "message": "새 프로필이 생성되었습니다."}
-
+@app.patch("/api/users/me")
+async def update_my_profile(body: ProfileUpdateRequest, current_user: dict = Depends(get_current_user)):
     update_data = {}
     if body.nickname is not None:
         update_data["name"] = body.nickname
@@ -601,32 +600,16 @@ async def update_user_profile(user_id: str, body: ProfileUpdateRequest):
 
     if update_data:
         await users_collection.update_one(
-            {"_id": user["_id"]},
+            {"_id": current_user["_id"]},
             {"$set": update_data}
         )
 
     return {"success": True, "message": "프로필 정보가 수정되었습니다."}
 
 
-# ----------------------------------------
-# 비밀번호 변경 API (PATCH)
-# ----------------------------------------
-@app.patch("/api/users/{user_id}/password")
-async def change_password(user_id: str, body: PasswordChangeRequest):
-    clean_id = user_id.strip()
-
-    user = await users_collection.find_one({
-        "$or": [
-            {"id": clean_id},
-            {"social_id": clean_id},
-            {"kakao_id": clean_id},
-            {"name": clean_id},
-            {"nickname": clean_id}
-        ]
-    })
-
-    if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+@app.patch("/api/users/me/password")
+async def change_my_password(body: PasswordChangeRequest, current_user: dict = Depends(get_current_user)):
+    user = current_user
 
     if "password" not in user or not user["password"]:
         raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호를 변경할 수 없습니다.")
@@ -652,28 +635,16 @@ async def change_password(user_id: str, body: PasswordChangeRequest):
     return {"success": True, "message": "비밀번호가 성공적으로 변경되었습니다."}
 
 
-# ----------------------------------------
-# 프로필 이미지 업로드 API (POST)
-# ----------------------------------------
-@app.post("/api/users/{user_id}/image")
-async def upload_user_image(user_id: str, profile_image: UploadFile = File(...)):
-    clean_id = user_id.strip()
-
-    user = await users_collection.find_one({
-        "$or": [
-            {"id": clean_id},
-            {"social_id": clean_id},
-            {"kakao_id": clean_id},
-            {"name": clean_id},
-            {"nickname": clean_id}
-        ]
-    })
-
-    if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-
+@app.post("/api/users/me/image")
+async def upload_my_image(
+    profile_image: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    # 파일 이름에는 영문/숫자/_/-만 사용
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", current_user["user_id"]) or "user"
     file_extension = profile_image.filename.split(".")[-1] if profile_image.filename else "png"
-    file_name = f"{clean_id}_{int(datetime.utcnow().timestamp())}.{file_extension}"
+    file_extension = re.sub(r"[^A-Za-z0-9]", "", file_extension)[:5] or "png"
+    file_name = f"{safe_id}_{int(datetime.utcnow().timestamp())}.{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, file_name)
 
     contents = await profile_image.read()
@@ -683,7 +654,7 @@ async def upload_user_image(user_id: str, profile_image: UploadFile = File(...))
     image_url = f"http://127.0.0.1:8000/static/profile_images/{file_name}"
 
     await users_collection.update_one(
-        {"_id": user["_id"]},
+        {"_id": current_user["_id"]},
         {"$set": {"profile_image_url": image_url}}
     )
 
@@ -691,48 +662,57 @@ async def upload_user_image(user_id: str, profile_image: UploadFile = File(...))
 
 
 # ----------------------------------------
-# 소셜 로그인 API (카카오 / 네이버 / 구글)
+# 소셜 로그인 API (카카오 / 네이버 / 구글) → JWT 발급
 # ----------------------------------------
-@app.post("/auth/kakao")
+async def _finish_social_login(filter_query: dict, user_info: dict, extra: dict) -> dict:
+    """소셜 사용자 upsert → 정지 확인 → JWT 발급. 첫 로그인이면 role/status/warnings 기본값을 넣습니다."""
+    await users_collection.update_one(
+        filter_query,
+        {
+            "$set": {**user_info, **extra, "last_login": datetime.utcnow()},
+            "$setOnInsert": new_user_defaults(),
+        },
+        upsert=True,
+    )
+    user = await users_collection.find_one(filter_query)
+    if not user:
+        raise HTTPException(status_code=500, detail="로그인 처리 중 문제가 생겼어요.")
+    if is_banned(user):
+        raise banned_exception()
+
+    return {
+        "success": True,
+        "message": "로그인 성공",
+        "access_token": create_access_token(public_user_id(user)),
+        "user": user_summary(user),
+    }
+
+
+@app.post("/auth/kakao", response_model=AuthResponse)
 async def kakao_login(body: KakaoCodeRequest):
     access_token = await get_kakao_access_token(body.code)
     user_info = await get_kakao_user_info(access_token)
-
-    await users_collection.update_one(
-        {"kakao_id": user_info["kakao_id"]},
-        {"$set": {**user_info, "last_login": datetime.utcnow()}},
-        upsert=True,
+    return await _finish_social_login(
+        {"kakao_id": user_info["kakao_id"]}, user_info, {"provider": "kakao"}
     )
-    jwt_token = create_jwt(user_info["kakao_id"])
-    return {"access_token": jwt_token, "user": user_info}
 
 
-@app.post("/auth/naver")
+@app.post("/auth/naver", response_model=AuthResponse)
 async def naver_login(body: NaverCodeRequest):
     access_token = await get_naver_access_token(body.code, body.state)
     user_info = await get_naver_user_info(access_token)
-
-    await users_collection.update_one(
-        {"provider": "naver", "social_id": user_info["social_id"]},
-        {"$set": {**user_info, "provider": "naver", "last_login": datetime.utcnow()}},
-        upsert=True,
+    return await _finish_social_login(
+        {"provider": "naver", "social_id": user_info["social_id"]}, user_info, {"provider": "naver"}
     )
-    jwt_token = create_jwt(user_info["social_id"])
-    return {"access_token": jwt_token, "user": user_info}
 
 
-@app.post("/auth/google")
+@app.post("/auth/google", response_model=AuthResponse)
 async def google_login(body: GoogleCodeRequest):
     access_token = await get_google_access_token(body.code)
     user_info = await get_google_user_info(access_token)
-
-    await users_collection.update_one(
-        {"provider": "google", "social_id": user_info["social_id"]},
-        {"$set": {**user_info, "provider": "google", "last_login": datetime.utcnow()}},
-        upsert=True,
+    return await _finish_social_login(
+        {"provider": "google", "social_id": user_info["social_id"]}, user_info, {"provider": "google"}
     )
-    jwt_token = create_jwt(user_info["social_id"])
-    return {"access_token": jwt_token, "user": user_info}
 
 
 # ----------------------------------------
@@ -757,51 +737,76 @@ async def signup(body: SignUpRequest):
         "name": body.name,
         "birth": body.birth,
         "email": body.email,
-        "role": "user",
-        "warning_count": 0,
-        "created_at": datetime.utcnow(),
+        **new_user_defaults(),  # role=user, status=active, warnings=[]
     }
     await users_collection.insert_one(user_data)
     return {"success": True, "message": "회원가입 성공"}
 
 
-@app.post("/login")
+async def _check_password_login(user_id: str, password: str) -> Optional[dict]:
+    """아이디/비밀번호가 맞으면 사용자 문서를, 아니면 None을 돌려줍니다."""
+    user = await users_collection.find_one({"id": user_id})
+    if not user or not user.get("password"):
+        return None
+    if not bcrypt.checkpw(password.encode('utf-8'), user["password"].encode('utf-8')):
+        return None
+    return user
+
+
+@app.post("/login", response_model=AuthResponse)
 async def login(body: LoginRequest):
     user = await users_collection.find_one({"id": body.id})
     if not user:
         return {"success": False, "message": "존재하지 않는 아이디입니다."}
 
-    is_correct_password = bcrypt.checkpw(body.password.encode('utf-8'), user["password"].encode('utf-8'))
-    if not is_correct_password:
+    user = await _check_password_login(body.id, body.password)
+    if not user:
         return {"success": False, "message": "비밀번호가 올바르지 않습니다."}
 
+    if is_banned(user):
+        return {"success": False, "message": BANNED_MESSAGE}
+
+    await users_collection.update_one({"_id": user["_id"]}, {"$set": {"last_login": datetime.utcnow()}})
     return {
         "success": True,
         "message": "로그인 성공",
-        "user": {"id": user["id"], "name": user["name"], "role": user["role"]}
+        "access_token": create_access_token(public_user_id(user)),
+        "user": user_summary(user),
     }
 
 
 # ----------------------------------------
 # 관리자 API (로그인, 회원 목록, 경고 부여, 삭제, 신고 조회)
 # ----------------------------------------
-@app.post("/admin-login")
+@app.post("/admin-login", response_model=AuthResponse)
 async def admin_login(body: AdminLoginRequest):
-    if body.id != "admin" or body.password != "1234":
+    """users 컬렉션에서 role == "admin" 인 계정만 로그인할 수 있습니다."""
+    user = await _check_password_login(body.id, body.password)
+    if not user or user.get("role") != ROLE_ADMIN:
         return {"success": False, "message": "관리자 정보가 올바르지 않습니다."}
-    return {"success": True, "message": "관리자 로그인 성공"}
+    if is_banned(user):
+        return {"success": False, "message": BANNED_MESSAGE}
+
+    await users_collection.update_one({"_id": user["_id"]}, {"$set": {"last_login": datetime.utcnow()}})
+    return {
+        "success": True,
+        "message": "관리자 로그인 성공",
+        "access_token": create_access_token(public_user_id(user)),
+        "user": user_summary(user),
+    }
 
 
 @app.get("/admin/users")
-async def get_users():
+async def get_users(admin: dict = Depends(require_admin)):
     users = []
     async for user in users_collection.find():
         users.append({
-            "id": user.get("id") or user.get("social_id") or user.get("kakao_id") or "",
+            "id": public_user_id(user),
             "name": user.get("name") or user.get("nickname") or "이름 없음",
             "email": user.get("email"),
             "birth": user.get("birth"),
-            "role": user.get("role"),
+            "role": user.get("role", ROLE_USER),
+            "status": user.get("status", STATUS_ACTIVE),
             "warning_count": user.get("warning_count", 0),
             "created_at": str(user.get("created_at")),
         })
@@ -809,8 +814,13 @@ async def get_users():
 
 
 @app.put("/admin/warning/{user_id}")
-async def warning_user(user_id: str):
+async def warning_user(
+    user_id: str,
+    body: Optional[WarningRequest] = None,
+    admin: dict = Depends(require_admin),
+):
     clean_user_id = user_id.strip()
+    # 신고 목록에는 작성자 '이름'만 있어서 이름/닉네임/이메일로도 찾습니다. (관리자 전용)
     query = {
         "$or": [
             {"id": clean_user_id},
@@ -825,23 +835,33 @@ async def warning_user(user_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
 
-    current = user.get("warning_count", 0)
-    new_warning_count = current + 1
+    now = datetime.utcnow()
+    warning_entry = {
+        "reason": (body.reason if body else "") or "",
+        "admin_id": admin["user_id"],
+        "created_at": now,
+    }
+    new_warning_count = user.get("warning_count", 0) + 1
 
-    await users_collection.update_one({"_id": user["_id"]}, {"$set": {"warning_count": new_warning_count}})
-    target_user_id = user.get("id") or user.get("social_id") or user.get("kakao_id")
+    await users_collection.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"warning_count": new_warning_count}, "$push": {"warnings": warning_entry}},
+    )
+    target_user_id = public_user_id(user)
     await notifications_collection.insert_one({
         "user_id": target_user_id,
         "title": "⚠️ 커뮤니티 가이드라인 경고 알림",
         "message": f"서비스 이용 수칙 위반으로 경고가 부여되었습니다. (누적 경고 횟수: {new_warning_count}회)",
         "is_read": False,
-        "created_at": datetime.utcnow()
+        "created_at": now
     })
     return {"success": True, "warning_count": new_warning_count}
 
 
 @app.delete("/admin/user/{user_id}")
-async def delete_user(user_id: str):
+async def delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    if user_id == admin["user_id"]:
+        raise HTTPException(status_code=400, detail="자기 자신은 삭제할 수 없습니다.")
     result = await users_collection.delete_one({
         "$or": [{"id": user_id}, {"social_id": user_id}, {"kakao_id": user_id}]
     })
@@ -851,9 +871,11 @@ async def delete_user(user_id: str):
 
 
 @app.post("/report")
-async def report_story(body: ReportRequest):
+async def report_story(body: ReportRequest, current_user: dict = Depends(get_current_user)):
+    reporter = user_summary(current_user)
     report = {
-        "reporter": body.reporter,
+        "reporter": reporter["name"],
+        "reporter_id": reporter["id"],
         "author": body.author,
         "story_title": body.story_title,
         "reason": body.reason,
@@ -865,7 +887,7 @@ async def report_story(body: ReportRequest):
 
 
 @app.get("/admin/reports")
-async def get_admin_reports():
+async def get_admin_reports(admin: dict = Depends(require_admin)):
     reports = []
     cursor = reports_collection.find().sort("created_at", -1)
     async for report in cursor:

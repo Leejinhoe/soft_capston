@@ -1,8 +1,6 @@
-import 'dart:convert';
-
 import 'user_detail_page.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../core/api_client.dart';
 
 class UserListPage extends StatefulWidget {
   const UserListPage({super.key});
@@ -27,18 +25,19 @@ class _UserListPageState extends State<UserListPage> {
 
     try {
 
-      final response = await http.get(
-        Uri.parse("http://127.0.0.1:8000/admin/users"),
-      );
+      final response = await ApiClient.get("/admin/users");
+      final data = ApiClient.decode(response);
 
-      final data = jsonDecode(response.body);
-
-      print(data);
-
+      if (!mounted) return;
       setState(() {
-        users = data;
+        users = (response.statusCode == 200 && data is List) ? data : [];
         isLoading = false;
       });
+      if (response.statusCode != 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ApiClient.errorMessage(response))),
+        );
+      }
 
     } catch (e) {
 

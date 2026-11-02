@@ -1,7 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../core/api_client.dart';
 import 'report_detail_page.dart';
 
 class ReportListPage extends StatefulWidget {
@@ -21,11 +19,8 @@ class _ReportListPageState extends State<ReportListPage> {
     }
 
     try {
-      final response = await http.put(
-        Uri.parse("http://127.0.0.1:8000/admin/warning/$authorName"),
-        headers: {
-          "Content-Type": "application/json",
-        },
+      final response = await ApiClient.put(
+        "/admin/warning/${Uri.encodeComponent(authorName)}",
       );
 
       if (response.statusCode == 200) {
@@ -58,13 +53,12 @@ class _ReportListPageState extends State<ReportListPage> {
 
   Future<void> fetchReports() async {
     try {
-      final response = await http.get(
-        Uri.parse("http://127.0.0.1:8000/admin/reports"),
-      );
+      final response = await ApiClient.get("/admin/reports");
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         setState(() {
-          reports = jsonDecode(response.body);
+          reports = ApiClient.decode(response) ?? [];
           isLoading = false;
         });
       } else {

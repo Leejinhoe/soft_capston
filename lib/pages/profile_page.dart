@@ -1,19 +1,17 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../core/api_client.dart';
+import '../core/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/custom_bottom_nav.dart';
 
 class ProfilePage extends StatefulWidget {
-  final String userId;
   final String userName;
   final String userEmail;
 
   const ProfilePage({
     super.key,
-    this.userId = 'user123',
     required this.userName,
     this.userEmail = '',
   });
@@ -23,9 +21,6 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  // 백엔드 서버 주소
-  final String baseUrl = 'http://127.0.0.1:8000';
-
   late String displayName;
   late String email;
   String bio = '상상력이 풍부한 동화 탐험가 ✨';
@@ -49,13 +44,11 @@ class _ProfilePageState extends State<ProfilePage> {
   // [GET] 1. 백엔드 DB에서 프로필 정보 불러오기
   Future<void> _fetchProfileData() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/users/${widget.userId}'),
-        headers: {'Content-Type': 'application/json'},
-      );
+      final response = await ApiClient.get('/api/users/me');
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = ApiClient.decode(response);
         setState(() {
           displayName = data['nickname'] ?? widget.userName;
           email = data['email'] ?? widget.userEmail;
@@ -75,12 +68,11 @@ class _ProfilePageState extends State<ProfilePage> {
   // [GET] 2. 백엔드 DB에서 통계 정보 불러오기
   Future<void> _fetchUserStats() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/users/${widget.userId}/stats'),
-      );
+      final response = await ApiClient.get('/api/users/me/stats');
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = ApiClient.decode(response);
         setState(() {
           storyCount = data['story_count'] ?? 0;
           postCount = data['post_count'] ?? 0;
@@ -104,14 +96,13 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<bool> _updateProfileToApi(
       String newName, String newEmail, String newBio) async {
     try {
-      final response = await http.patch(
-        Uri.parse('$baseUrl/api/users/${widget.userId}'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final response = await ApiClient.patch(
+        '/api/users/me',
+        body: {
           'nickname': newName,
           'email': newEmail,
           'bio': newBio,
-        }),
+        },
       );
 
       if (response.statusCode == 200) {
@@ -135,22 +126,20 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<Map<String, dynamic>> _changePasswordToApi(
       String currentPassword, String newPassword) async {
     try {
-      final response = await http.patch(
-        Uri.parse('$baseUrl/api/users/${widget.userId}/password'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final response = await ApiClient.patch(
+        '/api/users/me/password',
+        body: {
           'current_password': currentPassword,
           'new_password': newPassword,
-        }),
+        },
       );
 
-      final data = jsonDecode(response.body);
       if (response.statusCode == 200) {
         return {'success': true, 'message': '비밀번호가 성공적으로 변경되었습니다.'};
       } else {
         return {
           'success': false,
-          'message': data['detail'] ?? '비밀번호 변경 실패 (서버 에러)'
+          'message': ApiClient.errorMessage(response, '비밀번호 변경 실패 (서버 에러)')
         };
       }
     } catch (e) {
@@ -162,25 +151,16 @@ class _ProfilePageState extends State<ProfilePage> {
   // [POST/MULTIPART] 5. 프로필 이미지 백엔드 업로드
   Future<void> _uploadImageToApi(XFile pickedFile) async {
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl/api/users/${widget.userId}/image'),
-      );
-
       final bytes = await pickedFile.readAsBytes();
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'profile_image',
-          bytes,
-          filename: pickedFile.name,
-        ),
+      final response = await ApiClient.uploadFile(
+        '/api/users/me/image',
+        field: 'profile_image',
+        bytes: bytes,
+        filename: pickedFile.name,
       );
-
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = ApiClient.decode(response);
         setState(() {
           // 이미지 캐시 갱신
           imagePath = '${data['imageUrl']}?t=${DateTime.now().millisecondsSinceEpoch}';
@@ -615,13 +595,8 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               onPressed: () {
                 Navigator.pop(context);
-
-                if (mounted) {
-                  Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/login',
-                        (route) => false,
-                  );
-                }
+                // 토큰 삭제 후 로그인 화면으로
+                AuthService.logout();
               },
               child: const Text('로그아웃', style: TextStyle(color: Colors.white)),
             ),

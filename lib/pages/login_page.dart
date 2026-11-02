@@ -1,13 +1,11 @@
-import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
+import '../core/api_client.dart';
+import '../core/auth_service.dart';
 import 'admin_login_dialog.dart';
-import 'home_page.dart';
-import 'profile_page.dart';
 import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -38,143 +36,57 @@ class _LoginPageState extends State<LoginPage> {
 
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (provider == 'kakao') {
-          await sendKakaoCodeToServer(authCode!);
+          await sendSocialCodeToServer('/auth/kakao', {'code': authCode});
         } else if (provider == 'naver') {
           final savedState = html.window.sessionStorage['naver_oauth_state'];
           if (state != null && savedState == state) {
-            await sendNaverCodeToServer(authCode!, state);
+            await sendSocialCodeToServer(
+                '/auth/naver', {'code': authCode, 'state': state});
+          } else {
+            _finishProcessing('네이버 로그인 확인에 실패했어요. 다시 시도해 주세요.');
           }
         } else if (provider == 'google') {
-          await sendGoogleCodeToServer(authCode!);
+          await sendSocialCodeToServer('/auth/google', {'code': authCode});
+        } else {
+          _finishProcessing(null);
         }
       });
     }
   }
 
-  // 닉네임 우선 추출 헬퍼
-  String getDisplayName(dynamic user) {
-    if (user['nickname'] != null && user['nickname'].toString().isNotEmpty) {
-      return user['nickname'].toString();
-    }
-    if (user['name'] != null && user['name'].toString().isNotEmpty) {
-      return user['name'].toString();
-    }
-    if (user['id'] != null && user['id'].toString().isNotEmpty) {
-      return user['id'].toString();
-    }
-    return '사용자';
+  void showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
-  // 사용자 고유 ID 추출 헬퍼 (MongoDB 파서용)
-  String getUserId(dynamic user) {
-    if (user['id'] != null && user['id'].toString().isNotEmpty) {
-      return user['id'].toString();
-    }
-    if (user['social_id'] != null && user['social_id'].toString().isNotEmpty) {
-      return user['social_id'].toString();
-    }
-    if (user['kakao_id'] != null && user['kakao_id'].toString().isNotEmpty) {
-      return user['kakao_id'].toString();
-    }
-    return 'user123';
+  /// 소셜 로그인 처리가 실패했을 때 주소창의 ?code=... 를 지우고 로그인 화면으로 돌아옵니다.
+  void _finishProcessing(String? message) {
+    html.window.history.replaceState(null, '', '/');
+    html.window.sessionStorage.remove('login_provider');
+    if (!mounted) return;
+    setState(() => isProcessingLogin = false);
+    if (message != null) showMessage(message);
   }
 
-  Future<void> sendKakaoCodeToServer(String code) async {
+  /// 카카오/네이버/구글 공통: 인가 코드를 서버로 보내 JWT를 받고 홈으로 이동
+  Future<void> sendSocialCodeToServer(
+      String path, Map<String, dynamic> body) async {
     try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/auth/kakao'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'code': code}),
-      );
+      final response = await ApiClient.post(path, body: body);
+      final data = ApiClient.decode(response);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final user = data['user'];
-        final displayName = getDisplayName(user);
-        final userId = getUserId(user);
-
+      if (response.statusCode == 200 && data is Map && data['success'] == true) {
         html.window.history.replaceState(null, '', '/');
-
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProfilePage(
-                userId: userId,
-                userName: displayName,
-              ),
-            ),
-          );
-        }
+        html.window.sessionStorage.remove('login_provider');
+        await AuthService.completeLogin(data);
+      } else {
+        _finishProcessing(ApiClient.errorMessage(response, '로그인에 실패했어요.'));
       }
     } catch (e) {
-      print(e);
-    }
-  }
-
-  Future<void> sendNaverCodeToServer(String code, String state) async {
-    try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/auth/naver'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'code': code, 'state': state}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final user = data['user'];
-        final displayName = getDisplayName(user);
-        final userId = getUserId(user);
-
-        html.window.history.replaceState(null, '', '/');
-
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProfilePage(
-                userId: userId,
-                userName: displayName,
-              ),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      print(e);
-    }
-  }
-
-  Future<void> sendGoogleCodeToServer(String code) async {
-    try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/auth/google'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'code': code}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final user = data['user'];
-        final displayName = getDisplayName(user);
-        final userId = getUserId(user);
-
-        html.window.history.replaceState(null, '', '/');
-
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProfilePage(
-                userId: userId,
-                userName: displayName,
-              ),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      print(e);
+      debugPrint('소셜 로그인 오류: $e');
+      _finishProcessing('서버 연결 실패');
     }
   }
 
@@ -190,48 +102,23 @@ class _LoginPageState extends State<LoginPage> {
     final pw = pwController.text.trim();
 
     if (id.isEmpty || pw.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('아이디와 비밀번호를 입력해주세요.')),
-      );
+      showMessage('아이디와 비밀번호를 입력해주세요.');
       return;
     }
 
     try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'id': id, 'password': pw}),
-      );
+      final response =
+          await ApiClient.post('/login', body: {'id': id, 'password': pw});
+      final data = ApiClient.decode(response);
 
-      final data = jsonDecode(response.body);
-
-      if (data['success']) {
-        final user = data['user'];
-        final nameToDisplay = getDisplayName(user);
-        final userIdToPass = getUserId(user);
-
-        if (mounted) {
-          // [수정 완료] HomePage 생성자 파라미터(userId, displayName)에 완벽 매칭
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => HomePage(
-                userId: userIdToPass,
-                displayName: nameToDisplay,
-              ),
-            ),
-          );
-        }
+      if (data is Map && data['success'] == true) {
+        await AuthService.completeLogin(data);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? '로그인에 실패했습니다.')),
-        );
+        showMessage(ApiClient.errorMessage(response, '로그인에 실패했습니다.'));
       }
     } catch (e) {
-      print(e);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('서버 연결 실패')),
-      );
+      debugPrint('로그인 오류: $e');
+      showMessage('서버 연결 실패');
     }
   }
 

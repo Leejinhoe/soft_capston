@@ -7,12 +7,10 @@ import 'board_page.dart';
 import 'profile_page.dart';
 
 class HomePage extends StatelessWidget {
-  final String userId;
   final String displayName;
 
   const HomePage({
     super.key,
-    this.userId = 'user123',
     required this.displayName,
   });
 
@@ -129,7 +127,6 @@ class HomePage extends StatelessWidget {
                       movePage(
                         context,
                         ProfilePage(
-                          userId: userId,
                           userName: user,
                         ),
                       );
@@ -174,7 +171,6 @@ class HomePage extends StatelessWidget {
                   movePage(
                     context,
                     StoryPage(
-                      userId: userId,
                       displayName: user,
                     ),
                   );
@@ -193,7 +189,6 @@ class HomePage extends StatelessWidget {
                   movePage(
                     context,
                     BoardPage(
-                      userId: userId,
                       displayName: user,
                     ),
                   );
@@ -212,7 +207,6 @@ class HomePage extends StatelessWidget {
                   movePage(
                     context,
                     VocabularyPage(
-                      userId: userId,
                       displayName: user,
                     ),
                   );
@@ -231,7 +225,6 @@ class HomePage extends StatelessWidget {
                   movePage(
                     context,
                     MindPage(
-                      userId: userId,
                       userName: user,
                     ),
                   );

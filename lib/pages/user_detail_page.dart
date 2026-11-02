@@ -1,7 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../core/api_client.dart';
 
 class UserDetailPage extends StatelessWidget {
   final Map user;
@@ -70,24 +68,20 @@ class UserDetailPage extends StatelessWidget {
     if (result != true) return;
 
     try {
-      print("삭제할 아이디 : ${user["id"]}");
-
-      final response = await http.delete(
-        Uri.parse(
-          "http://127.0.0.1:8000/admin/user/${user["id"]}",
-        ),
+      final response = await ApiClient.delete(
+        "/admin/user/${Uri.encodeComponent(user["id"].toString())}",
       );
-
-      final data = jsonDecode(response.body);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(data["message"] ?? "회원이 삭제되었습니다."),
+            content: Text(response.statusCode == 200
+                ? "회원이 삭제되었습니다."
+                : ApiClient.errorMessage(response, "회원 삭제 실패")),
           ),
         );
 
-        Navigator.pop(context, true);
+        if (response.statusCode == 200) Navigator.pop(context, true);
       }
     } catch (e) {
       if (context.mounted) {
@@ -102,13 +96,11 @@ class UserDetailPage extends StatelessWidget {
 
   Future<void> warningUser(BuildContext context) async {
     try {
-      final response = await http.put(
-        Uri.parse(
-          "http://127.0.0.1:8000/admin/warning/${user["id"]}",
-        ),
+      final response = await ApiClient.put(
+        "/admin/warning/${Uri.encodeComponent(user["id"].toString())}",
       );
 
-      final data = jsonDecode(response.body);
+      final data = ApiClient.decode(response) ?? {};
 
       if (response.statusCode == 200) {
         if (context.mounted) {

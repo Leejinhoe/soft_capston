@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 import '../widgets/custom_bottom_nav.dart';
 
 class MindPage extends StatefulWidget {
-  final String userId;
   final String userName;
 
   const MindPage({
     super.key,
-    this.userId = 'user123',
     required this.userName,
   });
 
@@ -75,7 +73,6 @@ class _MindPageState extends State<MindPage> {
       ),
       bottomNavigationBar: CustomBottomNav(
         currentPage: 'mind',
-        userId: widget.userId,
         displayName: displayName,
       ),
       body: SingleChildScrollView(

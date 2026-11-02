@@ -1,7 +1,6 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+
+import '../core/api_client.dart';
 
 class SignUpPage extends StatefulWidget {
 
@@ -110,25 +109,12 @@ class _SignUpPageState
 
     try {
 
-      final response =
-      await http.post(
-
-        Uri.parse(
-          'http://127.0.0.1:8000/check-id',
-        ),
-
-        headers: {
-          'Content-Type':
-          'application/json',
-        },
-
-        body: jsonEncode({
-          'id': id,
-        }),
+      final response = await ApiClient.post(
+        '/check-id',
+        body: {'id': id},
       );
 
-      final data =
-      jsonDecode(response.body);
+      final data = ApiClient.decode(response);
 
       setState(() {
 
@@ -280,34 +266,18 @@ class _SignUpPageState
     // 회원가입 성공
     try {
 
-      final response =
-          await http.post(
-
-        Uri.parse(
-          'http://127.0.0.1:8000/signup',
-        ),
-
-        headers: {
-          'Content-Type':
-          'application/json',
-        },
-
-        body: jsonEncode({
-
+      final response = await ApiClient.post(
+        '/signup',
+        body: {
           'id': id,
-
           'password': pw,
-
           'name': name,
-
           'birth': birth,
-
           'email': email,
-        }),
+        },
       );
 
-      final data =
-      jsonDecode(response.body);
+      final data = ApiClient.decode(response);
 
       if (data['success']) {
 

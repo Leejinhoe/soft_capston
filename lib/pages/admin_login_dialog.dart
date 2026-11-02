@@ -1,9 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
-import 'admin_page.dart';
+import '../core/api_client.dart';
+import '../core/auth_service.dart';
 
 class AdminLoginDialog extends StatefulWidget {
   const AdminLoginDialog({super.key});
@@ -36,50 +34,34 @@ class _AdminLoginDialogState extends State<AdminLoginDialog> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse("http://127.0.0.1:8000/admin-login"),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: jsonEncode({
-          "id": id,
-          "password": password,
-        }),
+      final response = await ApiClient.post(
+        "/admin-login",
+        body: {"id": id, "password": password},
       );
+      final data = ApiClient.decode(response);
 
-      print("status : ${response.statusCode}");
-      print("body : ${response.body}");
-
-      final data = jsonDecode(response.body);
-
-      if (data["success"]) {
-        if (!mounted) return;
-
-        Navigator.pop(context);
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const AdminPage(),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(data["message"]),
-          ),
-        );
+      if (data is Map && data["success"] == true) {
+        // 토큰 저장 후 관리자 화면으로 (다이얼로그와 로그인 화면은 함께 닫힘)
+        await AuthService.completeLogin(data);
+        return;
       }
-    } catch (e) {
-      print(e);
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(
+              ApiClient.errorMessage(response, "관리자 정보가 올바르지 않습니다.")),
         ),
+      );
+    } catch (e) {
+      debugPrint("관리자 로그인 오류: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("서버 연결 실패")),
       );
     }
 
+    if (!mounted) return;
     setState(() {
       isLoading = false;
     });
