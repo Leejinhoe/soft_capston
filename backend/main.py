@@ -44,6 +44,7 @@ from community import (
     router as community_router,
 )
 from quiz import build_questions, card_definition
+from story_text import clean_story_text
 from security import (
     ROLE_ADMIN,
     ROLE_USER,
@@ -576,11 +577,17 @@ async def generate_story(body: GenerateStoryRequest, current_user: dict = Depend
 
     위 설정을 바탕으로 아이들이 재미있게 읽을 수 있는 다정한 동화를 한국어로 작성해줘.
     문단 구분을 자연스럽게 해줘.
+
+    [형식 규칙]
+    - 마크다운을 절대 쓰지 마. (**, *, #, -, ` 같은 기호 금지)
+    - 제목은 쓰지 말고 첫 문장부터 바로 이야기를 시작해.
+    - 문단 사이는 빈 줄 하나로만 나눠.
     """
 
     try:
         story_response = llm_model.generate_content(story_prompt)
-        story_text = story_response.text.strip()
+        # 프롬프트로 막아도 마크다운/제목 줄이 섞여 올 수 있어 저장 전에 한 번 더 정리합니다.
+        story_text = clean_story_text(story_response.text) or story_response.text.strip()
     except Exception as e:
         log_gemini_error("동화 생성", e)
         story_text = f"옛날 옛날에 {body.prompt}이(가) 살고 있었어요.\n어느 날 {body.genre} 분위기가 물씬 풍기는 신비한 숲 속으로 여행을 떠났답니다.\n숲 속에서 반짝이는 별을 발견하고 행복하게 웃었어요."

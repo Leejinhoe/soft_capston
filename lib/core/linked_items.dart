@@ -17,6 +17,7 @@ enum LinkedKind {
     deleteOnly: '동화만 지우기',
     syncQuestion: '커뮤니티 글에도 반영할까요?',
     syncDetail: '커뮤니티에 올린 글도 같은 내용으로 바꿀 수 있어요.',
+    linkedLabel: '🌐 커뮤니티에 공유됨',
   ),
   post(
     path: '/api/posts',
@@ -27,6 +28,7 @@ enum LinkedKind {
     deleteOnly: '게시글만 지우기',
     syncQuestion: '내 동화에도 반영할까요?',
     syncDetail: '내 동화에 저장된 원본도 같은 내용으로 바꿀 수 있어요.',
+    linkedLabel: '📖 내 동화에 있음',
   );
 
   const LinkedKind({
@@ -38,6 +40,7 @@ enum LinkedKind {
     required this.deleteOnly,
     required this.syncQuestion,
     required this.syncDetail,
+    required this.linkedLabel,
   });
 
   final String path;
@@ -48,6 +51,7 @@ enum LinkedKind {
   final String deleteOnly;
   final String syncQuestion;
   final String syncDetail;
+  final String linkedLabel; // 목록에서 연결된 항목에 붙는 표시
 }
 
 const _card = Color(0xFF140028);

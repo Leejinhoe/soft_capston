@@ -90,7 +90,8 @@ class _MyItemsPageState extends State<MyItemsPage> {
     final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => _ItemDetailPage(item: item, showLikes: widget.showLikes),
+        builder: (_) => _ItemDetailPage(
+            item: item, kind: widget.kind, showLikes: widget.showLikes),
       ),
     );
     if (result == 'edit') _edit(item);
@@ -220,7 +221,7 @@ class _MyItemsPageState extends State<MyItemsPage> {
                       style: const TextStyle(color: Colors.white60, height: 1.4),
                     ),
                     const SizedBox(height: 8),
-                    _metaRow(item, widget.showLikes),
+                    _metaRow(item, widget.kind, widget.showLikes),
                   ],
                 ),
               ),
@@ -254,7 +255,7 @@ String _date(dynamic iso) {
   return '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
 }
 
-Widget _metaRow(Map<String, dynamic> item, bool showLikes) {
+Widget _metaRow(Map<String, dynamic> item, LinkedKind kind, bool showLikes) {
   final genre = (item['genre'] ?? '').toString();
   return Wrap(
     spacing: 10,
@@ -273,11 +274,8 @@ Widget _metaRow(Map<String, dynamic> item, bool showLikes) {
       Text(_date(item['created_at']),
           style: const TextStyle(color: Colors.white38, fontSize: 12)),
       if (hasLink(item))
-        const Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.link, color: Colors.purpleAccent, size: 14),
-          SizedBox(width: 3),
-          Text('연결됨', style: TextStyle(color: Colors.purpleAccent, fontSize: 12)),
-        ]),
+        Text(kind.linkedLabel,
+            style: const TextStyle(color: Colors.purpleAccent, fontSize: 12)),
       if (showLikes)
         Row(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.favorite, color: Colors.pinkAccent, size: 14),
@@ -292,9 +290,11 @@ Widget _metaRow(Map<String, dynamic> item, bool showLikes) {
 /// 전체 내용 보기. 하단 버튼으로 수정/삭제를 고르면 목록 화면이 처리합니다.
 class _ItemDetailPage extends StatelessWidget {
   final Map<String, dynamic> item;
+  final LinkedKind kind;
   final bool showLikes;
 
-  const _ItemDetailPage({required this.item, required this.showLikes});
+  const _ItemDetailPage(
+      {required this.item, required this.kind, required this.showLikes});
 
   @override
   Widget build(BuildContext context) {
@@ -308,7 +308,7 @@ class _ItemDetailPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          _metaRow(item, showLikes),
+          _metaRow(item, kind, showLikes),
           const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.all(20),

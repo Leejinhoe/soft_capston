@@ -3,6 +3,7 @@
 ## 동화 (story)
 - [x] `POST /api/generate-story` 동화 생성 + `stories_collection` 자동 저장
 - [x] 동화 본문 기반 추천 단어 3~5개 (Gemini + 파이썬 2차 검증)
+- [x] 동화 본문 정리: 프롬프트로 마크다운·제목 금지 + 저장 전 `**`, `##`, `*` 등 기호 제거, 첫 줄 제목 빼기 (`backend/story_text.py`)
 - [x] 단어 클릭 → 원형 정제 + 문맥 기반 다정한 뜻풀이 팝업
 - [ ] 팀원 Colab 동화 서버 연결 (분기 선택지 / 마무리 결말)
 
@@ -32,7 +33,7 @@
   - `GET /api/users/me/stories`, `GET·PATCH·DELETE /api/stories/{id}` (내 것만, 남의 것은 404)
 - [x] 내가 올린 게시글: 목록 / 보기 / 수정 / 삭제
   - `GET /api/users/me/posts`, `GET·PATCH·DELETE /api/posts/{id}` (내 것만)
-- [x] 동화 ↔ 게시글 연결 팝업 (아래 커뮤니티 항목과 같은 동작, 목록에 🔗 "연결됨" 표시)
+- [x] 동화 ↔ 게시글 연결 팝업 (아래 커뮤니티 항목과 같은 동작, 목록에 "🌐 커뮤니티에 공유됨"(내 동화) / "📖 내 동화에 있음"(내 게시글) 표시)
 - [x] 스크랩한 글 목록 (`GET /api/users/me/scraps`, 최근 스크랩 순) — `lib/pages/scrap_list_page.dart`
 - [x] 받은 좋아요 총합 (`GET /api/users/me/stats` 의 `like_count`)
 - [x] 알림함: 공지사항 + 받은 경고(`users.warnings`), 경고가 없으면 공지사항만
