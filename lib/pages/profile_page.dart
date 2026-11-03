@@ -2,9 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../core/auth_service.dart';
+import '../core/password_rules.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/custom_bottom_nav.dart';
+import 'my_items_page.dart';
+
+const _bg = Color(0xFF070018);
+const _card = Color(0xFF140028);
 
 class ProfilePage extends StatefulWidget {
   final String userName;
@@ -21,16 +26,23 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  late String displayName;
+  late String displayName; // 닉네임
+  String realName = ''; // 개인정보: 이름
   late String email;
   String bio = '상상력이 풍부한 동화 탐험가 ✨';
   String? imagePath;
+  bool isSocial = false;
+  String provider = '';
   bool isLoading = true;
 
   // 통계 수치 변수
   int storyCount = 0;
   int postCount = 0;
   int likeCount = 0;
+
+  // 공지사항 / 받은 경고
+  List<Map<String, dynamic>> notices = [];
+  List<Map<String, dynamic>> warnings = [];
 
   final ImagePicker _picker = ImagePicker();
 
@@ -39,6 +51,7 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     _fetchProfileData();
     _fetchUserStats();
+    _fetchInbox();
   }
 
   // [GET] 1. 백엔드 DB에서 프로필 정보 불러오기
@@ -51,9 +64,12 @@ class _ProfilePageState extends State<ProfilePage> {
         final data = ApiClient.decode(response);
         setState(() {
           displayName = data['nickname'] ?? widget.userName;
+          realName = data['real_name'] ?? '';
           email = data['email'] ?? widget.userEmail;
           bio = data['bio'] ?? '상상력이 풍부한 동화 탐험가 ✨';
           imagePath = data['profileImageUrl'];
+          isSocial = data['is_social'] == true;
+          provider = data['provider'] ?? '';
           isLoading = false;
         });
       } else {
@@ -84,6 +100,24 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  // [GET] 3. 공지사항 + 내가 받은 경고
+  Future<void> _fetchInbox() async {
+    try {
+      final response = await ApiClient.get('/api/users/me/inbox');
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = ApiClient.decode(response);
+        setState(() {
+          notices = (data['notices'] as List? ?? []).cast<Map<String, dynamic>>();
+          warnings =
+              (data['warnings'] as List? ?? []).cast<Map<String, dynamic>>();
+        });
+      }
+    } catch (e) {
+      debugPrint('알림함 조회 실패: $e');
+    }
+  }
+
   void _setFallbackData() {
     setState(() {
       displayName = widget.userName.trim().isEmpty ? '사용자' : widget.userName;
@@ -92,38 +126,34 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
-  // [PATCH/PUT] 3. 백엔드 REST API로 프로필 수정 전송
-  Future<bool> _updateProfileToApi(
-      String newName, String newEmail, String newBio) async {
-    try {
-      final response = await ApiClient.patch(
-        '/api/users/me',
-        body: {
-          'nickname': newName,
-          'email': newEmail,
-          'bio': newBio,
-        },
-      );
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 
+  // [PATCH] 4. 프로필/개인정보 수정 (보낸 항목만 바뀜). 실패하면 안내 문구를 돌려줍니다.
+  Future<String?> _updateProfileToApi(Map<String, String> body) async {
+    try {
+      final response = await ApiClient.patch('/api/users/me', body: body);
       if (response.statusCode == 200) {
-        setState(() {
-          displayName = newName;
-          email = newEmail;
-          bio = newBio;
-        });
-        return true;
-      } else {
-        debugPrint('서버 응답 오류: ${response.statusCode}');
-        return false;
+        if (mounted) {
+          setState(() {
+            displayName = body['nickname'] ?? displayName;
+            bio = body['bio'] ?? bio;
+            realName = body['name'] ?? realName;
+            email = body['email'] ?? email;
+          });
+        }
+        return null;
       }
+      return ApiClient.errorMessage(response, '수정하지 못했어요.');
     } catch (e) {
       debugPrint('네트워크 요청 실패: $e');
-      return false;
+      return '서버에 연결하지 못했어요.';
     }
   }
 
-  // [PATCH/PUT] 4. 백엔드 REST API로 비밀번호 변경 전송
-  Future<Map<String, dynamic>> _changePasswordToApi(
+  // [PATCH] 5. 비밀번호 변경. 실패하면 안내 문구를 돌려줍니다.
+  Future<String?> _changePasswordToApi(
       String currentPassword, String newPassword) async {
     try {
       final response = await ApiClient.patch(
@@ -133,22 +163,15 @@ class _ProfilePageState extends State<ProfilePage> {
           'new_password': newPassword,
         },
       );
-
-      if (response.statusCode == 200) {
-        return {'success': true, 'message': '비밀번호가 성공적으로 변경되었습니다.'};
-      } else {
-        return {
-          'success': false,
-          'message': ApiClient.errorMessage(response, '비밀번호 변경 실패 (서버 에러)')
-        };
-      }
+      if (response.statusCode == 200) return null;
+      return ApiClient.errorMessage(response, '비밀번호를 바꾸지 못했어요.');
     } catch (e) {
       debugPrint('비밀번호 변경 네트워크 요청 실패: $e');
-      return {'success': false, 'message': '서버 연결 실패 (네트워크 확인)'};
+      return '서버에 연결하지 못했어요.';
     }
   }
 
-  // [POST/MULTIPART] 5. 프로필 이미지 백엔드 업로드
+  // [POST/MULTIPART] 6. 프로필 이미지 백엔드 업로드
   Future<void> _uploadImageToApi(XFile pickedFile) async {
     try {
       final bytes = await pickedFile.readAsBytes();
@@ -159,31 +182,25 @@ class _ProfilePageState extends State<ProfilePage> {
         filename: pickedFile.name,
       );
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final data = ApiClient.decode(response);
         setState(() {
           // 이미지 캐시 갱신
-          imagePath = '${data['imageUrl']}?t=${DateTime.now().millisecondsSinceEpoch}';
+          imagePath =
+              '${data['imageUrl']}?t=${DateTime.now().millisecondsSinceEpoch}';
         });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('프로필 이미지가 변경되었습니다!')),
-          );
-        }
+        _toast('프로필 사진을 바꿨어요!');
       } else {
         debugPrint('이미지 업로드 실패: ${response.statusCode}');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('업로드 실패 (${response.statusCode})')),
-          );
-        }
+        _toast('업로드 실패 (${response.statusCode})');
       }
     } catch (e) {
       debugPrint('이미지 업로드 예외 발생: $e');
     }
   }
 
-  // [IMAGE PICK & CROP] 6. 이미지 선택 및 크기 조정
+  // [IMAGE PICK & CROP] 7. 이미지 선택 및 크기 조정
   Future<void> _pickImage(ImageSource source) async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
@@ -208,7 +225,7 @@ class _ProfilePageState extends State<ProfilePage> {
           uiSettings: [
             AndroidUiSettings(
               toolbarTitle: '프로필 사진 편집',
-              toolbarColor: const Color(0xFF140028),
+              toolbarColor: _card,
               toolbarWidgetColor: Colors.white,
               initAspectRatio: CropAspectRatioPreset.square,
               lockAspectRatio: true,
@@ -232,7 +249,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void _showImagePickerOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF140028),
+      backgroundColor: _card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -241,23 +258,132 @@ class _ProfilePageState extends State<ProfilePage> {
           child: Wrap(
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_library, color: Colors.purpleAccent),
-                title: const Text('갤러리에서 선택', style: TextStyle(color: Colors.white)),
+                leading:
+                    const Icon(Icons.photo_library, color: Colors.purpleAccent),
+                title: const Text('갤러리에서 선택',
+                    style: TextStyle(color: Colors.white)),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.gallery);
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt, color: Colors.purpleAccent),
-                title: const Text('카메라로 촬영', style: TextStyle(color: Colors.white)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
+              if (!kIsWeb)
+                ListTile(
+                  leading:
+                      const Icon(Icons.camera_alt, color: Colors.purpleAccent),
+                  title: const Text('카메라로 촬영',
+                      style: TextStyle(color: Colors.white)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  // ---------- 공통 다이얼로그 부품 ----------
+  InputDecoration _inputDecoration(String label, {String? hint, String? helper}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+      helperMaxLines: 2,
+      hintStyle: const TextStyle(color: Colors.white24),
+      labelStyle: const TextStyle(color: Colors.white70),
+      helperStyle: const TextStyle(color: Colors.white54),
+      counterStyle: const TextStyle(color: Colors.white38),
+      enabledBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: Colors.white24),
+      ),
+      focusedBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: Colors.purpleAccent),
+      ),
+    );
+  }
+
+  /// 입력 다이얼로그 공통 틀. onSave가 안내 문구를 돌려주면 창을 닫지 않고 아래에 보여줍니다.
+  void _showFormDialog({
+    required String title,
+    required List<Widget> Function(StateSetter setDialogState) fields,
+    required Future<String?> Function() onSave,
+    required String successMessage,
+    String saveLabel = '저장',
+  }) {
+    String? errorText;
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              backgroundColor: _card,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Colors.white10),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...fields(setDialogState),
+                    if (errorText != null) ...[
+                      const SizedBox(height: 14),
+                      Text(errorText!,
+                          style: const TextStyle(color: Colors.redAccent)),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child:
+                      const Text('취소', style: TextStyle(color: Colors.white54)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purpleAccent,
+                  ),
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isSaving = true;
+                            errorText = null;
+                          });
+                          final error = await onSave();
+                          if (error == null) {
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                            if (mounted) _toast(successMessage);
+                            return;
+                          }
+                          if (dialogContext.mounted) {
+                            setDialogState(() {
+                              isSaving = false;
+                              errorText = error;
+                            });
+                          }
+                        },
+                  child: Text(saveLabel,
+                      style: const TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -268,299 +394,137 @@ class _ProfilePageState extends State<ProfilePage> {
     final nameController = TextEditingController(text: displayName);
     final bioController = TextEditingController(text: bio);
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF140028),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Colors.white10),
-          ),
-          title: const Text(
-            '프로필 수정',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: '닉네임',
-                  labelStyle: TextStyle(color: Colors.white70),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white24),
-                  ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purpleAccent),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: bioController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: '한 줄 소개',
-                  labelStyle: TextStyle(color: Colors.white70),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white24),
-                  ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purpleAccent),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소', style: TextStyle(color: Colors.white54)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purpleAccent,
-              ),
-              onPressed: () async {
-                final newName = nameController.text.trim().isEmpty
-                    ? '사용자'
-                    : nameController.text.trim();
-                final newBio = bioController.text.trim();
-
-                bool success = await _updateProfileToApi(newName, email, newBio);
-
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        success
-                            ? '프로필이 성공적으로 수정되었습니다.'
-                            : '서버 수정 실패 (네트워크 확인)',
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: const Text('저장', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
+    _showFormDialog(
+      title: '프로필 수정',
+      successMessage: '프로필을 수정했어요.',
+      fields: (_) => [
+        TextField(
+          controller: nameController,
+          maxLength: 20,
+          style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration('닉네임'),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: bioController,
+          maxLength: 50,
+          style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration('한 줄 소개'),
+        ),
+      ],
+      onSave: () async {
+        final newName = nameController.text.trim();
+        if (newName.isEmpty) return '닉네임을 입력해 주세요.';
+        return _updateProfileToApi({
+          'nickname': newName,
+          'bio': bioController.text.trim(),
+        });
       },
     );
   }
 
-  // 2. 개인정보 설정 다이얼로그 (이메일 및 닉네임)
+  // 2. 개인정보 수정 다이얼로그 (이름, 이메일)
   void _showPrivacySettingsDialog() {
+    final nameController = TextEditingController(text: realName);
     final emailController = TextEditingController(text: email);
-    final nameController = TextEditingController(text: displayName);
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF140028),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Colors.white10),
-          ),
-          title: const Text(
-            '개인정보 설정 및 수정',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: emailController,
-                  style: const TextStyle(color: Colors.white),
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: '가입 계정 (이메일)',
-                    hintText: '이메일을 입력하세요',
-                    hintStyle: TextStyle(color: Colors.white24),
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.purpleAccent),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: '가입한 이름/닉네임',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.purpleAccent),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소', style: TextStyle(color: Colors.white54)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purpleAccent,
-              ),
-              onPressed: () async {
-                final newEmail = emailController.text.trim();
-                final newName = nameController.text.trim().isEmpty
-                    ? '사용자'
-                    : nameController.text.trim();
-
-                bool success = await _updateProfileToApi(newName, newEmail, bio);
-
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        success ? '개인정보가 수정되었습니다.' : '서버 수정 실패',
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: const Text('저장', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
+    _showFormDialog(
+      title: '개인정보 수정',
+      successMessage: '개인정보를 수정했어요.',
+      fields: (_) => [
+        TextField(
+          controller: nameController,
+          maxLength: 20,
+          style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration('이름'),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: emailController,
+          keyboardType: TextInputType.emailAddress,
+          style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration('이메일', hint: 'example@email.com'),
+        ),
+      ],
+      onSave: () async {
+        final newName = nameController.text.trim();
+        final newEmail = emailController.text.trim();
+        if (newName.isEmpty) return '이름을 입력해 주세요.';
+        if (newEmail.isNotEmpty &&
+            !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(newEmail)) {
+          return '이메일 형식이 올바르지 않아요.';
+        }
+        return _updateProfileToApi({'name': newName, 'email': newEmail});
       },
     );
   }
 
-  // 3. 비밀번호 변경 다이얼로그
+  // 3. 비밀번호 변경 다이얼로그 (회원가입과 같은 규칙으로 실시간 검사)
   void _showPasswordChangeDialog() {
     final currentPwController = TextEditingController();
     final newPwController = TextEditingController();
     final confirmPwController = TextEditingController();
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF140028),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Colors.white10),
+    _showFormDialog(
+      title: '비밀번호 변경',
+      successMessage: '비밀번호를 바꿨어요.',
+      saveLabel: '변경',
+      fields: (setDialogState) {
+        final newPw = newPwController.text;
+        final strong = isStrongPassword(newPw);
+        return [
+          TextField(
+            controller: currentPwController,
+            obscureText: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: _inputDecoration('현재 비밀번호'),
           ),
-          title: const Text(
-            '비밀번호 변경',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: currentPwController,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: '현재 비밀번호',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.purpleAccent),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: newPwController,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: '새 비밀번호',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.purpleAccent),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: confirmPwController,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: '새 비밀번호 확인',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.purpleAccent),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소', style: TextStyle(color: Colors.white54)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purpleAccent,
+          const SizedBox(height: 16),
+          TextField(
+            controller: newPwController,
+            obscureText: true,
+            onChanged: (_) => setDialogState(() {}),
+            style: const TextStyle(color: Colors.white),
+            decoration: _inputDecoration('새 비밀번호', helper: kPasswordGuide)
+                .copyWith(
+              helperStyle: TextStyle(
+                color: newPw.isEmpty
+                    ? Colors.white54
+                    : (strong ? Colors.greenAccent : Colors.orangeAccent),
               ),
-              onPressed: () async {
-                final currentPw = currentPwController.text.trim();
-                final newPw = newPwController.text.trim();
-                final confirmPw = confirmPwController.text.trim();
-
-                if (currentPw.isEmpty || newPw.isEmpty || confirmPw.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('모든 비밀번호 항목을 입력해주세요.')),
-                  );
-                  return;
-                }
-
-                if (newPw != confirmPw) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('새 비밀번호가 서로 일치하지 않습니다.')),
-                  );
-                  return;
-                }
-
-                final result = await _changePasswordToApi(currentPw, newPw);
-
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(result['message'])),
-                  );
-                }
-              },
-              child: const Text('변경', style: TextStyle(color: Colors.white)),
+              suffixIcon: newPw.isEmpty
+                  ? null
+                  : Icon(strong ? Icons.check_circle : Icons.error_outline,
+                      color: strong ? Colors.greenAccent : Colors.orangeAccent),
             ),
-          ],
-        );
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: confirmPwController,
+            obscureText: true,
+            onChanged: (_) => setDialogState(() {}),
+            style: const TextStyle(color: Colors.white),
+            decoration: _inputDecoration('새 비밀번호 확인').copyWith(
+              errorText: confirmPwController.text.isNotEmpty &&
+                      confirmPwController.text != newPw
+                  ? '새 비밀번호와 달라요.'
+                  : null,
+            ),
+          ),
+        ];
+      },
+      onSave: () async {
+        final currentPw = currentPwController.text;
+        final newPw = newPwController.text;
+        final confirmPw = confirmPwController.text;
+
+        if (currentPw.isEmpty || newPw.isEmpty || confirmPw.isEmpty) {
+          return '모든 비밀번호 항목을 입력해 주세요.';
+        }
+        if (!isStrongPassword(newPw)) return '새 비밀번호 규칙을 확인해 주세요.';
+        if (newPw != confirmPw) return '새 비밀번호가 서로 달라요.';
+        if (newPw == currentPw) return '새 비밀번호가 지금 비밀번호와 같아요.';
+        return _changePasswordToApi(currentPw, newPw);
       },
     );
   }
@@ -571,7 +535,7 @@ class _ProfilePageState extends State<ProfilePage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF140028),
+          backgroundColor: _card,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
             side: const BorderSide(color: Colors.white10),
@@ -606,52 +570,176 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  // 5. 내 동화 / 내 게시글 화면 열기 (수정·삭제가 있었으면 숫자 새로고침)
+  Future<void> _openMyItems(MyItemsPage page) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+    );
+    if (changed == true) _fetchUserStats();
+  }
+
+  String get _providerLabel {
+    switch (provider) {
+      case 'kakao':
+        return '카카오';
+      case 'naver':
+        return '네이버';
+      case 'google':
+        return '구글';
+      default:
+        return '소셜';
+    }
+  }
+
+  // ---------- 화면 부품 ----------
   Widget infoCard({
     required IconData icon,
     required String title,
     required String value,
+    VoidCallback? onTap,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF140028),
+        color: _card,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white10),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.purple.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(
-              icon,
-              color: Colors.purpleAccent,
-              size: 30,
-            ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(icon, color: Colors.purpleAccent, size: 30),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 14),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onTap != null)
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('보기',
+                        style: TextStyle(color: Colors.purpleAccent, fontSize: 13)),
+                    Icon(Icons.chevron_right, color: Colors.purpleAccent),
+                  ],
+                ),
+            ],
           ),
-          const SizedBox(width: 18),
+        ),
+      ),
+    );
+  }
+
+  Widget menuButton({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    VoidCallback? onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        leading: Icon(icon, color: onTap == null ? Colors.white38 : Colors.white),
+        title: Text(title,
+            style: TextStyle(
+                color: onTap == null ? Colors.white54 : Colors.white)),
+        subtitle: subtitle == null
+            ? null
+            : Text(subtitle,
+                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+        trailing: onTap == null
+            ? null
+            : const Icon(Icons.arrow_forward_ios,
+                color: Colors.white54, size: 16),
+      ),
+    );
+  }
+
+  String _date(dynamic iso) {
+    final d = DateTime.tryParse((iso ?? '').toString());
+    if (d == null) return '';
+    return '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
+  }
+
+  Widget _inboxTile({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String body,
+    required String date,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(color: Colors.white54, fontSize: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(title,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                    Text(date,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                if (body.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(body,
+                      style:
+                          const TextStyle(color: Colors.white70, height: 1.5)),
+                ],
               ],
             ),
           ),
@@ -660,36 +748,58 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget menuButton({
-    required IconData icon,
-    required String title,
-    VoidCallback? onTap,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF140028),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: ListTile(
-        onTap: onTap,
-        leading: Icon(icon, color: Colors.white),
-        title: Text(title, style: const TextStyle(color: Colors.white)),
-        trailing: const Icon(
-          Icons.arrow_forward_ios,
-          color: Colors.white54,
-          size: 16,
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
         ),
-      ),
-    );
+      );
+
+  List<Widget> _buildInbox() {
+    return [
+      _sectionTitle('알림함'),
+      // 경고가 있을 때만 경고 내역을 보여 주고, 없으면 공지사항만 보여 줍니다.
+      for (final w in warnings)
+        _inboxTile(
+          icon: Icons.warning_amber_rounded,
+          color: Colors.orangeAccent,
+          title: '받은 경고',
+          body: (w['reason'] ?? '').toString(),
+          date: _date(w['created_at']),
+        ),
+      for (final n in notices)
+        _inboxTile(
+          icon: Icons.campaign,
+          color: Colors.purpleAccent,
+          title: (n['title'] ?? '공지사항').toString(),
+          body: (n['content'] ?? '').toString(),
+          date: _date(n['created_at']),
+        ),
+      if (warnings.isEmpty && notices.isEmpty)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: _card,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: const Text('아직 새로운 공지사항이 없어요.',
+              style: TextStyle(color: Colors.white54)),
+        ),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF070018),
+        backgroundColor: _bg,
         body: Center(
           child: CircularProgressIndicator(color: Colors.purpleAccent),
         ),
@@ -697,149 +807,164 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: _bg,
       bottomNavigationBar: CustomBottomNav(
         currentPage: 'profile',
         displayName: displayName,
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 10),
+        child: RefreshIndicator(
+          color: Colors.purpleAccent,
+          onRefresh: () => Future.wait(
+              [_fetchProfileData(), _fetchUserStats(), _fetchInbox()]),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 10),
 
-              // 프로필 상단 카드
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                // 프로필 상단 카드
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                    ),
+                    borderRadius: BorderRadius.circular(32),
                   ),
-                  borderRadius: BorderRadius.circular(32),
-                ),
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      onTap: _showImagePickerOptions,
-                      child: Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 46,
-                            backgroundColor: Colors.white24,
-                            backgroundImage: (imagePath != null &&
-                                imagePath!.startsWith('http'))
-                                ? NetworkImage(imagePath!) as ImageProvider
-                                : null,
-                            child: (imagePath == null ||
-                                !imagePath!.startsWith('http'))
-                                ? const Icon(
-                              Icons.person,
-                              size: 52,
-                              color: Colors.white,
-                            )
-                                : null,
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: Colors.purpleAccent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.camera_alt,
-                                size: 18,
-                                color: Colors.white,
+                  child: Column(
+                    children: [
+                      GestureDetector(
+                        onTap: _showImagePickerOptions,
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 46,
+                              backgroundColor: Colors.white24,
+                              backgroundImage: (imagePath != null &&
+                                      imagePath!.startsWith('http'))
+                                  ? NetworkImage(imagePath!) as ImageProvider
+                                  : null,
+                              child: (imagePath == null ||
+                                      !imagePath!.startsWith('http'))
+                                  ? const Icon(
+                                      Icons.person,
+                                      size: 52,
+                                      color: Colors.white,
+                                    )
+                                  : null,
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.purpleAccent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      '$displayName의 마이페이지',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
+                      const SizedBox(height: 18),
+                      Text(
+                        '$displayName의 마이페이지',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      bio,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 15,
+                      const SizedBox(height: 8),
+                      Text(
+                        bio,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
 
-              const SizedBox(height: 30),
+                const SizedBox(height: 30),
 
-              // 통계 카드 (만든 동화 / 작성한 게시글 / 받은 좋아요)
-              infoCard(
-                icon: Icons.auto_stories,
-                title: '생성한 동화',
-                value: '$storyCount편',
-              ),
-              infoCard(
-                icon: Icons.article,
-                title: '작성한 게시글',
-                value: '$postCount개',
-              ),
-              infoCard(
-                icon: Icons.favorite,
-                title: '받은 좋아요',
-                value: '$likeCount개',
-              ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                '설정',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+                // 통계 카드 (만든 동화 / 작성한 게시글 / 받은 좋아요)
+                infoCard(
+                  icon: Icons.auto_stories,
+                  title: '내가 만든 동화',
+                  value: '$storyCount편',
+                  onTap: () => _openMyItems(const MyItemsPage.stories()),
                 ),
-              ),
+                infoCard(
+                  icon: Icons.article,
+                  title: '내가 올린 게시글',
+                  value: '$postCount개',
+                  onTap: () => _openMyItems(const MyItemsPage.posts()),
+                ),
+                infoCard(
+                  icon: Icons.favorite,
+                  title: '받은 좋아요',
+                  value: '$likeCount개',
+                ),
 
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-              menuButton(
-                icon: Icons.edit,
-                title: '프로필 수정',
-                onTap: _showEditProfileDialog,
-              ),
+                ..._buildInbox(),
 
-              menuButton(
-                icon: Icons.lock,
-                title: '개인정보 설정',
-                onTap: _showPrivacySettingsDialog,
-              ),
+                const SizedBox(height: 20),
 
-              menuButton(
-                icon: Icons.key,
-                title: '비밀번호 변경',
-                onTap: _showPasswordChangeDialog,
-              ),
+                _sectionTitle('설정'),
 
-              menuButton(
-                icon: Icons.logout,
-                title: '로그아웃',
-                onTap: _showLogoutDialog,
-              ),
+                menuButton(
+                  icon: Icons.edit,
+                  title: '프로필 수정',
+                  subtitle: '닉네임, 한 줄 소개',
+                  onTap: _showEditProfileDialog,
+                ),
 
-              const SizedBox(height: 100),
-            ],
+                menuButton(
+                  icon: Icons.lock,
+                  title: '개인정보 수정',
+                  subtitle: '이름, 이메일',
+                  onTap: _showPrivacySettingsDialog,
+                ),
+
+                // 소셜 로그인 계정은 비밀번호가 없으므로 안내 문구로 대신합니다.
+                isSocial
+                    ? menuButton(
+                        icon: Icons.key_off,
+                        title: '비밀번호 변경',
+                        subtitle:
+                            '$_providerLabel 계정으로 로그인했어요. 비밀번호는 $_providerLabel에서 관리해요.',
+                      )
+                    : menuButton(
+                        icon: Icons.key,
+                        title: '비밀번호 변경',
+                        onTap: _showPasswordChangeDialog,
+                      ),
+
+                menuButton(
+                  icon: Icons.logout,
+                  title: '로그아웃',
+                  onTap: _showLogoutDialog,
+                ),
+
+                const SizedBox(height: 100),
+              ],
+            ),
           ),
         ),
       ),

@@ -33,6 +33,7 @@ from database import (
     stories_collection,
     posts_collection,
     notifications_collection,
+    notices_collection,
     vocabularies_collection,
 )
 from quiz import build_questions, card_definition
@@ -41,10 +42,13 @@ from security import (
     ROLE_USER,
     STATUS_ACTIVE,
     BANNED_MESSAGE,
+    PASSWORD_RULE_MESSAGE,
     banned_exception,
     create_access_token,
     get_current_user,
     is_banned,
+    is_social_user,
+    is_strong_password,
     new_user_defaults,
     public_user_id,
     require_admin,
@@ -207,9 +211,61 @@ class AdminLoginRequest(BaseModel):
     password: str
 
 class ProfileUpdateRequest(BaseModel):
+    # 보낸 항목만 바꿉니다. (프로필 수정: nickname/bio, 개인정보 수정: name/email)
     nickname: Optional[str] = None
-    email: Optional[str] = None
     bio: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+class MyProfileResponse(BaseModel):
+    id: str
+    name: str                    # 화면에 보여줄 이름 (닉네임 우선)
+    role: str
+    status: str
+    nickname: str
+    real_name: str               # 개인정보: 이름
+    email: str
+    bio: str
+    profileImageUrl: Optional[str] = None
+    warning_count: int = 0
+    is_social: bool = False      # True면 비밀번호 변경 메뉴 대신 안내 문구
+    provider: str = ""
+
+class SimpleResponse(BaseModel):
+    success: bool
+    message: str = ""
+
+class MyItem(BaseModel):
+    """내 동화 / 내 게시글 공통 항목"""
+    id: str
+    title: str
+    content: str
+    genre: str = ""
+    likes_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+class ItemUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+class NoticeItem(BaseModel):
+    id: str
+    title: str
+    content: str
+    created_at: str = ""
+
+class WarningItem(BaseModel):
+    reason: str
+    created_at: str = ""
+
+class MyInboxResponse(BaseModel):
+    notices: list[NoticeItem]
+    warnings: list[WarningItem]
+
+class NoticeCreateRequest(BaseModel):
+    title: str
+    content: str
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
@@ -666,65 +722,82 @@ async def get_my_notifications(current_user: dict = Depends(get_current_user)):
     return notifications
 
 
-@app.get("/api/users/me")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def iso(value) -> str:
+    return value.isoformat() if isinstance(value, datetime) else (str(value) if value else "")
+
+
+def _clean_text(value: str, label: str, max_len: int, required: bool) -> str:
+    text = value.strip()
+    if required and not text:
+        raise HTTPException(status_code=400, detail=f"{label}을(를) 입력해 주세요.")
+    if len(text) > max_len:
+        raise HTTPException(status_code=400, detail=f"{label}은(는) {max_len}자 이하로 적어 주세요.")
+    return text
+
+
+@app.get("/api/users/me", response_model=MyProfileResponse)
 async def get_my_profile(current_user: dict = Depends(get_current_user)):
     user = current_user
-    return {
+    return MyProfileResponse(
         **user_summary(user),
-        "nickname": user.get("nickname") or user.get("name") or "사용자",
-        "email": user.get("email") or "",
-        "bio": user.get("bio") or "상상력이 풍부한 동화 탐험가 ✨",
-        "profileImageUrl": user.get("profile_image_url") or None,
-        "warning_count": user.get("warning_count", 0),
-    }
+        nickname=user.get("nickname") or user.get("name") or "사용자",
+        real_name=user.get("name") or "",
+        email=user.get("email") or "",
+        bio=user.get("bio") or "상상력이 풍부한 동화 탐험가 ✨",
+        profileImageUrl=user.get("profile_image_url") or None,
+        warning_count=user.get("warning_count", 0),
+        is_social=is_social_user(user),
+        provider=user.get("provider") or "",
+    )
 
 
-@app.patch("/api/users/me")
+@app.patch("/api/users/me", response_model=SimpleResponse)
 async def update_my_profile(body: ProfileUpdateRequest, current_user: dict = Depends(get_current_user)):
     update_data = {}
     if body.nickname is not None:
-        update_data["name"] = body.nickname
-        update_data["nickname"] = body.nickname
-    if body.email is not None:
-        update_data["email"] = body.email
+        update_data["nickname"] = _clean_text(body.nickname, "닉네임", 20, required=True)
     if body.bio is not None:
-        update_data["bio"] = body.bio
+        update_data["bio"] = _clean_text(body.bio, "한 줄 소개", 50, required=False)
+    if body.name is not None:
+        update_data["name"] = _clean_text(body.name, "이름", 20, required=True)
+    if body.email is not None:
+        email = _clean_text(body.email, "이메일", 100, required=False)
+        if email and not EMAIL_PATTERN.match(email):
+            raise HTTPException(status_code=400, detail="이메일 형식이 올바르지 않아요.")
+        update_data["email"] = email
 
     if update_data:
-        await users_collection.update_one(
-            {"_id": current_user["_id"]},
-            {"$set": update_data}
-        )
+        await users_collection.update_one({"_id": current_user["_id"]}, {"$set": update_data})
 
-    return {"success": True, "message": "프로필 정보가 수정되었습니다."}
+    return SimpleResponse(success=True, message="정보가 수정되었어요.")
 
 
-@app.patch("/api/users/me/password")
+@app.patch("/api/users/me/password", response_model=SimpleResponse)
 async def change_my_password(body: PasswordChangeRequest, current_user: dict = Depends(get_current_user)):
     user = current_user
 
-    if "password" not in user or not user["password"]:
-        raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호를 변경할 수 없습니다.")
+    if is_social_user(user):
+        raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호를 변경할 수 없어요.")
 
-    is_correct = bcrypt.checkpw(
-        body.current_password.encode('utf-8'),
-        user["password"].encode('utf-8')
-    )
+    if not bcrypt.checkpw(body.current_password.encode("utf-8"), user["password"].encode("utf-8")):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않아요.")
 
-    if not is_correct:
-        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다.")
+    if not is_strong_password(body.new_password):
+        raise HTTPException(status_code=400, detail=PASSWORD_RULE_MESSAGE)
 
-    new_hashed_password = bcrypt.hashpw(
-        body.new_password.encode('utf-8'),
-        bcrypt.gensalt()
-    )
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="새 비밀번호가 지금 비밀번호와 같아요.")
 
+    new_hashed_password = bcrypt.hashpw(body.new_password.encode("utf-8"), bcrypt.gensalt())
     await users_collection.update_one(
         {"_id": user["_id"]},
-        {"$set": {"password": new_hashed_password.decode('utf-8')}}
+        {"$set": {"password": new_hashed_password.decode("utf-8")}},
     )
 
-    return {"success": True, "message": "비밀번호가 성공적으로 변경되었습니다."}
+    return SimpleResponse(success=True, message="비밀번호가 변경되었어요.")
 
 
 @app.post("/api/users/me/image")
@@ -751,6 +824,148 @@ async def upload_my_image(
     )
 
     return {"success": True, "imageUrl": image_url}
+
+
+# ----------------------------------------
+# 마이페이지: 내 동화 / 내 게시글 (토큰의 user_id 기준, 내 것만 보기·수정·삭제)
+# ----------------------------------------
+STORY_NOT_FOUND = "동화를 찾지 못했어요."
+POST_NOT_FOUND = "게시글을 찾지 못했어요."
+
+
+def _to_my_item(doc: dict) -> MyItem:
+    return MyItem(
+        id=str(doc["_id"]),
+        title=doc.get("title") or "제목 없는 이야기",
+        content=doc.get("content") or "",
+        genre=doc.get("genre") or "",
+        likes_count=int(doc.get("likes_count") or 0),
+        created_at=iso(doc.get("created_at")),
+        updated_at=iso(doc.get("updated_at")),
+    )
+
+
+def _my_doc_filter(item_id: str, user_id: str) -> dict:
+    if not ObjectId.is_valid(item_id):
+        raise HTTPException(status_code=400, detail="잘못된 요청이에요.")
+    return {"_id": ObjectId(item_id), "user_id": user_id}
+
+
+def _item_update_fields(body: ItemUpdateRequest) -> dict:
+    fields = {}
+    if body.title is not None:
+        fields["title"] = _clean_text(body.title, "제목", 50, required=True)
+    if body.content is not None:
+        fields["content"] = _clean_text(body.content, "내용", 20000, required=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="바꿀 내용이 없어요.")
+    fields["updated_at"] = datetime.utcnow()
+    return fields
+
+
+async def _list_mine(collection, user_id: str) -> list[MyItem]:
+    cursor = collection.find({"user_id": user_id}).sort("created_at", -1)
+    return [_to_my_item(doc) async for doc in cursor]
+
+
+async def _get_mine(collection, item_id: str, user_id: str, not_found: str) -> MyItem:
+    doc = await collection.find_one(_my_doc_filter(item_id, user_id))
+    if not doc:
+        raise HTTPException(status_code=404, detail=not_found)
+    return _to_my_item(doc)
+
+
+async def _update_mine(collection, item_id: str, user_id: str, body: ItemUpdateRequest, not_found: str) -> MyItem:
+    query = _my_doc_filter(item_id, user_id)
+    result = await collection.update_one(query, {"$set": _item_update_fields(body)})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail=not_found)
+    return _to_my_item(await collection.find_one(query))
+
+
+async def _delete_mine(collection, item_id: str, user_id: str, not_found: str) -> SimpleResponse:
+    result = await collection.delete_one(_my_doc_filter(item_id, user_id))
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail=not_found)
+    return SimpleResponse(success=True, message="삭제했어요.")
+
+
+@app.get("/api/users/me/stories", response_model=list[MyItem])
+async def get_my_stories(current_user: dict = Depends(get_current_user)):
+    return await _list_mine(stories_collection, current_user["user_id"])
+
+
+@app.get("/api/stories/{story_id}", response_model=MyItem)
+async def get_my_story(story_id: str, current_user: dict = Depends(get_current_user)):
+    return await _get_mine(stories_collection, story_id, current_user["user_id"], STORY_NOT_FOUND)
+
+
+@app.patch("/api/stories/{story_id}", response_model=MyItem)
+async def update_my_story(story_id: str, body: ItemUpdateRequest, current_user: dict = Depends(get_current_user)):
+    return await _update_mine(stories_collection, story_id, current_user["user_id"], body, STORY_NOT_FOUND)
+
+
+@app.delete("/api/stories/{story_id}", response_model=SimpleResponse)
+async def delete_my_story(story_id: str, current_user: dict = Depends(get_current_user)):
+    return await _delete_mine(stories_collection, story_id, current_user["user_id"], STORY_NOT_FOUND)
+
+
+@app.get("/api/users/me/posts", response_model=list[MyItem])
+async def get_my_posts(current_user: dict = Depends(get_current_user)):
+    return await _list_mine(posts_collection, current_user["user_id"])
+
+
+@app.get("/api/posts/{post_id}", response_model=MyItem)
+async def get_my_post(post_id: str, current_user: dict = Depends(get_current_user)):
+    return await _get_mine(posts_collection, post_id, current_user["user_id"], POST_NOT_FOUND)
+
+
+@app.patch("/api/posts/{post_id}", response_model=MyItem)
+async def update_my_post(post_id: str, body: ItemUpdateRequest, current_user: dict = Depends(get_current_user)):
+    return await _update_mine(posts_collection, post_id, current_user["user_id"], body, POST_NOT_FOUND)
+
+
+@app.delete("/api/posts/{post_id}", response_model=SimpleResponse)
+async def delete_my_post(post_id: str, current_user: dict = Depends(get_current_user)):
+    return await _delete_mine(posts_collection, post_id, current_user["user_id"], POST_NOT_FOUND)
+
+
+# ----------------------------------------
+# 마이페이지: 공지사항 + 내가 받은 경고 (users.warnings)
+# ----------------------------------------
+def _to_notice(doc: dict) -> NoticeItem:
+    return NoticeItem(
+        id=str(doc["_id"]),
+        title=doc.get("title") or "공지사항",
+        content=doc.get("content") or "",
+        created_at=iso(doc.get("created_at")),
+    )
+
+
+@app.get("/api/users/me/inbox", response_model=MyInboxResponse)
+async def get_my_inbox(current_user: dict = Depends(get_current_user)):
+    cursor = notices_collection.find().sort("created_at", -1).limit(50)
+    notices = [_to_notice(doc) async for doc in cursor]
+    # 어떤 관리자가 줬는지는 빼고, 사유와 날짜만 최신순으로 내려줍니다.
+    warnings = [
+        WarningItem(reason=w.get("reason") or "이용 수칙 위반", created_at=iso(w.get("created_at")))
+        for w in reversed(current_user.get("warnings") or [])
+        if isinstance(w, dict)
+    ]
+    return MyInboxResponse(notices=notices, warnings=warnings)
+
+
+@app.post("/api/admin/notices", response_model=NoticeItem)
+async def create_notice(body: NoticeCreateRequest, admin: dict = Depends(require_admin)):
+    doc = {
+        "title": _clean_text(body.title, "제목", 100, required=True),
+        "content": _clean_text(body.content, "내용", 5000, required=True),
+        "author_id": admin["user_id"],
+        "created_at": datetime.utcnow(),
+    }
+    result = await notices_collection.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return _to_notice(doc)
 
 
 # ----------------------------------------

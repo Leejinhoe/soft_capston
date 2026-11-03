@@ -28,6 +28,7 @@ docs/FEATURES.md   # 페이지별 기능 체크리스트 (진행 상황은 여�
 ```
 
 ## 규칙
+- **Git: 발표 전까지는 브랜치를 만들지 말고 `master`에 바로 커밋한다.**
 - 모든 API는 `/api/...` 접두사, 응답은 Pydantic 스키마로 정의
 - 로그인 필요한 API는 JWT 의존성으로 `user_id`를 얻음. 클라이언트가 보낸 user_id를 신뢰하지 말 것
 - 관리자 API는 `/api/admin/...` + `require_admin` 의존성

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/password_rules.dart';
 
 class SignUpPage extends StatefulWidget {
 
@@ -41,8 +42,7 @@ class _SignUpPageState
   // 비밀번호 상태
   bool isPasswordValid = false;
 
-  String passwordGuide =
-      '영문 대/소문자, 숫자, 특수문자 중 3가지 이상 사용';
+  String passwordGuide = kPasswordGuide;
 
   // 아이디 중복 검사 상태
   bool isIdChecked = false;
@@ -52,38 +52,8 @@ class _SignUpPageState
   String idMessage = '';
 
   // 비밀번호 규칙 검사
-  bool validatePassword(
-      String password) {
-
-    int count = 0;
-
-    if (RegExp(r'[a-z]')
-        .hasMatch(password)) {
-
-      count++;
-    }
-
-    if (RegExp(r'[A-Z]')
-        .hasMatch(password)) {
-
-      count++;
-    }
-
-    if (RegExp(r'[0-9]')
-        .hasMatch(password)) {
-
-      count++;
-    }
-
-    if (RegExp(
-        r'[!@#$%^&*(),.?":{}|<>]')
-        .hasMatch(password)) {
-
-      count++;
-    }
-
-    return count >= 3;
-  }
+  // (비밀번호 변경과 같은 규칙: core/password_rules.dart)
+  bool validatePassword(String password) => isStrongPassword(password);
 
   // 아이디 중복 검사
   Future<void> checkDuplicateId() async {

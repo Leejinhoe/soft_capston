@@ -4,6 +4,7 @@
 - 매 요청마다 DB에서 사용자를 다시 읽어 role/status를 확인합니다. (정지가 즉시 반영됨)
 """
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -57,6 +58,20 @@ def new_user_defaults() -> dict:
         "warning_count": 0,
         "created_at": datetime.utcnow(),
     }
+
+
+# 회원가입 화면(signup_page.dart)과 같은 규칙: 영문 소문자/대문자/숫자/특수문자 중 3가지 이상
+_PASSWORD_RULES = [r"[a-z]", r"[A-Z]", r"[0-9]", r'[!@#$%^&*(),.?":{}|<>]']
+PASSWORD_RULE_MESSAGE = "비밀번호는 영문 대/소문자, 숫자, 특수문자 중 3가지 이상을 섞어 주세요."
+
+
+def is_strong_password(password: str) -> bool:
+    return sum(1 for rule in _PASSWORD_RULES if re.search(rule, password or "")) >= 3
+
+
+def is_social_user(user: dict) -> bool:
+    """비밀번호 없이 소셜(카카오/네이버/구글)로만 로그인하는 계정인지."""
+    return not user.get("password")
 
 
 def create_access_token(user_id: str) -> str:
