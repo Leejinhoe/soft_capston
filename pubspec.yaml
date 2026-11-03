@@ -44,6 +44,8 @@ dependencies:
   fl_chart: ^0.68.0
   just_audio: ^0.10.6
   image_cropper: ^12.2.1
+  record: ^6.2.1
+  file_picker: ^13.3.2
 
 dev_dependencies:
   flutter_test:

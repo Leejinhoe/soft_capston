@@ -6,6 +6,7 @@ import '../core/password_rules.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/custom_bottom_nav.dart';
+import 'family_voice_page.dart';
 import 'inbox_page.dart';
 import 'message_box_page.dart';
 import 'my_items_page.dart';
@@ -933,6 +934,16 @@ class _ProfilePageState extends State<ProfilePage> {
                 const SizedBox(height: 20),
 
                 _sectionTitle('설정'),
+
+                menuButton(
+                  icon: Icons.record_voice_over,
+                  title: '우리 가족 목소리',
+                  subtitle: '엄마·아빠 목소리로 동화 듣기 (최대 3개)',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const FamilyVoicePage()),
+                  ),
+                ),
 
                 menuButton(
                   icon: Icons.edit,

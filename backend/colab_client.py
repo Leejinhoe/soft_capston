@@ -1,0 +1,116 @@
+"""팀원 Colab 서버(STORY_SERVER_URL) 호출 공통 창구.
+
+서버 하나에 동화(/story/start, /story/continue), 그림(/story/image), 심리분석(/story/psych), TTS(/api/tts)가 다 있어요.
+(구조: team_code/colab/fairytale_emotion_server_colab.ipynb)
+
+- 주소는 .env의 STORY_SERVER_URL. Colab을 다시 켜서 주소가 바뀌면 .env만 고치고 백엔드를 재시작하면 됩니다.
+- 연결이 안 되거나(꺼짐) 시간이 넘으면(느림) ColabError → 부르는 쪽이 Gemini / 예비 동작으로 넘어갑니다.
+- 연결 자체가 안 되면 잠깐(OFFLINE_COOLDOWN_SEC) Colab을 건너뛰어서, 꺼진 동안 요청마다 오래 기다리지 않게 합니다.
+"""
+import os
+import time
+from typing import Optional
+
+import httpx
+
+STORY_TIMEOUT_SEC = 120     # 장면 하나 (실측 55~60초)
+IMAGE_TIMEOUT_SEC = 120     # 그림 하나 (실측 약 20초)
+PSYCH_TIMEOUT_SEC = 150     # 심리분석 (실측 75~100초)
+TTS_TIMEOUT_SEC = 180       # 장면 하나 낭독 (XTTS, 문장 수에 비례)
+CONNECT_TIMEOUT_SEC = 10
+OFFLINE_COOLDOWN_SEC = 60
+
+_offline_until = 0.0
+
+
+class ColabError(RuntimeError):
+    """Colab 서버가 꺼져 있거나, 느리거나, 실패함"""
+
+
+def colab_url() -> str:
+    return (os.getenv("STORY_SERVER_URL") or "").strip().rstrip("/")
+
+
+def colab_enabled() -> bool:
+    return bool(colab_url())
+
+
+def _check_ready() -> str:
+    base = colab_url()
+    if not base:
+        raise ColabError("STORY_SERVER_URL이 비어 있어요.")
+    if time.monotonic() < _offline_until:
+        raise ColabError("Colab 서버에 방금 연결하지 못해서 잠깐 건너뛰어요.")
+    return base
+
+
+def _mark_offline(e: Exception) -> None:
+    global _offline_until
+    _offline_until = time.monotonic() + OFFLINE_COOLDOWN_SEC
+    print(f"[Colab] 연결 안 됨 → {OFFLINE_COOLDOWN_SEC}초 동안 건너뜀 ({type(e).__name__}: {e})", flush=True)
+
+
+async def _post(path: str, timeout: float, **kwargs) -> httpx.Response:
+    base = _check_ready()
+    limits = httpx.Timeout(timeout, connect=CONNECT_TIMEOUT_SEC)
+    try:
+        async with httpx.AsyncClient(timeout=limits) as client:
+            response = await client.post(f"{base}{path}", **kwargs)
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        _mark_offline(e)
+        raise ColabError(f"Colab 연결 실패: {e}") from e
+    except httpx.TimeoutException as e:
+        raise ColabError(f"Colab {path} 시간 초과({timeout:.0f}초)") from e
+    except httpx.HTTPError as e:
+        raise ColabError(f"Colab {path} 요청 오류: {type(e).__name__}: {e}") from e
+    # cloudflared 터널은 Colab이 꺼지면 502/530 같은 응답을 바로 돌려줌
+    if response.status_code in (502, 503, 504, 530):
+        if response.status_code in (502, 530):
+            _mark_offline(RuntimeError(f"HTTP {response.status_code}"))
+        raise ColabError(f"Colab {path} 응답 {response.status_code}")
+    if response.status_code != 200:
+        raise ColabError(f"Colab {path} 응답 {response.status_code}: {response.text[:200]}")
+    return response
+
+
+async def post_json(path: str, body: dict, timeout: float) -> dict:
+    response = await _post(path, timeout, json=body)
+    try:
+        data = response.json()
+    except ValueError as e:
+        raise ColabError(f"Colab {path} 응답이 JSON이 아님") from e
+    if not isinstance(data, dict):
+        raise ColabError(f"Colab {path} 응답이 객체가 아님")
+    return data
+
+
+async def post_tts(text: str, speaker_wav: bytes, timeout: float = TTS_TIMEOUT_SEC) -> bytes:
+    """Colab POST /api/tts (multipart: text + speaker_wav) → WAV 바이트"""
+    response = await _post(
+        "/api/tts",
+        timeout,
+        data={"text": text},
+        files={"speaker_wav": ("speaker.wav", speaker_wav, "audio/wav")},
+    )
+    audio = response.content
+    if audio[:4] != b"RIFF":
+        raise ColabError("Colab TTS 응답이 WAV가 아님")
+    return audio
+
+
+def compact_emotion(raw, step: Optional[int] = None) -> Optional[dict]:
+    """Colab KOTE 감정 분석 결과(44개 점수)에서 심리분석에 필요한 것만 남깁니다."""
+    if not isinstance(raw, dict) or not raw.get("primary_emotion"):
+        return None
+    top = []
+    for item in (raw.get("top_emotions") or [])[:5]:
+        if isinstance(item, dict) and item.get("label"):
+            top.append({"label": str(item["label"]), "score": round(float(item.get("score") or 0), 4)})
+    result = {
+        "primary_emotion": str(raw["primary_emotion"]),
+        "primary_score": round(float(raw.get("primary_score") or 0), 4),
+        "top_emotions": top,
+    }
+    if step is not None:
+        result["step"] = step
+    return result

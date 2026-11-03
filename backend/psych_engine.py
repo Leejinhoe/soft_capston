@@ -1,7 +1,7 @@
 """심리분석 엔진: 완료된 분기형 동화 하나에서 아이가 고른 선택지들을 보고 성향을 읽어 줍니다.
 
 story_engine.py와 같은 구조 (build_psych_engine)
-    1. RemotePsychEngine - .env의 STORY_SERVER_URL(팀원 Colab 서버)이 있을 때만 /story/psych. 아직 연결 전이라 항상 실패 → 다음으로
+    1. RemotePsychEngine - .env의 STORY_SERVER_URL(팀원 Colab 서버)이 있을 때만 POST /story/psych (150초까지 기다림)
     2. GeminiPsychEngine - 동화 하나당 Gemini 1번 (JSON)
 앞 엔진이 실패하면 다음으로 (ChainPsychEngine). 모두 실패하면 PsychEngineError → 저장하지 않고 다음에 다시 시도.
 (AI 없이 지어낸 점수는 보호자에게 보여 주기 곤란해서 예비 엔진은 두지 않습니다.)
@@ -10,13 +10,16 @@ story_engine.py와 같은 구조 (build_psych_engine)
     traits: {courage, empathy, curiosity, caution, creativity} 각 0~100
     insights: 선택마다 짧은 해석 한 줄 (choices와 같은 순서·개수)
     summary: 전체 요약 2~3문장, questions: 보호자가 아이와 나눌 대화 질문 2개
+    colab: Colab이 분석했을 때만 원래 결과 {type, description, dominant_emotions, traits(팀원 성향 이름)} → 화면에 같이 보여 줌
+    Colab 성향 5가지(모험적·친절함·용감함·창의적·협동심)는 우리 성향으로 바꿔 씀 (COLAB_TRAIT_MAP).
+    Colab에는 "신중함"이 없어서 그 동화의 caution은 비워 둠 (평균·차트에서 빠짐, 지어낸 점수를 넣지 않음)
 """
 import json
-import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
+import colab_client
 from story_text import clean_story_text
 
 # 순서 = 화면 차트 순서 (lib/pages/mind_page.dart의 kTraits와 같게)
@@ -54,6 +57,7 @@ class ChoiceStep:
     scene_text: str         # 그 장면 본문 (문맥)
     options: list[str]      # 보여 준 선택지
     choice: str             # 고른 선택지
+    emotion: Optional[dict] = None  # Colab이 준 고른 선택지의 KOTE 감정 (없을 수 있음)
 
 
 @dataclass
@@ -73,6 +77,7 @@ class PsychResult:
     summary: str
     questions: list[str]
     engine: str = ""
+    colab: Optional[dict] = None  # Colab 원래 결과 (type, description, dominant_emotions, traits)
 
 
 class PsychEngineError(RuntimeError):
@@ -246,26 +251,97 @@ class GeminiPsychEngine(PsychEngine):
 
 
 # ----------------------------------------
-# 팀원 Colab 서버 (아직 연결 전)
+# 팀원 Colab 서버
 # ----------------------------------------
-class RemotePsychEngine(PsychEngine):
-    """STORY_SERVER_URL의 팀원 서버 POST /story/psych를 부를 자리.
+# Colab 성향 이름 → 우리 성향 (여러 개가 한 성향으로 오면 평균)
+COLAB_TRAIT_MAP = {
+    "용감함": "courage",
+    "친절함": "empathy",
+    "협동심": "empathy",
+    "모험적": "curiosity",
+    "창의적": "creativity",
+    "신중함": "caution",  # 지금 Colab 프롬프트에는 없음 (생기면 그대로 씀)
+}
+COLAB_DESCRIPTION_MAX_LEN = 600
+DOMINANT_EMOTION_COUNT = 3
 
-    팀원 노트북(team_code/colab/fairytale_emotion_server_colab.ipynb) 요청 형식:
-        {"story_id", "story_title", "choices_made": [고른 선택지...], "choice_emotions": [], "completed": true}
-    응답: {"type", "description", "traits": {팀원 성향 이름: 0~100}, "dominant_emotions", "choice_insights": [...]}
-    연결할 때 analyze만 채우면 됩니다: httpx.AsyncClient로 POST → traits 이름을 TRAIT_KEYS로 맞추고
-    (clean_traits/_TRAIT_ALIASES), description → summary, 질문이 없으면 clean_questions([])로 기본 질문.
-    실패하면 예외를 던지면 ChainPsychEngine이 Gemini로 넘어갑니다.
+
+def _score(value) -> Optional[int]:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if 0 < score <= 1 and not score.is_integer():
+        score *= 100
+    return int(round(min(100.0, max(0.0, score))))
+
+
+def map_colab_traits(raw) -> dict[str, int]:
+    """Colab traits {모험적, 친절함, 용감함, 창의적, 협동심} → 우리 key. 없는 성향(caution)은 넣지 않음."""
+    if not isinstance(raw, dict):
+        raise PsychEngineError("Colab traits가 객체가 아님")
+    buckets: dict[str, list[int]] = {}
+    for key, value in raw.items():
+        name = COLAB_TRAIT_MAP.get(str(key).strip()) or _TRAIT_ALIASES.get(str(key).strip())
+        score = _score(value)
+        if name and score is not None:
+            buckets.setdefault(name, []).append(score)
+    if len(buckets) < 3:
+        raise PsychEngineError(f"Colab 성향 점수가 모자람: {list(raw)}")
+    return {k: round(sum(buckets[k]) / len(buckets[k])) for k in TRAIT_KEYS if k in buckets}
+
+
+def colab_psych_body(data: PsychInput) -> dict:
+    emotions = []
+    for i, step in enumerate(data.steps, 1):
+        emotion = dict(step.emotion) if isinstance(step.emotion, dict) else {}
+        emotion["step"] = i
+        emotions.append(emotion)
+    return {
+        "story_id": data.story_id,
+        "story_title": data.title,
+        "choices_made": [step.choice for step in data.steps],
+        "choice_emotions": emotions,
+        "completed": True,
+    }
+
+
+class RemotePsychEngine(PsychEngine):
+    """STORY_SERVER_URL의 팀원 서버 POST /story/psych (EXAONE + KOTE 감정 점수).
+
+    요청: {"story_id", "story_title", "choices_made": [고른 선택지...], "choice_emotions": [{step, primary_emotion,
+           primary_score, top_emotions}], "completed": true}
+    응답: {"type", "description", "traits": {모험적·친절함·용감함·창의적·협동심: 0~100}, "dominant_emotions", "choice_insights"}
+    → traits는 우리 key로, choice_insights → insights, description → summary, 질문은 기본 질문.
+    실패(꺼짐·느림·모델이 JSON을 못 씀)하면 예외 → ChainPsychEngine이 Gemini로 넘어갑니다.
     """
 
     name = "colab"
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str = ""):
         self.base_url = base_url.rstrip("/")
 
     async def analyze(self, data: PsychInput) -> PsychResult:
-        raise PsychEngineError("Colab 심리분석 서버 연결은 아직 준비 중이에요.")
+        raw = await colab_client.post_json("/story/psych", colab_psych_body(data), colab_client.PSYCH_TIMEOUT_SEC)
+        traits = map_colab_traits(raw.get("traits"))
+        description = _short(raw.get("description"), COLAB_DESCRIPTION_MAX_LEN)
+        if not description:
+            raise PsychEngineError("Colab description이 비어 있음")
+        dominant = [
+            _short(e, 20) for e in (raw.get("dominant_emotions") or []) if isinstance(e, str) and e.strip()
+        ][:DOMINANT_EMOTION_COUNT]
+        return PsychResult(
+            traits=traits,
+            insights=clean_insights(raw.get("choice_insights"), data.steps),
+            summary=_short(description, SUMMARY_MAX_LEN),
+            questions=clean_questions(raw.get("questions")),
+            colab={
+                "type": _short(raw.get("type"), 30),
+                "description": description,
+                "dominant_emotions": dominant,
+                "traits": {str(k): _score(v) for k, v in (raw.get("traits") or {}).items() if _score(v) is not None},
+            },
+        )
 
 
 # ----------------------------------------
@@ -292,8 +368,7 @@ class ChainPsychEngine(PsychEngine):
 
 def build_psych_engine(model) -> ChainPsychEngine:
     engines: list[PsychEngine] = []
-    server_url = (os.getenv("STORY_SERVER_URL") or "").strip()
-    if server_url:
-        engines.append(RemotePsychEngine(server_url))
+    if colab_client.colab_enabled():
+        engines.append(RemotePsychEngine(colab_client.colab_url()))
     engines.append(GeminiPsychEngine(model))
     return ChainPsychEngine(engines)

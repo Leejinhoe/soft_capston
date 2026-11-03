@@ -5,7 +5,11 @@ stories 문서 (기존 필드 title/content/genre/is_public/created_at은 그대
     status: "in_progress" | "completed"   (예전 통짜 동화엔 없음 → completed로 취급)
     topic, age
     scenes: [{text, choices, chosen_index, chosen, is_ending, engine, created_at}]
-    choice_history: [{scene, index, choice, at}]   ← 심리분석에서 쓸 고른 선택지 기록
+        engine: 만든 엔진 colab(팀원 Colab) / gemini / template → 화면에 작게 표시
+    choice_history: [{scene, index, choice, at, emotion?}]   ← 심리분석에서 쓸 고른 선택지 기록
+        emotion: Colab이 장면을 만들었을 때 받은 고른 선택지의 KOTE 감정 (colab_client.compact_emotion)
+    colab_story_id: Colab 서버가 준 story_id (Colab이 첫 장면을 만들었을 때만)
+    scene_images: {"1": "/static/story_images/...jpg"}  ← 장면 그림 (story_images.py, scenes 배열과 따로 저장)
     content: 모든 장면 본문을 빈 줄로 이은 전체 본문 (커뮤니티·관리자·마이페이지가 그대로 씀)
     vocab_list, completed_at: 완료 때 채움
 """
@@ -75,6 +79,9 @@ class SceneOut(BaseModel):
     choices: list[str] = []
     chosen_index: Optional[int] = None
     is_ending: bool = False
+    engine: str = ""                      # colab / gemini / template
+    image_url: Optional[str] = None       # "/static/story_images/..." (앞에 서버 주소를 붙여서 씀)
+    image_failed: bool = False            # 그림을 못 받음 → 그림 없이 보여 주기
 
 
 class StoryStateResponse(BaseModel):
@@ -118,6 +125,7 @@ def _setup(doc: dict) -> StorySetup:
         topic=doc.get("topic") or doc.get("title") or "",
         genre=doc.get("genre") or "",
         age=doc.get("age") or "5-7세",
+        remote_story_id=doc.get("colab_story_id") or "",
     )
 
 
@@ -125,6 +133,8 @@ def _state(doc: dict) -> StoryStateResponse:
     scenes = doc.get("scenes")
     if not scenes:  # 예전 통짜 동화: 본문 전체를 장면 하나로
         scenes = [{"text": doc.get("content") or "", "choices": [], "is_ending": True}]
+    images = doc.get("scene_images") or {}
+    failed = doc.get("scene_image_failed") or {}
     return StoryStateResponse(
         story_id=str(doc["_id"]),
         title=doc.get("title") or "제목 없는 이야기",
@@ -139,6 +149,9 @@ def _state(doc: dict) -> StoryStateResponse:
                 choices=s.get("choices") or [],
                 chosen_index=s.get("chosen_index"),
                 is_ending=bool(s.get("is_ending")),
+                engine=s.get("engine") or "",
+                image_url=images.get(str(i)) or None,
+                image_failed=bool(failed.get(str(i))),
             )
             for i, s in enumerate(scenes, 1)
         ],
@@ -234,6 +247,7 @@ async def start_story(body: StartStoryRequest, current_user: dict = Depends(get_
         "choice_history": [],
         "content": scene["text"],
         "is_public": False,
+        **({"colab_story_id": first.remote_story_id} if first.remote_story_id else {}),
         "created_at": now,
         "updated_at": now,
     }
@@ -261,13 +275,15 @@ async def choose(story_id: str, body: ChooseRequest, current_user: dict = Depend
     history = {"scene": len(scenes), "index": body.choice_index, "choice": choice, "at": datetime.utcnow()}
 
     if len(scenes) + 1 >= MAX_SCENES:  # 마지막 자리 → 고른 선택을 반영한 결말로 자동 마무리
-        ending = await _generate("ending", _setup(doc), texts, choice)
-        extra = await _completion_fields(doc, scenes, ending)
-        new_scene = _scene_doc(ending, is_ending=True)
+        result = await _generate("ending", _setup(doc), texts, choice)
+        extra = await _completion_fields(doc, scenes, result)
+        new_scene = _scene_doc(result, is_ending=True)
     else:
-        nxt = await _generate("next_scene", _setup(doc), texts, choice)
+        result = await _generate("next_scene", _setup(doc), texts, choice)
         extra = {}
-        new_scene = _scene_doc(nxt, is_ending=False)
+        new_scene = _scene_doc(result, is_ending=False)
+    if result.choice_emotion:  # Colab이 만든 장면이면 고른 선택지의 감정도 같이 (심리분석용)
+        history["emotion"] = result.choice_emotion
 
     saved = await _save_step(doc, scenes, new_scene, extra, history)
     return _state(saved)

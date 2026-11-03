@@ -1,7 +1,8 @@
 """분기형 동화 엔진: 장면 하나(본문 + 선택지 3개) / 결말(본문 + 제목)을 만듭니다.
 
 엔진 순서 (build_story_engine)
-    1. RemoteStoryEngine  - .env의 STORY_SERVER_URL(팀원 Colab 서버)이 있을 때만. 아직 연결 전이라 항상 실패 → 다음으로
+    1. RemoteStoryEngine  - .env의 STORY_SERVER_URL(팀원 Colab 서버)이 있을 때만. /story/start, /story/continue
+                            (꺼져 있거나 120초 넘게 걸리거나 실패하면 → 다음으로)
     2. GeminiStoryEngine  - 장면 하나당 Gemini 1번 (JSON으로 본문 + 선택지, 결말이면 본문 + 제목)
     3. TemplateStoryEngine - AI 없이 쓰는 예비 장면 (Gemini 한도 초과여도 앱이 멈추지 않게)
 앞 엔진이 실패하면(예외) 다음 엔진으로 넘어갑니다. (ChainStoryEngine)
@@ -10,12 +11,14 @@
     - 첫 장면 이후 아무 때나 마무리 가능, 장면이 MAX_SCENES개가 되면 마지막 장면은 자동으로 결말
     - WRAP_UP_FROM번째 장면부터는 마무리 쪽으로 자연스럽게 이끌기
 """
+import asyncio
 import json
 import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
 
+import colab_client
 from story_text import clean_story_text
 
 MAX_SCENES = 8
@@ -30,6 +33,7 @@ class StorySetup:
     topic: str
     genre: str
     age: str
+    remote_story_id: str = ""   # Colab이 준 story_id (stories.colab_story_id)
 
 
 @dataclass
@@ -37,7 +41,9 @@ class SceneResult:
     text: str
     choices: list[str] = field(default_factory=list)  # 결말이면 []
     title: str = ""                                     # 결말일 때만
-    engine: str = ""                                    # 만든 엔진 이름 (로그·디버그용)
+    engine: str = ""                                    # 만든 엔진 이름 (colab / gemini / template, 화면에 작게 표시)
+    choice_emotion: Optional[dict] = None               # Colab: 방금 고른 선택지의 감정 분석 (심리분석용)
+    remote_story_id: str = ""                           # Colab: 첫 장면에서 받은 story_id
 
 
 class StoryEngineError(RuntimeError):
@@ -237,28 +243,114 @@ class GeminiStoryEngine(StoryEngine):
 
 
 # ----------------------------------------
-# 팀원 Colab 서버 (아직 연결 전)
+# 팀원 Colab 서버
 # ----------------------------------------
-class RemoteStoryEngine(StoryEngine):
-    """STORY_SERVER_URL의 팀원 동화 서버를 부를 자리.
+# Colab 서버가 선택지 JSON을 못 읽었을 때 돌려주는 기본 선택지 (서버 normalize_choices의 fallback)
+COLAB_FALLBACK_CHOICES = ["계속 나아간다", "도움을 요청한다", "잠깐 생각해본다"]
+# Colab에는 마무리 기능이 없어서, 결말이 필요할 때 이 선택지를 보내 결말 장면을 받습니다. (돌아온 선택지는 버림)
+ENDING_CHOICE = "모두 함께 행복하게 이야기를 마무리한다"
+TITLE_TIMEOUT_SEC = 20
+_ZERO_WIDTH = re.compile("[\u200b-\u200f\u2060\ufeff]")
 
-    연결할 때 opening / next_scene / ending 세 메서드만 채우면 됩니다. (httpx.AsyncClient로 POST →
-    SceneResult로 변환, 실패하면 예외를 던지면 ChainStoryEngine이 Gemini로 넘어감)
+
+def clean_colab_text(raw) -> str:
+    """Colab 본문 정리: 기존 후처리(마크다운·제목 줄) + 보이지 않는 문자, "!???" 같은 겹친 문장부호"""
+    text = _ZERO_WIDTH.sub("", raw if isinstance(raw, str) else "")
+    text = re.sub(r"([?!])[?!]+", r"\1", text)
+    text = re.sub(r"\.([?!])", r"\1", text)
+    text = re.sub(r"~{2,}", "~", text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    return _clean_scene_text(text)
+
+
+def title_prompt(setup: StorySetup, full_text: str) -> str:
+    return f"""아이들을 위한 동화에 어울리는 제목을 지어 줘. (15자 이내, 따옴표·기호 없이)
+
+{_setup_block(setup)}
+
+[동화]
+{full_text[-1500:]}
+
+반드시 아래 JSON 형식으로만 답해:
+{{"title": "동화 제목"}}
+"""
+
+
+class RemoteStoryEngine(StoryEngine):
+    """STORY_SERVER_URL의 팀원 Colab 서버 (EXAONE). 실패하면 예외 → ChainStoryEngine이 Gemini로 넘어감.
+
+    - 첫 장면: POST /story/start {genre, age, prompt} → {story_id, story_text, choices}
+    - 다음 장면: POST /story/continue {story_id, story_so_far, choice, genre, age}
+        → {new_text, choices, selected_choice_emotion}
+    - 결말: /story/continue에 ENDING_CHOICE(마지막 선택이 있으면 함께)를 보내고 선택지는 버림.
+      제목은 Gemini가 되면 Gemini로, 안 되면 주제로 (default_title)
     """
 
     name = "colab"
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str = "", title_model=None):
         self.base_url = base_url.rstrip("/")
+        self.title_model = title_model
+
+    async def _continue(self, setup: StorySetup, scenes: list[str], choice: str) -> dict:
+        return await colab_client.post_json(
+            "/story/continue",
+            {
+                "story_id": setup.remote_story_id or "story_local",
+                "story_so_far": "\n\n".join(scenes),
+                "choice": choice,
+                "genre": setup.genre,
+                "age": setup.age,
+            },
+            colab_client.STORY_TIMEOUT_SEC,
+        )
+
+    async def _title(self, setup: StorySetup, full_text: str) -> str:
+        if self.title_model is None:
+            return default_title(setup.topic)
+        try:
+            response = await asyncio.wait_for(
+                self.title_model.generate_content_async(
+                    title_prompt(setup, full_text), generation_config={"response_mime_type": "application/json"}
+                ),
+                TITLE_TIMEOUT_SEC,
+            )
+            return clean_title(_parse_json(response.text).get("title"), setup.topic)
+        except Exception as e:
+            print(f"[동화 엔진] colab 결말 제목: Gemini 실패 → 주제로 제목 ({type(e).__name__}: {str(e)[:120]})", flush=True)
+            return default_title(setup.topic)
 
     async def opening(self, setup: StorySetup) -> SceneResult:
-        raise StoryEngineError("Colab 동화 서버 연결은 아직 준비 중이에요.")
+        data = await colab_client.post_json(
+            "/story/start",
+            {"genre": setup.genre, "age": setup.age, "prompt": setup.topic},
+            colab_client.STORY_TIMEOUT_SEC,
+        )
+        return SceneResult(
+            clean_colab_text(data.get("story_text")),
+            clean_choices(data.get("choices"), GENERIC_CHOICES),
+            remote_story_id=str(data.get("story_id") or ""),
+        )
 
     async def next_scene(self, setup: StorySetup, scenes: list[str], choice: str) -> SceneResult:
-        raise StoryEngineError("Colab 동화 서버 연결은 아직 준비 중이에요.")
+        data = await self._continue(setup, scenes, choice)
+        return SceneResult(
+            clean_colab_text(data.get("new_text")),
+            clean_choices(data.get("choices"), GENERIC_CHOICES),
+            choice_emotion=colab_client.compact_emotion(data.get("selected_choice_emotion")),
+        )
 
     async def ending(self, setup: StorySetup, scenes: list[str], choice: Optional[str] = None) -> SceneResult:
-        raise StoryEngineError("Colab 동화 서버 연결은 아직 준비 중이에요.")
+        ending_choice = f"{choice} 그리고 {ENDING_CHOICE}" if choice else ENDING_CHOICE
+        data = await self._continue(setup, scenes, ending_choice)
+        text = clean_colab_text(data.get("new_text"))
+        title = await self._title(setup, "\n\n".join(scenes + [text]))
+        return SceneResult(
+            text,
+            [],
+            title,
+            choice_emotion=colab_client.compact_emotion(data.get("selected_choice_emotion")) if choice else None,
+        )
 
 
 # ----------------------------------------
@@ -332,9 +424,8 @@ class ChainStoryEngine(StoryEngine):
 
 def build_story_engine(model) -> ChainStoryEngine:
     engines: list[StoryEngine] = []
-    server_url = (os.getenv("STORY_SERVER_URL") or "").strip()
-    if server_url:
-        engines.append(RemoteStoryEngine(server_url))
+    if colab_client.colab_enabled():
+        engines.append(RemoteStoryEngine(colab_client.colab_url(), title_model=model))
     engines.append(GeminiStoryEngine(model))
     engines.append(TemplateStoryEngine())
     return ChainStoryEngine(engines)

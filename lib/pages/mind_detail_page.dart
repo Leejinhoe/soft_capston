@@ -130,8 +130,20 @@ class _MindDetailPageState extends State<MindDetailPage> {
                 style: const TextStyle(color: Colors.white54, fontSize: 14)),
           ),
         summaryCard((d['summary'] ?? '') as String),
+        if (d['colab'] is Map) ...[
+          const SizedBox(height: 20),
+          colabCard(Map<String, dynamic>.from(d['colab'] as Map)),
+        ],
         const SizedBox(height: 20),
         barCard(traits),
+        if ((d['missing_traits'] as List?)?.isNotEmpty == true)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 4),
+            child: Text(
+              '"-" 표시는 이번 분석에서 살펴보지 않은 성향이에요.',
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+          ),
         const SizedBox(height: 20),
         insightCard(insights),
         const SizedBox(height: 20),
@@ -164,6 +176,53 @@ class _MindDetailPageState extends State<MindDetailPage> {
           const SizedBox(height: 10),
           Text(summary,
               style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.65)),
+        ],
+      ),
+    );
+  }
+
+  // ----------------------------------------
+  // 우리 팀 AI(Colab) 분석 결과: 유형 · 설명 · 주요 감정
+  // ----------------------------------------
+  Widget colabCard(Map<String, dynamic> colab) {
+    final type = (colab['type'] ?? '').toString();
+    final description = (colab['description'] ?? '').toString();
+    final emotions = List<String>.from(colab['dominant_emotions'] ?? []);
+    return MindCard(
+      title: '🤖 우리 팀 AI가 본 이야기 속 모습',
+      subtitle: '선택과 그때의 감정 점수를 함께 살펴봤어요.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (type.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: kMindPurple.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(type,
+                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          if (emotions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: emotions
+                  .map((e) => Chip(
+                        label: Text(e),
+                        backgroundColor: kMindPink.withOpacity(0.2),
+                        labelStyle: const TextStyle(color: Colors.white),
+                        side: BorderSide.none,
+                      ))
+                  .toList(),
+            ),
+          ],
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(description, style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.65)),
+          ],
         ],
       ),
     );
@@ -207,7 +266,7 @@ class _MindDetailPageState extends State<MindDetailPage> {
                           Text('${t.emoji} ${t.shortLabel}',
                               style: const TextStyle(color: Colors.white70, fontSize: 12)),
                           const SizedBox(height: 2),
-                          Text('${traitScore(traits, t.key).round()}',
+                          Text(traits?[t.key] is num ? '${traitScore(traits, t.key).round()}' : '-',
                               style: const TextStyle(
                                   color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
                         ],

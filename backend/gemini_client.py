@@ -6,20 +6,26 @@
 
 - 무료 한도는 모델마다 따로 계산되므로, 한 모델이 429면 다음 모델로 넘어갑니다.
 - 429가 난 모델은 잠시(EXHAUSTED_COOLDOWN_SEC) 건너뛰어서 매번 실패 호출을 낭비하지 않습니다.
-- 429가 아닌 오류(잘못된 요청 등)는 바로 올려 보냅니다. (호출하는 쪽의 예비 동작이 처리)
+- 404(없어진 모델, 예: gemini-2.5-flash "no longer available")도 한도 초과처럼 건너뛰고 다음 모델로 넘어갑니다.
+- 그 밖의 오류(잘못된 요청 등)는 바로 올려 보냅니다. (호출하는 쪽의 예비 동작이 처리)
 - generate_content / generate_content_async 모양이 GenerativeModel과 같아서 그대로 바꿔 끼울 수 있습니다.
 """
 import time
 from typing import Callable, Optional
 
 import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted, TooManyRequests
+from google.api_core.exceptions import NotFound, ResourceExhausted, TooManyRequests
 
 EXHAUSTED_COOLDOWN_SEC = 10 * 60
 
 
 def parse_model_list(value: Optional[str]) -> list[str]:
     return [m.strip() for m in (value or "").split(",") if m.strip()]
+
+
+def is_model_gone(e: Exception) -> bool:
+    """모델이 없어졌거나 이 키로 쓸 수 없음 (404) → 다음 모델로"""
+    return isinstance(e, NotFound) or ("404" in str(e) and "model" in str(e).lower())
 
 
 def is_quota_error(e: Exception) -> bool:
@@ -77,7 +83,7 @@ class FallbackModel:
                 self._used(name)
                 return result
             except Exception as e:
-                if not is_quota_error(e):
+                if not (is_quota_error(e) or is_model_gone(e)):
                     raise
                 self._mark_exhausted(name, e)
                 last_error = e
@@ -91,7 +97,7 @@ class FallbackModel:
                 self._used(name)
                 return result
             except Exception as e:
-                if not is_quota_error(e):
+                if not (is_quota_error(e) or is_model_gone(e)):
                     raise
                 self._mark_exhausted(name, e)
                 last_error = e

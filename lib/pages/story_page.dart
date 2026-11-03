@@ -6,6 +6,14 @@ import '../core/story_genres.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../widgets/custom_bottom_nav.dart';
+import 'family_voice_page.dart';
+
+/// 장면을 만든 엔진 → 화면에 작게 표시
+const Map<String, String> _engineLabels = {
+  'colab': '🤖 우리 팀 AI',
+  'gemini': '✨ Gemini',
+  'template': '📘 기본 이야기',
+};
 
 /// 분기형 동화: 첫 장면 → 선택지 고르기 → … → 결말 (백엔드 branching.py)
 /// resumeStoryId를 주면 마이페이지에서 "이어하기"로 연 것 (만들던 동화를 불러옴)
@@ -54,6 +62,22 @@ class _StoryPageState extends State<StoryPage> {
   bool isPlayingTTS = false; // 🔊 TTS 재생 상태 관리
   bool isSharing = false;
 
+  // 🔊 동화 듣기: 장면별로 읽기 (backend/voices.py)
+  List<Map<String, dynamic>> voices = [
+    {'id': 'default', 'name': '기본 목소리(기계음)', 'is_default': true},
+  ];
+  String selectedVoiceId = 'default';
+  String voiceHint = '';
+  int ttsScene = 0; // 지금 읽는 장면 번호 (0 = 안 읽는 중)
+  bool ttsLoading = false;
+  bool _ttsContinuous = false; // true면 장면이 끝나면 다음 장면으로
+  int _ttsToken = 0; // 멈추거나 새로 누르면 바뀜 → 예전 요청 결과는 버림
+  bool _fallbackToastShown = false;
+
+  // 🎨 장면 그림 (backend/story_images.py)
+  final Set<int> _imageLoading = {};
+  bool _imageQueueRunning = false;
+
   // 진행 중인 동화 상태 (서버 응답 그대로)
   String storyId = ''; // 생성 즉시 저장된 동화 id (커뮤니티 공유 시 원본 연결용)
   String storyTitle = '';
@@ -87,13 +111,10 @@ class _StoryPageState extends State<StoryPage> {
     super.initState();
     _audioPlayer.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        if (mounted) {
-          setState(() {
-            isPlayingTTS = false;
-          });
-        }
+        _onSceneAudioDone();
       }
     });
+    _loadVoices();
     final resumeId = widget.resumeStoryId;
     if (resumeId != null && resumeId.isNotEmpty) _loadStory(resumeId);
   }
@@ -124,6 +145,79 @@ class _StoryPageState extends State<StoryPage> {
       final topic = (data['topic'] ?? '').toString();
       if (topic.isNotEmpty) promptController.text = topic;
     });
+    _requestImages();
+  }
+
+  // ---------- 🎨 장면 그림: 본문이 먼저 나오고, 그림은 따로 받아서 장면 위에 ----------
+  bool _needsImage(Map<String, dynamic> s) =>
+      (s['image_url'] == null || s['image_url'].toString().isEmpty) && s['image_failed'] != true;
+
+  /// 그림 없는 장면을 하나씩 차례로 요청 (Colab GPU가 한 번에 하나씩 그리게)
+  Future<void> _requestImages() async {
+    if (_imageQueueRunning || storyId.isEmpty) return;
+    _imageQueueRunning = true;
+    try {
+      while (mounted) {
+        final id = storyId;
+        final index = scenes.indexWhere(_needsImage);
+        if (index < 0) break;
+        final number = index + 1;
+        setState(() => _imageLoading.add(number));
+        String status = 'failed';
+        String? url;
+        for (var attempt = 0; attempt < 6; attempt++) {
+          try {
+            final response = await ApiClient.post('/api/stories/$id/scenes/$number/image');
+            final data = ApiClient.decode(response);
+            status = response.statusCode == 200 && data is Map ? (data['status'] ?? 'failed').toString() : 'failed';
+            url = data is Map ? data['image_url']?.toString() : null;
+          } catch (_) {
+            status = 'failed';
+          }
+          if (status != 'busy') break;
+          await Future.delayed(const Duration(seconds: 6)); // 다른 요청이 그리는 중
+        }
+        if (!mounted) return;
+        if (storyId != id) break; // 그사이 다른 동화로 바뀜
+        setState(() {
+          _imageLoading.remove(number);
+          if (index < scenes.length) {
+            if (status == 'ready' && url != null) {
+              scenes[index]['image_url'] = url;
+            } else {
+              scenes[index]['image_failed'] = true; // 그림 없이 그냥 진행
+            }
+          }
+        });
+      }
+    } finally {
+      _imageQueueRunning = false;
+      if (mounted) setState(() => _imageLoading.clear());
+    }
+  }
+
+  // ---------- 🔊 목소리 목록 ----------
+  Future<void> _loadVoices() async {
+    try {
+      final response = await ApiClient.get('/api/voices');
+      if (!mounted || response.statusCode != 200) return;
+      final data = ApiClient.decode(response);
+      if (data is! Map) return;
+      final list = ((data['voices'] as List?) ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      if (list.isEmpty) return;
+      setState(() {
+        voices = list;
+        voiceHint = (data['hint'] ?? '').toString();
+        if (!voices.any((v) => v['id'] == selectedVoiceId)) selectedVoiceId = 'default';
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _openVoicePage() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const FamilyVoicePage()));
+    _loadVoices();
   }
 
   void _startLoading(List<String> messages) {
@@ -192,9 +286,8 @@ class _StoryPageState extends State<StoryPage> {
       _toast('동화 주제를 입력해주세요.');
       return;
     }
-    await _audioPlayer.stop();
+    await stopTTS();
     setState(() {
-      isPlayingTTS = false;
       storyId = '';
       scenes = [];
       vocabList = [];
@@ -252,14 +345,13 @@ class _StoryPageState extends State<StoryPage> {
   // 🆕 새 동화 만들기 (만들던 동화는 서버에 저장돼 있어서 마이페이지에서 이어할 수 있음)
   Future<void> resetStory() async {
     final wasInProgress = hasStory && !isCompleted;
-    await _audioPlayer.stop();
+    await stopTTS();
     setState(() {
       storyId = '';
       storyTitle = '';
       status = '';
       scenes = [];
       vocabList = [];
-      isPlayingTTS = false;
     });
     if (wasInProgress) {
       _toast('만들던 동화는 마이페이지 "내가 만든 동화"에서 이어할 수 있어요 📚');
@@ -493,41 +585,110 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
-  // 🔊 TTS 음성 재생 및 버튼 상태 제어 함수
-  Future<void> playTTS() async {
-    if (storyText.isEmpty) return;
-
-    if (isPlayingTTS) {
-      await _audioPlayer.stop();
+  // 🔊 동화 듣기: 장면 하나씩 서버(/api/tts)에서 오디오 주소를 받아 재생
+  // 서버가 목소리+장면별로 파일을 저장해 두어서 다시 들을 때는 바로 나옴
+  Future<void> stopTTS() async {
+    _ttsToken++;
+    _ttsContinuous = false;
+    await _audioPlayer.stop();
+    if (mounted) {
       setState(() {
         isPlayingTTS = false;
+        ttsLoading = false;
+        ttsScene = 0;
       });
+    }
+  }
+
+  /// 처음부터 끝까지 이어서 듣기 (버튼을 다시 누르면 멈춤)
+  Future<void> playTTS() async {
+    if (storyText.isEmpty || storyId.isEmpty) return;
+    if (isPlayingTTS || ttsLoading) {
+      await stopTTS();
       return;
     }
+    _ttsContinuous = true;
+    _fallbackToastShown = false;
+    await _playScene(1);
+  }
 
-    setState(() {
-      isPlayingTTS = true;
+  /// 장면 하나만 듣기 (장면 카드의 🔊)
+  Future<void> playSceneTTS(int number) async {
+    if (ttsScene == number && (isPlayingTTS || ttsLoading)) {
+      await stopTTS();
+      return;
+    }
+    await stopTTS();
+    _ttsContinuous = false;
+    _fallbackToastShown = false;
+    await _playScene(number);
+  }
+
+  Future<Map?> _fetchTts(int number) async {
+    final response = await ApiClient.post('/api/tts', body: {
+      'story_id': storyId,
+      'scene_number': number,
+      'voice_id': selectedVoiceId,
     });
+    if (response.statusCode == 404 && selectedVoiceId != 'default') {
+      _loadVoices(); // 지워진 목소리
+    }
+    if (response.statusCode != 200) throw Exception(ApiClient.errorMessage(response));
+    final data = ApiClient.decode(response);
+    return data is Map ? data : null;
+  }
 
+  Future<void> _playScene(int number) async {
+    final token = ++_ttsToken;
+    setState(() {
+      ttsScene = number;
+      ttsLoading = true;
+      isPlayingTTS = false;
+    });
     try {
-      await _audioPlayer.setAudioSource(
-        AudioSource.uri(
-          ApiClient.uri('/api/tts'),
-        ),
-      );
+      final data = await _fetchTts(number);
+      if (!mounted || token != _ttsToken) return;
+      final url = (data?['audio_url'] ?? '').toString();
+      if (url.isEmpty) throw Exception('오디오 주소가 없어요');
+      final message = (data?['message'] ?? '').toString();
+      if (data?['fallback'] == true && !_fallbackToastShown) {
+        _fallbackToastShown = true;
+        _toast(message.isNotEmpty ? message : '기본 목소리로 읽어 줄게요.');
+      }
+      await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse('$kApiBaseUrl$url')));
+      if (!mounted || token != _ttsToken) return;
+      setState(() {
+        ttsLoading = false;
+        isPlayingTTS = true;
+      });
+      // 다음 장면 오디오를 미리 만들어 두기 (서버에 저장되니 결과는 버려도 됨)
+      if (_ttsContinuous && number < scenes.length) {
+        _fetchTts(number + 1).catchError((_) => null);
+      }
       await _audioPlayer.play();
     } catch (e) {
       debugPrint('TTS 재생 오류: $e');
-      if (mounted) {
-        setState(() {
-          isPlayingTTS = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('음성 재생 실패: 백엔드 서버를 확인해 주세요.'),
-          ),
-        );
-      }
+      if (!mounted || token != _ttsToken) return;
+      setState(() {
+        isPlayingTTS = false;
+        ttsLoading = false;
+        ttsScene = 0;
+      });
+      _toast('목소리를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.');
+    }
+  }
+
+  void _onSceneAudioDone() {
+    if (!mounted) return;
+    final next = ttsScene + 1;
+    if (_ttsContinuous && ttsScene > 0 && next <= scenes.length) {
+      _playScene(next);
+    } else {
+      _ttsContinuous = false;
+      setState(() {
+        isPlayingTTS = false;
+        ttsScene = 0;
+      });
     }
   }
 
@@ -699,24 +860,37 @@ class _StoryPageState extends State<StoryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(
-              color: isEnding
-                  ? const Color(0xFFFBBF24).withOpacity(0.18)
-                  : Colors.purple.withOpacity(0.22),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text(
-              isEnding ? '🌙 마지막 장면' : '📖 장면 $number',
-              style: TextStyle(
-                color: isEnding ? const Color(0xFFFBBF24) : Colors.purpleAccent,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: isEnding
+                      ? const Color(0xFFFBBF24).withOpacity(0.18)
+                      : Colors.purple.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  isEnding ? '🌙 마지막 장면' : '📖 장면 $number',
+                  style: TextStyle(
+                    color: isEnding ? const Color(0xFFFBBF24) : Colors.purpleAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              if (_engineLabels[scene['engine']] != null)
+                Text(
+                  _engineLabels[scene['engine']]!,
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              const Spacer(),
+              _sceneListenButton(number),
+            ],
           ),
           const SizedBox(height: 14),
+          _sceneImage(scene, number),
           buildClickableStoryText((scene['text'] ?? '').toString()),
           if (chosen.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -742,6 +916,154 @@ class _StoryPageState extends State<StoryPage> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _sceneImage(Map<String, dynamic> scene, int number) {
+    final url = (scene['image_url'] ?? '').toString();
+    if (url.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: Image.network(
+              '$kApiBaseUrl$url',
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              loadingBuilder: (context, child, progress) => progress == null
+                  ? child
+                  : Container(color: Colors.white10),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_imageLoading.contains(number)) {
+      return Container(
+        width: double.infinity,
+        height: 120,
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.purpleAccent)),
+            SizedBox(height: 10),
+            Text('🎨 그림 요정이 이 장면을 그리고 있어요',
+                style: TextStyle(color: Colors.white60, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _sceneListenButton(int number) {
+    final active = ttsScene == number;
+    if (active && ttsLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(10),
+        child: SizedBox(
+            width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.purpleAccent)),
+      );
+    }
+    return IconButton(
+      tooltip: active ? '그만 듣기' : '이 장면 듣기',
+      visualDensity: VisualDensity.compact,
+      onPressed: () => playSceneTTS(number),
+      icon: Icon(
+        active && isPlayingTTS ? Icons.stop_circle_outlined : Icons.volume_up_rounded,
+        color: active ? Colors.amberAccent : Colors.white54,
+      ),
+    );
+  }
+
+  /// 어떤 목소리로 들을지 고르기 (맨 앞은 항상 기본 목소리)
+  Widget _voicePicker() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A0B3A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: DropdownButton<String>(
+        value: selectedVoiceId,
+        dropdownColor: const Color(0xFF1A0B3A),
+        underline: const SizedBox(),
+        isExpanded: true,
+        iconEnabledColor: Colors.white70,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        items: voices
+            .map((v) => DropdownMenuItem<String>(
+                  value: v['id'].toString(),
+                  child: Text(
+                    '${v['is_default'] == true ? '🤖' : '🎙️'} ${v['name']}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ))
+            .toList(),
+        onChanged: (value) async {
+          if (value == null || value == selectedVoiceId) return;
+          await stopTTS();
+          setState(() => selectedVoiceId = value);
+        },
+      ),
+    );
+  }
+
+  Widget _listenArea() {
+    final reading = isPlayingTTS || ttsLoading;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              flex: 5,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: reading ? const Color(0xFF5B21B6) : const Color(0xFF8B5CF6),
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: playTTS,
+                icon: ttsLoading
+                    ? const SizedBox(
+                        width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Icon(reading ? Icons.stop_circle : Icons.volume_up_rounded, color: Colors.white),
+                label: Text(
+                  ttsLoading
+                      ? '목소리 준비 중… (장면 $ttsScene)'
+                      : isPlayingTTS
+                          ? '읽어주는 중 (장면 $ttsScene/${scenes.length})'
+                          : '동화 듣기',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(flex: 4, child: _voicePicker()),
+          ],
+        ),
+        if (voiceHint.isNotEmpty && voices.length <= 1)
+          TextButton.icon(
+            onPressed: _openVoicePage,
+            icon: const Icon(Icons.mic_none, size: 18, color: Colors.purpleAccent),
+            label: Text(voiceHint,
+                style: const TextStyle(color: Colors.purpleAccent, fontSize: 13)),
+          ),
+      ],
     );
   }
 
@@ -893,35 +1215,12 @@ class _StoryPageState extends State<StoryPage> {
           ),
         ),
         const SizedBox(height: 18),
-        // 🔊 동화 듣기 + 🌐 커뮤니티 공유 버튼 (한 줄에 나란히)
+        // 🔊 동화 듣기 + 목소리 고르기
+        _listenArea(),
+        const SizedBox(height: 12),
+        // 🌐 커뮤니티 공유
         Row(
           children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isPlayingTTS
-                      ? const Color(0xFF5B21B6)
-                      : const Color(0xFF8B5CF6),
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                onPressed: playTTS,
-                icon: Icon(
-                  isPlayingTTS ? Icons.pause_circle_filled : Icons.volume_up_rounded,
-                  color: Colors.white,
-                ),
-                label: Text(
-                  isPlayingTTS ? '동화 읽어주는 중...' : '동화 듣기',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(

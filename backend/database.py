@@ -24,6 +24,8 @@ comments_collection = database.get_collection("comments")
 word_meaning_cache_collection = database.get_collection("word_meaning_cache")
 # 1:1 쪽지. "messages"는 팀원 기능(캐릭터 대화 등)이 쓸 수 있어 따로 둡니다.
 direct_messages_collection = database.get_collection("direct_messages")
+# 우리 가족 목소리 (동화 읽어주기용 목소리 샘플, 사용자당 최대 3개) → voices.py
+family_voices_collection = database.get_collection("family_voices")
 
 
 # ----------------------------------------

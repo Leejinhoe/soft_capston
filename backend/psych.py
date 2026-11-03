@@ -3,9 +3,14 @@
 - 결과는 그 동화 문서의 psych_analysis에 저장 → 다시 볼 때 Gemini를 또 부르지 않음
     psych_analysis: {traits{5가지 0~100}, insights[{scene, choice, options, insight}], summary, questions[2], engine, analyzed_at}
 - 심리 화면(GET /api/psych/me)을 열 때 아직 분석 안 된 완료 동화만 최신순으로 최대 ANALYZE_PER_VISIT개 분석
+  Colab 분석은 동화 하나에 1~2분이 걸려서, 분석은 백그라운드로 돌리고 WAIT_SEC초만 기다렸다가 응답
+  (다 못 끝났으면 "살펴보는 중" 안내 → 다시 열면 결과가 보임)
+- Colab이 분석하면 psych_analysis.colab에 원래 결과(유형·설명·주요 감정)도 저장 → 상세 화면에 같이 보여 줌
+  Colab에는 "신중함"이 없어서 그 동화의 traits에는 caution이 없을 수 있음 (평균은 점수가 있는 동화끼리만)
 - 분석 중 표시(psych_claimed_at)로 동시에 두 번 열어도 같은 동화를 두 번 분석하지 않음
 - 분석이 실패하면 저장하지 않고 다음에 다시 시도 (한도 초과일 수 있으니 그 방문에서는 더 시도하지 않음)
 """
+import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -28,6 +33,7 @@ from security import get_current_user
 router = APIRouter(tags=["심리분석"])
 
 ANALYZE_PER_VISIT = 3
+WAIT_SEC = 20
 TREND_COUNT = 5
 CLAIM_TIMEOUT = timedelta(minutes=2)
 
@@ -101,6 +107,13 @@ class PsychOverviewResponse(BaseModel):
     stories: list[PsychStoryCard] = []      # 최근 완료 순
 
 
+class ColabPsychOut(BaseModel):
+    """팀원 Colab(EXAONE + KOTE 감정)이 분석했을 때의 원래 결과"""
+    type: str = ""
+    description: str = ""
+    dominant_emotions: list[str] = []
+
+
 class PsychDetailResponse(BaseModel):
     story_id: str
     title: str
@@ -112,6 +125,9 @@ class PsychDetailResponse(BaseModel):
     summary: str
     questions: list[str]
     notice: str
+    engine: str = ""                        # colab / gemini
+    missing_traits: list[str] = []          # 이 분석에 점수가 없는 성향 key (Colab에는 신중함이 없음)
+    colab: Optional[ColabPsychOut] = None
 
 
 # ----------------------------------------
@@ -137,6 +153,7 @@ def _build_input(doc: dict) -> PsychInput:
             scene_text=scene.get("text") or "",
             options=list(scene.get("choices") or []),
             choice=h.get("choice") or "",
+            emotion=h.get("emotion"),
         ))
     return PsychInput(
         story_id=str(doc["_id"]),
@@ -184,11 +201,35 @@ async def analyze_story(doc: dict) -> Optional[dict]:
         "engine": result.engine,
         "analyzed_at": datetime.utcnow(),
     }
+    if result.colab:
+        analysis["colab"] = result.colab
     await stories_collection.update_one(
         {"_id": doc["_id"]},
         {"$set": {"psych_analysis": analysis}, "$unset": {"psych_claimed_at": ""}},
     )
     return analysis
+
+
+_running: dict[str, asyncio.Task] = {}
+
+
+async def _analyze_pending(query: dict) -> int:
+    newly = 0
+    try:
+        cursor = (
+            stories_collection.find({**query, "psych_analysis": {"$exists": False}})
+            .sort("completed_at", -1)
+            .limit(ANALYZE_PER_VISIT)
+        )
+        async for doc in cursor:
+            try:
+                if await analyze_story(doc):
+                    newly += 1
+            except PsychEngineError:
+                break  # 한도 초과·Colab 꺼짐일 수 있으니 이번에는 그만, 다음에 열 때 다시
+    except Exception as e:
+        print(f"[심리분석] 백그라운드 분석 오류: {type(e).__name__}: {e}", flush=True)
+    return newly
 
 
 def _top_trait(traits: dict[str, int]) -> str:
@@ -198,7 +239,12 @@ def _top_trait(traits: dict[str, int]) -> str:
 def _average(items: list[dict[str, int]]) -> Optional[dict[str, int]]:
     if not items:
         return None
-    return {k: round(sum(t.get(k, 0) for t in items) / len(items)) for k in TRAIT_KEYS}
+    average = {}
+    for k in TRAIT_KEYS:  # 점수가 있는 동화끼리만 평균 (Colab 분석에는 caution이 없을 수 있음)
+        values = [t[k] for t in items if isinstance(t.get(k), (int, float))]
+        if values:
+            average[k] = round(sum(values) / len(values))
+    return average
 
 
 def _completed_sort_key(doc: dict) -> datetime:
@@ -213,19 +259,14 @@ async def my_psych(current_user: dict = Depends(get_current_user)):
     """심리 화면: 아직 분석 안 된 완료 동화 최대 3개 분석 → 평균(레이더) + 최근 5개 변화(꺾은선) + 동화별 카드"""
     query = _analyzable_query(current_user["user_id"])
 
-    # 1) 분석 안 된 동화 최신순 최대 3개
-    newly = 0
-    pending_cursor = (
-        stories_collection.find({**query, "psych_analysis": {"$exists": False}})
-        .sort("completed_at", -1)
-        .limit(ANALYZE_PER_VISIT)
-    )
-    async for doc in pending_cursor:
-        try:
-            if await analyze_story(doc):
-                newly += 1
-        except PsychEngineError:
-            break  # 한도 초과일 수 있으니 이번에는 그만, 다음에 열 때 다시
+    # 1) 분석 안 된 동화 최신순 최대 3개 (백그라운드, WAIT_SEC초만 기다림)
+    user_id = current_user["user_id"]
+    task = _running.get(user_id)
+    if task is None or task.done():
+        task = asyncio.create_task(_analyze_pending(query))
+        _running[user_id] = task
+    done, _ = await asyncio.wait({task}, timeout=WAIT_SEC)
+    newly = task.result() if task in done else 0
 
     # 2) 목록 (본문은 빼고)
     projection = {"title": 1, "genre": 1, "completed_at": 1, "created_at": 1, "choice_history": 1, "psych_analysis": 1}
@@ -311,4 +352,8 @@ async def psych_detail(story_id: str, current_user: dict = Depends(get_current_u
         summary=analysis.get("summary") or "",
         questions=analysis.get("questions") or [],
         notice=NOTICE,
+        engine=analysis.get("engine") or "",
+        missing_traits=[k for k in TRAIT_KEYS if k not in (analysis.get("traits") or {})],
+        colab=ColabPsychOut(**{k: v for k, v in analysis["colab"].items() if k in ("type", "description", "dominant_emotions")})
+        if analysis.get("colab") else None,
     )

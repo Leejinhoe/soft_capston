@@ -25,11 +25,22 @@
 - [x] 이어하기/다시 보기 `GET /api/stories/{id}/branching` (예전 통짜 동화는 완료된 장면 1개로 보여줌)
 - [x] 저장(`stories`): `scenes[]`(본문·보여준 선택지·고른 선택지), `status`(in_progress/completed), `choice_history[]`(심리분석용), `topic`, `age`
   - `content`는 항상 전체 장면을 이은 본문 → 커뮤니티·관리자·마이페이지 기존 기능 그대로
-- [x] 엔진 구조 (`story_engine.py`): Colab 서버(STORY_SERVER_URL 있을 때, 아직 연결 전) → Gemini(장면당 1번, JSON) → AI 없는 예비 장면 순으로 시도
+- [x] 엔진 구조 (`story_engine.py`): 팀원 Colab 서버(STORY_SERVER_URL) → Gemini(장면당 1번, JSON) → AI 없는 예비 장면 순으로 시도
 - [x] 화면: 장면이 위에서부터 이어서 보이고, 맨 아래 알록달록 큰 선택지 버튼 3개 + "이야기 마무리하기", 생성 중엔 귀여운 로딩 문구, 모든 장면 단어 클릭 뜻풀이
 - [x] 커뮤니티 공유는 완료된 동화만 (서버도 진행 중이면 400), 진행 중인 동화는 본문 수정도 막음
 - [x] 마이페이지 "내가 만든 동화": 진행 중이면 "✏️ 만드는 중" 배지 + "이어하기" (`MyItem.status`)
-- [ ] 팀원 Colab 동화 서버 연결 (`RemoteStoryEngine` 세 메서드만 채우면 됨)
+- [x] 팀원 Colab 동화 서버 연결 (`RemoteStoryEngine`, 공통 호출 `backend/colab_client.py`)
+  - 첫 장면 `POST /story/start`, 다음 장면 `POST /story/continue`, Colab story_id는 `stories.colab_story_id`
+  - 마무리/8장면 결말: "모두 함께 행복하게 이야기를 마무리한다" 선택지를 보내고 돌아온 선택지는 버림, 제목은 Gemini(20초) → 안 되면 주제로
+  - 기존 후처리 + 보이지 않는 문자·겹친 문장부호 정리 (`clean_colab_text`), 타임아웃 120초
+  - 고른 선택지의 KOTE 감정(`selected_choice_emotion` 요약)을 `choice_history[].emotion`에 저장 (심리분석용)
+  - Colab이 꺼지거나(연결 실패 → 60초 동안 건너뜀) 느리거나 실패하면 Gemini → 예비 장면
+  - 주소가 바뀌면 `.env`의 STORY_SERVER_URL만 고치고 백엔드 재시작
+- [x] 장면을 만든 엔진을 장면 카드에 작게 표시 ("🤖 우리 팀 AI" / "✨ Gemini" / "📘 기본 이야기", `SceneOut.engine`)
+- [x] 장면 그림 (`backend/story_images.py`): 본문이 먼저 나오고 화면이 따로 `POST /api/stories/{id}/scenes/{n}/image` → Colab `/story/image`
+  - PNG → JPEG로 줄여 `backend/static/story_images/`에 저장, URL은 `stories.scene_images.{n}` (scenes 배열과 따로라 다음 장면 저장과 안 겹침)
+  - 실패하면 `scene_image_failed.{n}` → 그 장면은 그림 없이 진행, 같은 장면 동시 요청은 한 번만 그림
+  - 화면: 그림 그리는 중 안내 → 장면 본문 위에 그림, 그림 없는 장면은 하나씩 차례로 요청
 
 ## 심리분석 (mind) — `backend/psych.py`, `backend/psych_engine.py`, `lib/pages/mind_page.dart`, `lib/pages/mind_detail_page.dart`
 - [x] 분석 대상: 완료된 분기형 동화 중 선택을 1번 이상 한 것 (`choice_history`), 진행 중·선택 없이 마무리한 동화·예전 통짜 동화는 제외
@@ -43,16 +54,35 @@
   - 실패하면 저장하지 않고 그 방문에서는 더 시도 안 함(한도 초과 대비), 다음에 열 때 다시
   - 분석 중 표시(`psych_claimed_at`, 2분)로 동시에 두 번 열어도 같은 동화를 두 번 분석하지 않음
 - [x] `GET /api/psych/stories/{id}`: 상세 (아직 분석 전이면 이때 분석, 실패면 503 다정한 문구), 남의 것·진행 중은 404
-- [x] 엔진 구조: Colab 서버(STORY_SERVER_URL의 `/story/psych`, 아직 연결 전) → Gemini 순 (`RemotePsychEngine.analyze`만 채우면 됨)
+- [x] 엔진 구조: 팀원 Colab 서버(STORY_SERVER_URL의 `/story/psych`, 150초) → Gemini 순
 - [x] "놀이 속 선택을 바탕으로 한 참고용 이야기예요" 안내 (응답 `notice`, 목록·상세 모두 표시)
 - [x] 화면 (하단 탭 "심리"): 맨 위 평균 성향 레이더 차트 + 점수 칩, 최근 5편 성향 변화 꺾은선(범례 눌러 선 켜고 끄기, 눌러서 점수 보기), 동화별 카드(돋보인 성향 + 요약)
 - [x] 상세: 요약, 성향 막대그래프(성향별 고정 색 + 아래 숫자), 선택별 해석(고른 것 + 다른 길), 보호자 대화 질문 2개
 - [x] 완료한 동화가 없으면 "동화를 끝까지 만들면 분석해 줄게요!" + "동화 만들러 가기"
-- [ ] 팀원 Colab 심리분석 서버 연결 (`RemotePsychEngine`, 요청 형식은 클래스 설명에 적어 둠)
+- [x] 팀원 Colab 심리분석 서버 연결 (`RemotePsychEngine`): `choices_made` + `choice_emotions`(장면 만들 때 저장한 KOTE 감정) 전송
+  - Colab 성향(모험적·친절함·용감함·창의적·협동심) → 우리 성향으로 변환 (용감함→용기, 친절함·협동심 평균→배려, 모험적→호기심, 창의적→창의성)
+  - Colab에 없는 "신중함"은 비워 둠 (지어낸 점수 없음, 평균은 점수가 있는 동화끼리만, 상세 막대에는 "-")
+  - Colab 원래 결과(유형·설명·주요 감정)는 `psych_analysis.colab`에 저장 → 상세 화면 "🤖 우리 팀 AI가 본 이야기 속 모습" 카드
+  - 분석이 1~2분 걸려서 `GET /api/psych/me`는 백그라운드로 분석하고 20초만 기다림 (덜 끝나면 "살펴보는 중" → 다시 열면 결과)
+  - [ ] 지금 Colab `/story/psych`가 3번 모두 "모델의 감정 분석 JSON을 읽지 못했습니다"(500)로 실패 → 팀원 쪽 확인 필요 (그동안은 Gemini로 넘어감)
+
+## 우리 가족 목소리 / 동화 듣기 — `backend/voices.py`, `lib/pages/family_voice_page.dart`, `lib/pages/story_page.dart`
+- [x] 마이페이지 "우리 가족 목소리": 이름(엄마·아빠·나…)을 붙여 최대 3개 등록·삭제 `GET/POST /api/voices`, `DELETE /api/voices/{id}`
+  - 등록: 앱에서 바로 녹음(`record` 패키지, 웹·안드로이드, 따라 읽을 예시 문장 + 5~10초 안내) 또는 음성 파일 올리기(`file_picker`)
+  - 서버가 형식과 상관없이 ffmpeg(PATH에 없으면 `imageio-ffmpeg`)로 WAV(PCM 16bit, 모노, 22.05kHz)로 변환, 앞뒤 무음 빼고 3초 미만이면 다시 녹음 안내, 20초까지만
+  - 사용자별 폴더 `backend/voice_data/`에 저장 (static 밖이라 주소로 열 수 없음, git 제외), 메타는 `family_voices` 컬렉션
+  - "녹음한 목소리는 동화 읽어주기에만 쓰이고, 언제든 지울 수 있어요" 안내, 지우면 그 목소리로 만든 오디오도 같이 삭제
+- [x] 동화 듣기 `POST /api/tts {story_id, scene_number, voice_id}` (본문은 서버에 저장된 장면에서 읽음)
+  - 목소리 목록 맨 앞은 항상 "기본 목소리(기계음)" = gTTS (예전 화면은 서버에 없는 `GET /api/tts`를 불렀음)
+  - 가족 목소리 = Colab `POST /api/tts` (text + speaker_wav) → XTTS, Colab이 꺼져 있거나 실패하면 기본 목소리 + 안내
+  - 만든 오디오는 `backend/static/tts/{목소리}/{해시}`에 저장 → 다시 들을 때 Colab·gTTS를 안 부름
+  - 화면: "동화 듣기" 옆 목소리 고르기, 장면별로 차례로 읽기(다음 장면 미리 준비), 장면 카드마다 🔊 이 장면만 듣기
+  - 가족 목소리가 없으면 "가족 목소리를 등록하면 그 목소리로 들을 수 있어요" + 등록 화면으로 가기
 
 ## Gemini 공통
 - [x] 한도 초과(429) 시 대체 모델로 자동 재시도 (`backend/gemini_client.py`)
   - `.env`: `GEMINI_FALLBACK_MODELS=모델1,모델2` (쉼표로 구분), 429 난 모델은 10분 동안 건너뜀
+  - 없어진 모델(404, 예: gemini-2.5-flash)도 건너뛰고 다음 모델로
   - 동화 생성·추천 단어·뜻풀이 등 모든 Gemini 호출에 적용
 - [x] 뜻풀이 형식 통일: 국어사전처럼 간결한 한 문장 (팝업·단어장 저장·추천 단어 공통, 예: "작은 빛이 잠깐 나타났다가 사라지다.")
 

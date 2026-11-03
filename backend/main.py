@@ -52,6 +52,8 @@ from word_meaning import is_ambiguous_text, to_dictionary_style
 from story_vocab import recommend_vocab
 import branching
 import psych
+import story_images
+import voices
 from branching import STATUS_IN_PROGRESS, story_status
 from security import (
     ROLE_ADMIN,
@@ -87,6 +89,7 @@ async def create_community_indexes():
     await ensure_message_indexes()
     await ensure_password_reset_indexes()
     await psych.ensure_indexes()
+    await voices.ensure_indexes()
 
 
 # ----------------------------------------
@@ -107,6 +110,8 @@ async def backfill_user_fields():
 # ----------------------------------------
 UPLOAD_DIR = "static/profile_images"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs("static/story_images", exist_ok=True)  # 장면 그림 (story_images.py)
+os.makedirs("static/tts", exist_ok=True)           # 동화 듣기 오디오 (voices.py)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ----------------------------------------
@@ -147,6 +152,10 @@ app.include_router(branching.router)
 # 심리분석 (분기형 동화의 고른 선택지 기록으로 성향 보기): 엔진은 psych_engine.py, API는 psych.py
 psych.configure(llm_model, on_error=log_gemini_error)
 app.include_router(psych.router)
+
+# 장면 그림 (팀원 Colab /story/image) / 우리 가족 목소리 + 동화 듣기 (Colab XTTS, 기본 목소리는 gTTS)
+app.include_router(story_images.router)
+app.include_router(voices.router)
 
 
 # ----------------------------------------

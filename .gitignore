@@ -60,6 +60,11 @@ venv/
 __pycache__/
 **/__pycache__/
 backend/static/profile_images/
+# 장면 그림, 동화 듣기 오디오, 가족 목소리 샘플(개인 목소리), 시연용 녹음
+backend/static/story_images/
+backend/static/tts/
+backend/static/voices/
+backend/voice_data/
 
 # Team members' reference code (read-only, kept locally)
 team_code/
