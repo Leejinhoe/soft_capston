@@ -534,7 +534,7 @@ async def admin_list_stories(
 
     total = await stories_collection.count_documents(query)
     docs = await (
-        stories_collection.find(query, {"content": 0})
+        stories_collection.find(query, {"content": 0, "scenes": 0, "choice_history": 0, "vocab_list": 0})
         .sort([("created_at", -1), ("_id", -1)])
         .skip((page - 1) * size).limit(size).to_list(length=size)
     )

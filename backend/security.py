@@ -94,8 +94,9 @@ def new_user_defaults() -> dict:
     }
 
 
-# 회원가입 화면(signup_page.dart)과 같은 규칙: 영문 소문자/대문자/숫자/특수문자 중 3가지 이상
-_PASSWORD_RULES = [r"[a-z]", r"[A-Z]", r"[0-9]", r'[!@#$%^&*(),.?":{}|<>]']
+# 화면(lib/core/password_rules.dart)과 같은 규칙: 영문 소문자/대문자/숫자/특수문자 중 3가지 이상
+# 특수문자 = 영문·숫자·공백이 아닌 모든 문자 (~, _, -, 한글 등 포함). 회원가입·비밀번호 변경·재설정 공통
+_PASSWORD_RULES = [r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9\s]"]
 PASSWORD_RULE_MESSAGE = "비밀번호는 영문 대/소문자, 숫자, 특수문자 중 3가지 이상을 섞어 주세요."
 
 

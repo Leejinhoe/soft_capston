@@ -15,12 +15,27 @@
   - 뜻풀이 캐시 (`backend/meaning_cache.py`, 컬렉션 `word_meaning_cache`): 같은 단어 + 같은 문장(+연령대)이면 Gemini 호출 없이 저장된 결과 사용
     - 팝업·단어 저장·pending 재시도·추천 단어 모두 적용, Gemini가 고른 결과만 저장 (예비 결과/"뜻이 여러 가지예요"는 저장 안 함)
 
+## 분기형 동화 (branching) — `backend/branching.py`, `backend/story_engine.py`, `lib/pages/story_page.dart`
+- [x] 동화 시작: 주제·장르·연령대 → 첫 장면(2~3문단) + 선택지 3개 `POST /api/stories/branching/start`
+- [x] 선택지 고르기 → 고른 선택을 반영한 다음 장면 + 새 선택지 3개 `POST /api/stories/{id}/choose` `{scene_number, choice_index}`
+  - `scene_number`가 지금 마지막 장면이 아니면 409 (두 번 눌림·다른 창에서 진행 방지, 화면이 서버 상태로 다시 맞춤)
+- [x] "이야기 마무리하기"(첫 장면 이후 아무 때나) → 흐름에 맞는 따뜻한 결말 장면, 선택지 없음 `POST /api/stories/{id}/finish`
+- [x] 장면 8개째는 자동으로 결말 (7장면에서 고른 선택을 반영), 6장면부터는 프롬프트로 마무리 쪽으로 유도
+- [x] 완료되면 이야기 전체에 어울리는 제목(결말 장면과 같은 Gemini 호출) + 전체 본문 기준 추천 단어 (`backend/story_vocab.py`, 기존 로직 그대로)
+- [x] 이어하기/다시 보기 `GET /api/stories/{id}/branching` (예전 통짜 동화는 완료된 장면 1개로 보여줌)
+- [x] 저장(`stories`): `scenes[]`(본문·보여준 선택지·고른 선택지), `status`(in_progress/completed), `choice_history[]`(심리분석용), `topic`, `age`
+  - `content`는 항상 전체 장면을 이은 본문 → 커뮤니티·관리자·마이페이지 기존 기능 그대로
+- [x] 엔진 구조 (`story_engine.py`): Colab 서버(STORY_SERVER_URL 있을 때, 아직 연결 전) → Gemini(장면당 1번, JSON) → AI 없는 예비 장면 순으로 시도
+- [x] 화면: 장면이 위에서부터 이어서 보이고, 맨 아래 알록달록 큰 선택지 버튼 3개 + "이야기 마무리하기", 생성 중엔 귀여운 로딩 문구, 모든 장면 단어 클릭 뜻풀이
+- [x] 커뮤니티 공유는 완료된 동화만 (서버도 진행 중이면 400), 진행 중인 동화는 본문 수정도 막음
+- [x] 마이페이지 "내가 만든 동화": 진행 중이면 "✏️ 만드는 중" 배지 + "이어하기" (`MyItem.status`)
+- [ ] 팀원 Colab 동화 서버 연결 (`RemoteStoryEngine` 세 메서드만 채우면 됨)
+
 ## Gemini 공통
 - [x] 한도 초과(429) 시 대체 모델로 자동 재시도 (`backend/gemini_client.py`)
   - `.env`: `GEMINI_FALLBACK_MODELS=모델1,모델2` (쉼표로 구분), 429 난 모델은 10분 동안 건너뜀
   - 동화 생성·추천 단어·뜻풀이 등 모든 Gemini 호출에 적용
 - [x] 뜻풀이 형식 통일: 국어사전처럼 간결한 한 문장 (팝업·단어장 저장·추천 단어 공통, 예: "작은 빛이 잠깐 나타났다가 사라지다.")
-- [ ] 팀원 Colab 동화 서버 연결 (분기 선택지 / 마무리 결말)
 
 ## 단어장 (vocabulary)
 - [x] `POST /api/vocabularies/add` 단어 저장
@@ -43,6 +58,7 @@
 - [x] 프로필 수정: 닉네임, 한 줄 소개 (`PATCH /api/users/me` `nickname`/`bio`)
 - [x] 개인정보 수정: 이름, 이메일 (`PATCH /api/users/me` `name`/`email`, 이메일 형식 검사)
 - [x] 비밀번호 변경: 현재 비밀번호 확인 + 회원가입과 같은 규칙(영문 대/소문자·숫자·특수문자 중 3가지 이상) 서버/화면 모두 검사
+  - 특수문자 = 영문·숫자·공백이 아닌 모든 문자(`~`, `_`, `-` 등). 회원가입·변경·재설정 공통 (`password_rules.dart` / `security.is_strong_password`, 회원가입도 서버에서 검사)
   - 소셜 로그인 계정(`is_social`)은 메뉴 대신 "카카오/네이버/구글에서 관리해요" 안내
 - [x] 내가 만든 동화: 목록 / 보기 / 수정(제목·내용) / 삭제
   - `GET /api/users/me/stories`, `GET·PATCH·DELETE /api/stories/{id}` (내 것만, 남의 것은 404)

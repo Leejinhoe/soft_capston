@@ -47,8 +47,11 @@ from password_reset import ensure_indexes as ensure_password_reset_indexes, rout
 from quiz import build_questions, card_definition
 from story_text import clean_story_text
 from gemini_client import FallbackModel, parse_model_list
-from meaning_cache import cached_explain_word, cached_explain_words, ensure_indexes as ensure_meaning_cache_indexes
-from word_meaning import is_ambiguous_text, sentence_with, to_dictionary_style
+from meaning_cache import cached_explain_word, ensure_indexes as ensure_meaning_cache_indexes
+from word_meaning import is_ambiguous_text, to_dictionary_style
+from story_vocab import recommend_vocab
+import branching
+from branching import STATUS_IN_PROGRESS, story_status
 from security import (
     ROLE_ADMIN,
     ROLE_USER,
@@ -135,23 +138,9 @@ def log_gemini_error(where: str, e: Exception) -> None:
     )
 
 
-def word_in_story(item: dict, story_text: str) -> bool:
-    """추천 단어가 동화 본문에 실제로 들어 있는지 확인합니다.
-
-    - surface: Gemini가 알려준 '본문에 쓰인 그대로'의 표현
-    - hard: 기본형 (용언이면 끝의 '다'를 뗀 어간도 확인. 예: '떠나다' → '떠나')
-    """
-    surface = (item.get("surface") or "").strip()
-    hard = (item.get("hard") or "").strip()
-    if surface and surface in story_text:
-        return True
-    if not hard:
-        return False
-    if hard in story_text:
-        return True
-    if hard.endswith("다") and len(hard) >= 3 and hard[:-1] in story_text:
-        return True
-    return False
+# 분기형 동화 (선택지로 이어 가기): 엔진은 story_engine.py, API는 branching.py
+branching.configure(llm_model, on_error=log_gemini_error)
+app.include_router(branching.router)
 
 
 # ----------------------------------------
@@ -236,6 +225,8 @@ class MyItem(BaseModel):
     updated_at: str = ""
     # 동화 ↔ 게시글 연결: 동화면 연결된 게시글 id, 게시글이면 원본 동화 id (없거나 지워졌으면 "")
     linked_id: str = ""
+    # 동화만: in_progress(분기형 동화 만드는 중 → 화면에서 "이어하기") / completed (게시글은 항상 completed)
+    status: str = "completed"
 
 class ItemUpdateRequest(BaseModel):
     title: Optional[str] = None
@@ -532,6 +523,7 @@ async def submit_quiz_result(body: QuizResultRequest, current_user: dict = Depen
 # ----------------------------------------
 # 💡 동화 생성 + 자동 DB 저장 + 본문 실존 단어 3~5개 추천 API
 # ----------------------------------------
+# (예전 방식: 한 번에 통으로 생성. 지금 화면은 분기형 /api/stories/branching/... 사용, branching.py)
 @app.post("/api/generate-story")
 async def generate_story(body: GenerateStoryRequest, current_user: dict = Depends(get_current_user)):
     story_prompt = f"""
@@ -569,74 +561,8 @@ async def generate_story(body: GenerateStoryRequest, current_user: dict = Depend
     saved_story = await stories_collection.insert_one(story_doc)
     story_id = str(saved_story.inserted_id)
 
-    # 2. 📖 본문에 '실제로 존재하는 단어'만 엄격하게 3~5개 추출
-    vocab_prompt = f"""
-    너는 다정한 어린이 언어 선생님이야.
-    아래 [동화 텍스트]를 자세히 읽고, **반드시 텍스트 안에 실제로 등장하는 어휘/표현 중에서만** {body.age} 어린이가 학습하기 좋은 주요 단어 3~5개를 선택해줘.
-
-    [동화 텍스트]
-    {story_text}
-
-    [필수 규칙]
-    1. 'surface' 항목은 동화 텍스트에 쓰인 모습 그대로 복사할 것. (예: '날아갔어요')
-    2. 'hard' 항목은 그 단어의 조사/어미를 뗀 기본형/원형으로 작성할 것. (예: '날아가다')
-    3. 절대 동화 텍스트 본문에 없는 단어를 지어내지 마!
-    4. 'definition': 국어사전처럼 간결한 한 문장 (동사·형용사는 '~다.', 명사는 명사로 끝냄. '~해요/~랍니다' 말투 금지).
-
-    반드시 아래 JSON 배열 형식으로만 응답해줘:
-    [
-      {{
-        "surface": "본문에 쓰인 그대로의 표현",
-        "hard": "본문에 있는 단어 원형",
-        "definition": "사전식 한 문장."
-      }}
-    ]
-    """
-
-    try:
-        vocab_response = llm_model.generate_content(
-            vocab_prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
-        raw_vocab = json.loads(vocab_response.text)
-        if not isinstance(raw_vocab, list):
-            raise ValueError(f"추천 단어 응답이 배열이 아님: {type(raw_vocab).__name__}")
-    except Exception as e:
-        log_gemini_error("추천 단어 추출", e)
-        raw_vocab = [
-            {"hard": "여행", "definition": "일이나 구경을 위하여 다른 고장이나 나라에 가는 일."},
-            {"hard": "친구", "definition": "가깝게 오래 사귄 사람."}
-        ]
-
-    # 최종 목록: 동화 본문에 실제로 들어 있는 단어만 (예비용 기본 단어도 동일하게 검증)
-    vocab_list = []
-    seen = set()
-    for item in raw_vocab:
-        if not isinstance(item, dict):
-            continue
-        hard = (item.get("hard") or "").strip()
-        if not hard or hard in seen:
-            continue
-        if word_in_story(item, story_text):
-            vocab_list.append(item)
-            seen.add(hard)
-        else:
-            print(f"[추천 단어 제외] 본문에 없음: {hard!r}", flush=True)
-        if len(vocab_list) >= 5:
-            break
-
-    # 3. 추천 단어 뜻: 본문 문장 문맥에 맞는 사전 뜻으로 맞춥니다. (단어 클릭 팝업과 같은 형식, Gemini 1번)
-    if vocab_list:
-        items = []
-        for item in vocab_list:
-            hard = item["hard"].strip()
-            needles = [(item.get("surface") or "").strip(), hard, hard[:-1] if hard.endswith("다") else ""]
-            item["sentence"] = sentence_with(story_text, needles)  # 단어장 저장 때 다시 고를 문맥
-            items.append({"word": hard, "sentence": item["sentence"]})
-        for item, found in zip(vocab_list, await cached_explain_words(llm_model, items, body.age)):
-            item["definition"] = found["definition"] or to_dictionary_style(item.get("definition") or "")
-            item["dict_definition"] = found["dict_definition"]
-            item["ambiguous"] = found["ambiguous"]
+    # 2. 📖 본문에 '실제로 존재하는 단어'만 3~5개 추천 (story_vocab.py, 분기형 동화 완료 때와 같은 로직)
+    vocab_list = await recommend_vocab(llm_model, story_text, body.age, on_error=log_gemini_error)
 
     return {
         "story_id": story_id,
@@ -843,6 +769,7 @@ def _to_my_item(doc: dict, linked_id: str = "") -> MyItem:
         created_at=iso(doc.get("created_at")),
         updated_at=iso(doc.get("updated_at")),
         linked_id=linked_id,
+        status=story_status(doc),
     )
 
 
@@ -916,6 +843,10 @@ async def update_my_story(
     user_id = current_user["user_id"]
     query = _my_doc_filter(story_id, user_id)
     fields = _item_update_fields(body)
+    if "content" in fields:
+        current = await _find_mine_or_404(stories_collection, story_id, user_id, STORY_NOT_FOUND)
+        if story_status(current) == STATUS_IN_PROGRESS:
+            raise HTTPException(status_code=400, detail="아직 만들고 있는 동화예요. 이야기를 끝까지 만든 뒤에 고칠 수 있어요.")
     result = await stories_collection.update_one(query, {"$set": fields})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail=STORY_NOT_FOUND)
@@ -1128,6 +1059,8 @@ async def signup(body: SignUpRequest):
     existing_user = await users_collection.find_one({"id": body.id})
     if existing_user:
         return {"success": False, "message": "이미 존재하는 아이디입니다."}
+    if not is_strong_password(body.password):
+        return {"success": False, "message": PASSWORD_RULE_MESSAGE}
 
     hashed_password = bcrypt.hashpw(body.password.encode('utf-8'), bcrypt.gensalt())
     user_data = {

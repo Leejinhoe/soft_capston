@@ -31,6 +31,9 @@ backend/                 # FastAPI (uvicorn main:app), .env도 여기
   password_reset.py      # 비밀번호 재설정 (인증번호 메일)
   mailer.py              # 메일 발송 공통 (SMTP, HTML 틀)
   gemini_client.py word_meaning.py meaning_cache.py story_text.py   # Gemini·사전·뜻풀이 캐시·본문 정리
+  branching.py           # 분기형 동화 API (/api/stories/branching/start, /{id}/choose, /{id}/finish, /{id}/branching)
+  story_engine.py        # 장면 생성 엔진: Colab(STORY_SERVER_URL, 연결 전) → Gemini → 예비 장면
+  story_vocab.py         # 동화 본문 기반 추천 단어 (예전 generate-story와 분기형 완료 때 공통)
   create_admin.py        # 관리자 계정 만들기 스크립트
   static/profile_images/ # 업로드한 프로필 사진
 team_code/               # 팀원 코드 원본 (수정 금지)
@@ -52,7 +55,9 @@ FEATURES.md              # 페이지별 기능 체크리스트 (진행 상황은
 ## 이미 완성된 것 (건드리기 전에 먼저 읽을 것)
 - 단어 클릭 → Gemini로 원형 정제 + 문장 문맥 기반 다정한 뜻풀이 팝업
 - `POST /api/vocabularies/add` 단어 저장
-- `POST /api/generate-story` 동화 생성, 생성 즉시 `stories_collection`에 자동 저장
+- 분기형 동화: 첫 장면 → 선택지 3개 고르기 → 결말(마무리 버튼 또는 8장면째 자동). 장면마다 바로 저장,
+  `stories`의 `scenes`/`status`/`choice_history` + 전체 본문 `content`. 화면은 이 방식만 씀
+  (`POST /api/generate-story` 통짜 생성은 예전 API로 남아 있음)
 - 동화 본문 기반 추천 단어 3~5개 (Gemini + 파이썬 2차 검증)
 - `VocabularyPage`: 단어 / 출처 동화 제목 / 다정한 뜻풀이
 

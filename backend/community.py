@@ -229,6 +229,8 @@ async def share_story(body: SharePostRequest, current_user: dict = Depends(get_c
     story = await stories_collection.find_one({"_id": _oid(body.story_id), "user_id": user_id})
     if not story:
         raise HTTPException(status_code=404, detail="공유할 동화를 찾지 못했어요.")
+    if story.get("status") == "in_progress":  # 분기형 동화는 결말까지 만든 것만 공유
+        raise HTTPException(status_code=400, detail="이야기를 끝까지 만든 뒤에 공유할 수 있어요.")
 
     existing = await posts_collection.find_one({"user_id": user_id, "story_id": body.story_id})
     if existing:

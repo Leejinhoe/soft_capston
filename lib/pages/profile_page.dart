@@ -896,7 +896,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   icon: Icons.auto_stories,
                   title: '내가 만든 동화',
                   value: '$storyCount편',
-                  onTap: () => _openMyItems(const MyItemsPage.stories()),
+                  onTap: () => _openMyItems(MyItemsPage.stories(displayName: displayName)),
                 ),
                 infoCard(
                   icon: Icons.article,

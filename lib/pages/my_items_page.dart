@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/linked_items.dart';
+import 'story_page.dart';
 
 const _bg = Color(0xFF070018);
 const _card = Color(0xFF140028);
@@ -13,6 +14,7 @@ class MyItemsPage extends StatefulWidget {
   final LinkedKind kind; // 동화 / 게시글 (수정·삭제 API와 "함께 할까요?" 팝업 문구)
   final String emptyMessage;
   final bool showLikes;
+  final String displayName; // "이어하기"로 여는 동화 화면 제목용
 
   const MyItemsPage({
     super.key,
@@ -21,16 +23,17 @@ class MyItemsPage extends StatefulWidget {
     required this.kind,
     required this.emptyMessage,
     this.showLikes = false,
+    this.displayName = '',
   });
 
-  const MyItemsPage.stories({super.key})
+  const MyItemsPage.stories({super.key, this.displayName = ''})
       : title = '내가 만든 동화',
         listPath = '/api/users/me/stories',
         kind = LinkedKind.story,
         emptyMessage = '아직 만든 동화가 없어요.\n첫 동화를 만들어 볼까요? 📖',
         showLikes = false;
 
-  const MyItemsPage.posts({super.key})
+  const MyItemsPage.posts({super.key, this.displayName = ''})
       : title = '내가 올린 게시글',
         listPath = '/api/users/me/posts',
         kind = LinkedKind.post,
@@ -86,16 +89,40 @@ class _MyItemsPageState extends State<MyItemsPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// 만드는 중인 분기형 동화 (선택지를 고르다 멈춘 것)
+  bool _inProgress(Map<String, dynamic> item) =>
+      widget.kind == LinkedKind.story && item['status'] == 'in_progress';
+
+  // ▶ 이어하기: 동화 화면에서 만들던 장면부터 계속 (돌아오면 목록 새로고침)
+  Future<void> _resume(Map<String, dynamic> item) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StoryPage(
+          displayName: widget.displayName,
+          resumeStoryId: item['id'].toString(),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    changed = true;
+    _load();
+  }
+
   Future<void> _openDetail(Map<String, dynamic> item) async {
     final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (_) => _ItemDetailPage(
-            item: item, kind: widget.kind, showLikes: widget.showLikes),
+            item: item,
+            kind: widget.kind,
+            showLikes: widget.showLikes,
+            inProgress: _inProgress(item)),
       ),
     );
     if (result == 'edit') _edit(item);
     if (result == 'delete') _delete(item);
+    if (result == 'resume') _resume(item);
   }
 
   Future<void> _edit(Map<String, dynamic> item) async {
@@ -222,6 +249,21 @@ class _MyItemsPageState extends State<MyItemsPage> {
                     ),
                     const SizedBox(height: 8),
                     _metaRow(item, widget.kind, widget.showLikes),
+                    if (_inProgress(item)) ...[
+                      const SizedBox(height: 10),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFEC4899),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () => _resume(item),
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text('이어하기',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -231,12 +273,17 @@ class _MyItemsPageState extends State<MyItemsPage> {
                 onSelected: (value) {
                   if (value == 'edit') _edit(item);
                   if (value == 'delete') _delete(item);
+                  if (value == 'resume') _resume(item);
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
-                      value: 'edit',
-                      child: Text('수정', style: TextStyle(color: Colors.white))),
-                  PopupMenuItem(
+                itemBuilder: (_) => [
+                  _inProgress(item)
+                      ? const PopupMenuItem(
+                          value: 'resume',
+                          child: Text('이어하기', style: TextStyle(color: Colors.white)))
+                      : const PopupMenuItem(
+                          value: 'edit',
+                          child: Text('수정', style: TextStyle(color: Colors.white))),
+                  const PopupMenuItem(
                       value: 'delete',
                       child: Text('삭제', style: TextStyle(color: Colors.redAccent))),
                 ],
@@ -271,6 +318,16 @@ Widget _metaRow(Map<String, dynamic> item, LinkedKind kind, bool showLikes) {
           child: Text(genre,
               style: const TextStyle(color: Colors.purpleAccent, fontSize: 12)),
         ),
+      if (kind == LinkedKind.story && item['status'] == 'in_progress')
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEC4899).withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Text('✏️ 만드는 중',
+              style: TextStyle(color: Color(0xFFF472B6), fontSize: 12)),
+        ),
       Text(_date(item['created_at']),
           style: const TextStyle(color: Colors.white38, fontSize: 12)),
       if (hasLink(item))
@@ -292,9 +349,13 @@ class _ItemDetailPage extends StatelessWidget {
   final Map<String, dynamic> item;
   final LinkedKind kind;
   final bool showLikes;
+  final bool inProgress;
 
   const _ItemDetailPage(
-      {required this.item, required this.kind, required this.showLikes});
+      {required this.item,
+      required this.kind,
+      required this.showLikes,
+      this.inProgress = false});
 
   @override
   Widget build(BuildContext context) {
@@ -349,9 +410,10 @@ class _ItemDetailPage extends StatelessWidget {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  onPressed: () => Navigator.pop(context, 'edit'),
-                  icon: const Icon(Icons.edit),
-                  label: const Text('수정'),
+                  onPressed: () =>
+                      Navigator.pop(context, inProgress ? 'resume' : 'edit'),
+                  icon: Icon(inProgress ? Icons.play_arrow_rounded : Icons.edit),
+                  label: Text(inProgress ? '이어하기' : '수정'),
                 ),
               ),
             ],
