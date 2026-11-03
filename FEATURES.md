@@ -52,7 +52,7 @@
 - [x] 스크랩한 글 목록 (`GET /api/users/me/scraps`, 최근 스크랩 순) — `lib/pages/scrap_list_page.dart`
 - [x] 받은 좋아요 총합 (`GET /api/users/me/stats` 의 `like_count`)
 - [x] 알림함: 공지사항 + 받은 경고(`users.warnings`), 경고가 없으면 공지사항만
-  - `GET /api/users/me/inbox`, 공지 등록은 `POST /api/admin/notices` (관리자, 화면은 아직 없음 → `/docs`에서 등록)
+  - `GET /api/users/me/inbox`: 전체 공지 + 나를 대상으로 한 공지만 (특정 회원 공지는 그 회원에게만)
 - [x] 로그아웃 (기존 유지)
 
 ## 커뮤니티 1단계 (community) — `backend/community.py`, `lib/pages/board_page.dart`, `lib/pages/post_detail_page.dart`
@@ -73,7 +73,7 @@
 - [x] 댓글 작성(300자) / 목록 / 내 댓글 삭제
   - `GET·POST /api/community/posts/{id}/comments`, `DELETE /api/community/comments/{id}` (내 것만)
 - [x] 내 글은 상세에서 수정/삭제(연결 팝업 동일), 남의 글은 신고 버튼
-- [ ] 다음 단계: 게시글 그림(삽화) 표시, 관리자 게시글 관리
+- [ ] 다음 단계: 게시글 그림(삽화) 표시
 
 ## 커뮤니티 2단계 — 신고 / 미니 프로필 / 1:1 쪽지
 ### 신고 — `backend/reports.py`, `lib/widgets/report_sheet.dart`
@@ -95,3 +95,30 @@
 - [x] `POST /api/messages` 보내기 (자기 자신에게는 불가), `GET /api/messages?box=received|sent`, `GET /api/messages/{id}`(열면 읽음), `GET /api/messages/unread-count`, `DELETE /api/messages/{id}`(내 쪽지함에서만, 양쪽 다 지우면 실제 삭제)
 - [x] 마이페이지 "쪽지함": 받은 쪽지 / 보낸 쪽지 탭, 안 읽은 쪽지 배지(마이페이지 카드 + 탭)
 - [x] 받은 쪽지: 답장 / 삭제 / 신고, 보낸 쪽지: 읽음 여부 표시, 삭제
+
+## 관리자 (admin) — `backend/admin.py`, `lib/pages/admin_page.dart` 외
+모든 API는 `/api/admin/...` + `require_admin`. 화면 공통 스타일은 `lib/core/admin_ui.dart` (다크 + 보라색)
+### 관리자 메인 — `admin_page.dart`
+- [x] 요약 숫자: 전체 회원 수(관리자 제외), 처리 대기 신고 수, 오늘(한국 시간) 생성된 동화 수 `GET /api/admin/summary`
+- [x] 메뉴 4개: 회원 관리 / 신고 관리 / 동화 관리 / 공지사항, 돌아오면 요약 숫자 새로고침
+### 회원 관리 — `user_list_page.dart`, `user_detail_page.dart`
+- [x] 목록 `GET /api/admin/users?q=&status=active|banned&page=&size=`: 아이디, 닉네임, 이름, 이메일, 가입일, 경고 횟수, 상태(활동/정지), 더보기
+  - 검색: 아이디(일반·소셜 id)·닉네임·이름·이메일 (부분 일치, 대소문자 무시)
+- [x] 상세 `GET /api/admin/users/{id}`: 기본 정보, 받은 경고 내역(사유·날짜·준 관리자), 만든 동화/게시글/댓글 수, 받은 신고 수
+- [x] 경고 주기(사유 필수) `POST /api/admin/users/{id}/warnings` → `users.warnings` + 알림 (마이페이지 알림함에 표시)
+  - 신고 상세 화면이 쓰는 `PUT /admin/warning/{id}`도 같은 처리로 유지 (공개 id로만 찾음)
+- [x] 정지/정지 해제 `PATCH /api/admin/users/{id}/status` `{status}` (정지되면 다음 요청부터 바로 로그아웃)
+- [x] 강제 탈퇴 `DELETE /api/admin/users/{id}?delete_stories=` — 팝업 2번(처리 방법 선택 → 최종 확인)
+  - 게시글(+딸린 좋아요/스크랩/댓글)·댓글·좋아요·스크랩·단어장·알림 삭제, 남의 글 댓글/좋아요 수 보정
+  - 동화는 남기기(작성자 "탈퇴한 회원") / 같이 삭제 중 선택, 쪽지는 상대방 쪽지함에만 남김
+- [x] 관리자 계정은 정지·탈퇴 불가 (서버 400 + 화면에서 버튼 숨김)
+### 동화 관리 — `story_admin_list_page.dart`, `story_admin_detail_page.dart`
+- [x] 모든 회원의 동화 `GET /api/admin/stories?q=&genre=&page=&size=`: 제목, 작성자, 장르, 생성일, 커뮤니티 공유 여부
+  - 검색: 제목 또는 작성자(아이디·닉네임·이름), 장르 탭(`kStoryGenres`)
+- [x] 상세 `GET /api/admin/stories/{id}` (본문 포함)
+- [x] 관리자 삭제 `DELETE /api/admin/stories/{id}?with_linked=` — 공유된 동화면 "연결된 게시글도 지울까요?"
+### 공지사항 — `notice_admin_page.dart`, `notice_edit_page.dart`
+- [x] 목록 / 등록 / 수정 / 삭제 `GET·POST /api/admin/notices`, `PATCH·DELETE /api/admin/notices/{id}`
+- [x] 대상: 전체 회원(`target: all`) / 특정 회원(`target: users`, `user_ids` 여러 명, 아이디 확인 후 추가, 없는 아이디는 400)
+  - 예전 공지(대상 필드 없음)는 전체 공지로 취급
+

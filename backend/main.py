@@ -42,6 +42,7 @@ from community import (
 )
 from messages import ensure_indexes as ensure_message_indexes, router as messages_router
 from reports import ensure_indexes as ensure_report_indexes, router as reports_router
+from admin import notice_visible_query, router as admin_router
 from quiz import build_questions, card_definition
 from story_text import clean_story_text
 from gemini_client import FallbackModel, parse_model_list
@@ -61,7 +62,6 @@ from security import (
     is_strong_password,
     new_user_defaults,
     public_user_id,
-    require_admin,
     user_summary,
 )
 
@@ -69,6 +69,7 @@ app = FastAPI()
 app.include_router(community_router)
 app.include_router(reports_router)
 app.include_router(messages_router)
+app.include_router(admin_router)
 
 
 @app.on_event("startup")
@@ -165,9 +166,6 @@ class GoogleCodeRequest(BaseModel):
 class IdRequest(BaseModel):
     id: str
 
-class WarningRequest(BaseModel):
-    reason: Optional[str] = ""
-
 class UserSummary(BaseModel):
     id: str
     name: str
@@ -250,10 +248,6 @@ class WarningItem(BaseModel):
 class MyInboxResponse(BaseModel):
     notices: list[NoticeItem]
     warnings: list[WarningItem]
-
-class NoticeCreateRequest(BaseModel):
-    title: str
-    content: str
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
@@ -989,7 +983,8 @@ def _to_notice(doc: dict) -> NoticeItem:
 
 @app.get("/api/users/me/inbox", response_model=MyInboxResponse)
 async def get_my_inbox(current_user: dict = Depends(get_current_user)):
-    cursor = notices_collection.find().sort("created_at", -1).limit(50)
+    # 전체 공지 + 나를 대상으로 한 공지만 (특정 회원 공지는 그 회원에게만 보임)
+    cursor = notices_collection.find(notice_visible_query(current_user["user_id"])).sort("created_at", -1).limit(50)
     notices = [_to_notice(doc) async for doc in cursor]
     # 어떤 관리자가 줬는지는 빼고, 사유와 날짜만 최신순으로 내려줍니다.
     warnings = [
@@ -998,19 +993,6 @@ async def get_my_inbox(current_user: dict = Depends(get_current_user)):
         if isinstance(w, dict)
     ]
     return MyInboxResponse(notices=notices, warnings=warnings)
-
-
-@app.post("/api/admin/notices", response_model=NoticeItem)
-async def create_notice(body: NoticeCreateRequest, admin: dict = Depends(require_admin)):
-    doc = {
-        "title": _clean_text(body.title, "제목", 100, required=True),
-        "content": _clean_text(body.content, "내용", 5000, required=True),
-        "author_id": admin["user_id"],
-        "created_at": datetime.utcnow(),
-    }
-    result = await notices_collection.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return _to_notice(doc)
 
 
 # ----------------------------------------
@@ -1128,7 +1110,7 @@ async def login(body: LoginRequest):
 
 
 # ----------------------------------------
-# 관리자 API (로그인, 회원 목록, 경고 부여, 삭제, 신고 조회)
+# 관리자 로그인 (나머지 관리자 API는 admin.py / reports.py)
 # ----------------------------------------
 @app.post("/admin-login", response_model=AuthResponse)
 async def admin_login(body: AdminLoginRequest):
@@ -1148,78 +1130,5 @@ async def admin_login(body: AdminLoginRequest):
     }
 
 
-@app.get("/admin/users")
-async def get_users(admin: dict = Depends(require_admin)):
-    users = []
-    async for user in users_collection.find():
-        users.append({
-            "id": public_user_id(user),
-            "name": user.get("name") or user.get("nickname") or "이름 없음",
-            "email": user.get("email"),
-            "birth": user.get("birth"),
-            "role": user.get("role", ROLE_USER),
-            "status": user.get("status", STATUS_ACTIVE),
-            "warning_count": user.get("warning_count", 0),
-            "created_at": str(user.get("created_at")),
-        })
-    return users
-
-
-@app.put("/admin/warning/{user_id}")
-async def warning_user(
-    user_id: str,
-    body: Optional[WarningRequest] = None,
-    admin: dict = Depends(require_admin),
-):
-    clean_user_id = user_id.strip()
-    # 신고 목록에는 작성자 '이름'만 있어서 이름/닉네임/이메일로도 찾습니다. (관리자 전용)
-    query = {
-        "$or": [
-            {"id": clean_user_id},
-            {"social_id": clean_user_id},
-            {"kakao_id": clean_user_id},
-            {"name": clean_user_id},
-            {"nickname": clean_user_id},
-            {"email": clean_user_id},
-        ]
-    }
-    user = await users_collection.find_one(query)
-    if not user:
-        raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
-
-    now = datetime.utcnow()
-    warning_entry = {
-        "reason": (body.reason if body else "") or "",
-        "admin_id": admin["user_id"],
-        "created_at": now,
-    }
-    new_warning_count = user.get("warning_count", 0) + 1
-
-    await users_collection.update_one(
-        {"_id": user["_id"]},
-        {"$set": {"warning_count": new_warning_count}, "$push": {"warnings": warning_entry}},
-    )
-    target_user_id = public_user_id(user)
-    await notifications_collection.insert_one({
-        "user_id": target_user_id,
-        "title": "⚠️ 커뮤니티 가이드라인 경고 알림",
-        "message": f"서비스 이용 수칙 위반으로 경고가 부여되었습니다. (누적 경고 횟수: {new_warning_count}회)",
-        "is_read": False,
-        "created_at": now
-    })
-    return {"success": True, "warning_count": new_warning_count}
-
-
-@app.delete("/admin/user/{user_id}")
-async def delete_user(user_id: str, admin: dict = Depends(require_admin)):
-    if user_id == admin["user_id"]:
-        raise HTTPException(status_code=400, detail="자기 자신은 삭제할 수 없습니다.")
-    result = await users_collection.delete_one({
-        "$or": [{"id": user_id}, {"social_id": user_id}, {"kakao_id": user_id}]
-    })
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
-    return {"success": True, "message": "회원이 삭제되었습니다."}
-
-
+# 회원·동화·공지 관리 API: /api/admin/... (backend/admin.py)
 # 신고: POST /api/reports, 관리자 신고 목록: GET·PATCH /api/admin/reports (backend/reports.py)
