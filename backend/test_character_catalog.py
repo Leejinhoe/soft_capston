@@ -1,8 +1,9 @@
 import re
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import character_seed
 from character_seed import (
@@ -394,6 +395,14 @@ class _FakeCharacterProfilesCollection:
 
 
 class CharacterCatalogSeedTests(unittest.IsolatedAsyncioTestCase):
+    async def test_limited_reference_seed_does_not_modify_existing_profiles(self):
+        collection = _FakeCharacterProfilesCollection()
+        collection.find_one = AsyncMock(return_value={'character_key': 'female_01'})
+        with patch.dict(os.environ, {'CHARACTER_SEED_KEYS': 'female_01', 'CHARACTER_SEED_REFERENCE_ONLY': 'true'}), patch.object(character_seed, 'character_profiles_collection', collection):
+            self.assertEqual(await seed_default_character_profiles(), 0)
+        self.assertEqual(collection.update_many_calls, [])
+        collection.find_one.assert_awaited_once_with({'character_key': 'female_01'})
+
     async def test_seed_deactivates_seeded_profiles_outside_current_catalog(self):
         fake_collection = _FakeCharacterProfilesCollection()
         catalog_without_assets = [

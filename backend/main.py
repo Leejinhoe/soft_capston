@@ -134,7 +134,7 @@ from story_generator_router import router as story_router
 from motion_asset_request import missing_motion_asset_request
 from hf_space_video import enabled as video_space_enabled, generate_scene_video as generate_space_video
 from motion_asset_candidate import candidate_generation_enabled, generate_candidate, generate_hf_candidate
-from cloudflare_character import enabled as cloudflare_character_enabled, generate_scene as generate_cloudflare_scene
+from cloudflare_character import enabled as cloudflare_character_enabled, generate_scene as generate_cloudflare_scene, directional_reference
 from hf_space_character import action_for_scene, enabled as space_character_enabled, generate_character as generate_space_character
 from hf_space_character import (
     CHARACTER_TRIGGER_MAP,
@@ -208,7 +208,7 @@ app.add_middleware(
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Test-Key"],
 )
 
 
@@ -216,6 +216,11 @@ app.add_middleware(
 async def protect_sensitive_routes(request: Request, call_next):
     path = request.url.path
     method = request.method.upper()
+    test_key = os.getenv('TEST_DEPLOY_ACCESS_KEY', '').strip()
+    if test_key and method != 'OPTIONS' and path not in ('/', '/health'):
+        supplied = request.headers.get('x-test-key', '')
+        if not hmac.compare_digest(test_key, supplied):
+            return JSONResponse(status_code=403, content={'detail': 'Test server access required.'})
     policy = route_access_policy(path, method)
     if policy == "public":
         return await call_next(request)
@@ -1673,7 +1678,12 @@ async def generate_and_store_backend_media(
     if (cloudflare_character_enabled() and not include_video and not environment_only
             and not secondary_character_asset and generated.get("character_bytes")):
         try:
-            candidate_scene = await generate_cloudflare_scene(generated["character_bytes"], story_text)
+            direction_ref = await asyncio.to_thread(directional_reference, character_key, provided_contract)
+            if direction_ref:
+                view, ref_bytes = direction_ref
+                candidate_scene = await generate_cloudflare_scene(generated["character_bytes"], story_text, ref_bytes, view)
+            else:
+                candidate_scene = await generate_cloudflare_scene(generated["character_bytes"], story_text)
             if not inspect_generated_media(candidate_scene, content_type="image/png")["passed"]:
                 raise ValueError("Cloudflare scene failed image quality checks")
             generated.update({

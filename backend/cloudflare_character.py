@@ -5,6 +5,7 @@ import binascii
 import io
 import os
 import re
+from pathlib import Path
 
 import httpx
 from PIL import Image
@@ -28,7 +29,7 @@ def prepare_reference(data):
         white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
         white.alpha_composite(rgba)
         rgb = white.convert("RGB")
-        rgb.thumbnail((768, 1024))
+        rgb.thumbnail((512, 512))
         buf = io.BytesIO()
         rgb.save(buf, format="PNG")
         return buf.getvalue()
@@ -69,7 +70,26 @@ def _english_visual_hint(scene: str) -> str:
     return " Visual action: expressive fairytale storybook scene with clear character pose."
 
 
-async def generate_scene(reference, story_text):
+def directional_reference(character_key, scene_contract):
+    """Return a second identity reference only for unambiguous scene directions."""
+    key = str(character_key or '').strip().lower()
+    if not re.fullmatch(r'(male|female)_0[1-8]', key) or not isinstance(scene_contract, dict):
+        return None
+    action = scene_contract.get('action')
+    direction = scene_contract.get('background_direction')
+    if direction in ('left_to_right', 'right_to_left'):
+        view = 'side'
+    elif action == 'journey' and direction in ('toward_target', 'toward_route'):
+        view = 'back'
+    else:
+        return None
+    path = Path(__file__).resolve().parent.parent / 'assets' / 'characters' / 'reference_views' / f'{key}_{view}.png'
+    if not path.is_file():
+        return None
+    return view, path.read_bytes()
+
+
+async def generate_scene(reference, story_text, direction_reference=None, direction_view=None):
     account = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
     token = os.getenv("CLOUDFLARE_AI_TOKEN", "").strip()
     if not re.fullmatch(r"[0-9a-fA-F]{32}", account) or not token:
@@ -84,6 +104,11 @@ async def generate_scene(reference, story_text):
         "illustration of this scene: " + scene + hint
     )
     ref_bytes = prepare_reference(reference)
+    files = {"input_image_0": ("reference.png", ref_bytes, "image/png")}
+    if direction_reference and direction_view in ('side', 'back'):
+        files['input_image_1'] = ('direction.png', prepare_reference(direction_reference), 'image/png')
+        prompt += (" The first image defines the character's identity. The second image shows "
+                   f"the same character from the {direction_view} view; follow that viewing direction.")
     url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{MODEL}"
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=45, follow_redirects=False) as client:
@@ -92,7 +117,7 @@ async def generate_scene(reference, story_text):
                 response = await client.post(
                     url,
                     headers=headers,
-                    files={"input_image_0": ("reference.png", ref_bytes, "image/png")},
+                    files=files,
                     data={"prompt": prompt},
                 )
                 response.raise_for_status()

@@ -85,6 +85,24 @@ class CloudflareTests(unittest.IsolatedAsyncioTestCase):
         hint = cf._english_visual_hint("미나는 오솔길을 걸어갑니다.")
         self.assertIn("walking", hint)
 
+    def test_directional_reference_selection_is_conservative(self):
+        self.assertEqual(cf.directional_reference('female_01', {'action': 'journey', 'background_direction': 'toward_target'})[0], 'back')
+        self.assertEqual(cf.directional_reference('male_01', {'action': 'journey', 'background_direction': 'left_to_right'})[0], 'side')
+        self.assertIsNone(cf.directional_reference('female_01', {'action': 'idle', 'background_direction': 'forward'}))
+        self.assertIsNone(cf.directional_reference('../../secret', {'action': 'journey', 'background_direction': 'toward_target'}))
+
+    async def test_directional_reference_is_sent_alongside_front(self):
+        Client.calls.clear()
+        Client.fail_first = False
+        with patch.dict(os.environ, {"CLOUDFLARE_ACCOUNT_ID": "a" * 32, "CLOUDFLARE_AI_TOKEN": "test"}), patch.object(cf.httpx, "AsyncClient", Client):
+            await cf.generate_scene(picture(), "A child walks toward a castle", picture(), 'back')
+        sent = Client.calls[0][1]
+        self.assertIn('input_image_0', sent['files'])
+        self.assertIn('input_image_1', sent['files'])
+        self.assertIn('back view', sent['data']['prompt'])
+        for _, data, _ in sent['files'].values():
+            self.assertLessEqual(max(Image.open(io.BytesIO(data)).size), 512)
+
     async def test_korean_scene_includes_english_visual_action_hint(self):
         Client.calls.clear()
         Client.fail_first = False

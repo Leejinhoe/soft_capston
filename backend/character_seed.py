@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -664,10 +665,15 @@ async def _store_character_asset(
 
 async def seed_default_character_profiles() -> int:
     seeded_count = 0
+    selected_keys = {key.strip().lower() for key in os.getenv('CHARACTER_SEED_KEYS', '').split(',') if key.strip()}
+    reference_only = os.getenv('CHARACTER_SEED_REFERENCE_ONLY', '').strip().lower() == 'true'
+    characters = [character for character in DEFAULT_CHARACTERS
+                  if not selected_keys or character['character_key'] in selected_keys]
     active_character_keys = [
-        character["character_key"] for character in DEFAULT_CHARACTERS
+        character["character_key"] for character in characters
     ]
-    await character_profiles_collection.update_many(
+    if not selected_keys:
+        await character_profiles_collection.update_many(
         {
             "seeded": True,
             "character_key": {"$nin": active_character_keys},
@@ -679,10 +685,14 @@ async def seed_default_character_profiles() -> int:
                 "updated_at": datetime.utcnow(),
             }
         },
-    )
-    for character in DEFAULT_CHARACTERS:
+        )
+    for character in characters:
+        if reference_only and await character_profiles_collection.find_one({'character_key': character['character_key']}):
+            continue
         stored_assets = []
         for asset_spec in character["assets"]:
+            if reference_only and asset_spec.get('quality_tier') != 'premium_reference':
+                continue
             try:
                 stored = await _store_character_asset(character, asset_spec)
             except FileNotFoundError as exc:
