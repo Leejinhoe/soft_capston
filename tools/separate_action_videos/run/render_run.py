@@ -13,7 +13,7 @@ import imageio.v2 as imageio
 
 
 ROOT = Path(__file__).resolve().parents[3]
-BACKEND = ROOT / "DB연결 테스트"
+BACKEND = ROOT / "backend"
 WIDTH = 768
 HEIGHT = 384
 FPS = 24
@@ -43,7 +43,7 @@ def _validate_inputs() -> None:
     for path in (BACKGROUND_PATH, CHARACTER_PATH, RUN_CYCLE_PATH):
         if not path.is_file():
             raise FileNotFoundError(f"Required asset was not found: {path}")
-    if BACKEND != ROOT / "DB연결 테스트" or not (BACKEND / "hf_video_provider.py").is_file():
+    if BACKEND != ROOT / "backend" or not (BACKEND / "hf_video_provider.py").is_file():
         raise RuntimeError(f"Backend path is invalid: {BACKEND}")
 
 

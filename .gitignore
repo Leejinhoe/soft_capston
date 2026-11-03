@@ -45,6 +45,7 @@ app.*.map.json
 /android/app/release
 
 # Local secrets
+/models/emotion_checkpoint/
 .env
 **/.env
 
@@ -52,6 +53,8 @@ app.*.map.json
 DB*/media_server_state.json
 DB*/__pycache__/
 DB*/**/*.pyc
+backend/media_server_state.json
+backend/__pycache__/
 
 # Generated or local-only files
 *.tmp

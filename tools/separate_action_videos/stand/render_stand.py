@@ -14,7 +14,7 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[3]
-BACKEND = ROOT / "DB연결 테스트"
+BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 
 from hf_video_provider import (  # noqa: E402

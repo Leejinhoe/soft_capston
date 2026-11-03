@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../services/scene_image_policy.dart';
 import 'character_profile.dart';
 import 'story_model.dart';
 
@@ -21,6 +22,7 @@ class AppState extends ChangeNotifier {
   StorySession? currentStory;
   bool isLoading = false;
   String? errorMessage;
+  String? storySyncError;
 
   String? currentUserId;
   String? currentAccountId;
@@ -205,6 +207,7 @@ class AppState extends ChangeNotifier {
   }) async {
     _setLoading(true);
     errorMessage = null;
+    storySyncError = null;
     try {
       final selectedCharacterKey = selectedHeroCharacterKey?.trim();
       final data = await ApiService.startStory(
@@ -394,9 +397,14 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void finishCurrentStory() {
+  void finishCurrentStory({bool markCompleted = false}) {
     if (currentStory != null) {
       final story = currentStory!;
+      if (markCompleted && story.choices.isNotEmpty) {
+        story.choices = [];
+        story.choiceOptions = [];
+        _queueStorySync(story, () => _syncReadingState(story));
+      }
       completedStories.removeWhere(
         (item) => _storyIdentity(item) == _storyIdentity(story),
       );
@@ -410,6 +418,7 @@ class AppState extends ChangeNotifier {
 
   void resetCurrentStory() {
     currentStory = null;
+    storySyncError = null;
     _invalidateVocabularyCache();
     _clearPsychResult();
     errorMessage = null;
@@ -767,20 +776,16 @@ class AppState extends ChangeNotifier {
         readProgress: session.readProgress,
       );
 
-      if (dbStoryId == null) return;
+      if (dbStoryId == null) {
+        storySyncError = '동화를 저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요.';
+        notifyListeners();
+        return;
+      }
       session.dbStoryId = dbStoryId;
     }
 
-    var changed = false;
-    for (final chapter in session.chapters) {
-      final synced = await _syncSceneIfNeeded(session, chapter);
-      changed = synced || changed;
-      unawaited(_generateMediaForChapter(session, chapter));
-    }
-    await _syncReadingState(session);
-
-    if (changed) {
-      notifyListeners();
+    if (session.chapters.isNotEmpty) {
+      await _syncChapter(session, session.chapters.last);
     }
   }
 
@@ -794,18 +799,46 @@ class AppState extends ChangeNotifier {
     }
     if (session.dbStoryId == null) return;
 
-    final changed = await _syncSceneIfNeeded(session, chapter);
+    var changed = false;
+    while (session.chapters.any(
+      (pending) => !session.syncedChapterNumbers.contains(pending.chapter),
+    )) {
+      for (final pending in List<StoryChapter>.of(session.chapters)) {
+        final synced = await _syncSceneIfNeeded(session, pending);
+        if (!synced && !session.syncedChapterNumbers.contains(pending.chapter)) {
+          storySyncError = '장면을 저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요.';
+          notifyListeners();
+          return;
+        }
+        changed = changed || synced;
+        if (synced) unawaited(_generateMediaForChapter(session, pending));
+      }
+    }
     if (changed) {
       notifyListeners();
     }
-    await _syncReadingState(session);
-    unawaited(_generateMediaForChapter(session, chapter));
+    if (!await _syncReadingState(session)) {
+      storySyncError = '진행 상태를 저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요.';
+      notifyListeners();
+      return;
+    }
+    storySyncError = null;
+    notifyListeners();
   }
 
-  Future<void> _syncReadingState(StorySession session) async {
+  void retryStorySync(StorySession session) {
+    if (session.chapters.isEmpty) return;
+    _queueStorySync(session, () => _syncChapter(session, session.chapters.last));
+  }
+
+  @visibleForTesting
+  Future<void> syncChapterForTesting(StorySession session, StoryChapter chapter) =>
+      _syncChapter(session, chapter);
+
+  Future<bool> _syncReadingState(StorySession session) async {
     final dbStoryId = session.dbStoryId;
-    if (dbStoryId == null || dbStoryId.isEmpty) return;
-    await DbService.saveStoryReadingState(
+    if (dbStoryId == null || dbStoryId.isEmpty) return false;
+    return DbService.saveStoryReadingState(
       storyId: dbStoryId,
       aiStoryId: session.storyId,
       runtimeState: session.runtimeState,
@@ -856,6 +889,23 @@ class AppState extends ChangeNotifier {
     if (dbStoryId == null || dbStoryId.isEmpty) return false;
     if (session.syncedChapterNumbers.contains(chapter.chapter)) return false;
 
+    String? imageToSave = chapter.imageUrl;
+    if (chapter.imageUrl == null && chapter.imageBytes == null) {
+      for (final previous in session.chapters) {
+        if (!canReusePreviousSceneImage(previous, chapter)) continue;
+        final uri = Uri.tryParse(previous.imageUrl!);
+        final path = uri?.path ?? '';
+        if (!RegExp(r'^/api/media/images/[0-9a-fA-F]{24}$').hasMatch(path)) continue;
+        chapter.imageUrl = previous.imageUrl;
+        imageToSave = path;
+        break;
+      }
+    }
+    final savedPath = Uri.tryParse(imageToSave ?? '')?.path ?? '';
+    if (RegExp(r'^/api/media/images/[0-9a-fA-F]{24}$').hasMatch(savedPath)) {
+      imageToSave = savedPath;
+    }
+
     final pushed = await DbService.pushScene(
       storyId: dbStoryId,
       stepNumber: chapter.chapter,
@@ -864,7 +914,7 @@ class AppState extends ChangeNotifier {
       sceneContract: chapter.sceneContract,
       selectedChoiceEmotion: chapter.selectedChoiceEmotion?.toJson(),
       storyEmotion: chapter.storyEmotion?.toJson(),
-      imageUrl: chapter.imageUrl,
+      imageUrl: imageToSave,
       videoUrl: chapter.videoUrl,
     );
     if (!pushed) return false;
@@ -884,6 +934,47 @@ class AppState extends ChangeNotifier {
     if (resumeJobId == null && !includeVideo && chapter.imageBytes != null) return;
     if (!session.syncedChapterNumbers.contains(chapter.chapter)) return;
 
+    if (resumeJobId == null &&
+        !includeVideo &&
+        (chapter.imageUrl?.trim().isEmpty ?? true) &&
+        chapter.imageBytes == null) {
+      for (final previous in session.chapters) {
+        if (previous.chapter + 1 != chapter.chapter) continue;
+        if (!isSameQuietSceneContract(previous, chapter)) break;
+        while (session.mediaGenerationChapterNumbers.contains(previous.chapter)) {
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+        if (canReusePreviousSceneImage(previous, chapter)) {
+          final uri = Uri.tryParse(previous.imageUrl!);
+          final path = uri?.path ?? '';
+          if (RegExp(r'^/api/media/images/[0-9a-fA-F]{24}$').hasMatch(path)) {
+            chapter.imageUrl = previous.imageUrl;
+            chapter.mediaStatus = 'completed';
+            chapter.mediaError = null;
+            notifyListeners();
+            final dbId = session.dbStoryId;
+            if (dbId != null && dbId.isNotEmpty) {
+              unawaited(
+                DbService.pushScene(
+                  storyId: dbId,
+                  stepNumber: chapter.chapter,
+                  storyText: chapter.text,
+                  choiceMade: chapter.choiceMade,
+                  sceneContract: chapter.sceneContract,
+                  selectedChoiceEmotion: chapter.selectedChoiceEmotion?.toJson(),
+                  storyEmotion: chapter.storyEmotion?.toJson(),
+                  imageUrl: path,
+                  videoUrl: chapter.videoUrl,
+                ),
+              );
+            }
+            return;
+          }
+        }
+        break;
+      }
+    }
+
     final hasImageUrl = chapter.imageUrl?.trim().isNotEmpty ?? false;
     final hasVideoUrl = chapter.videoUrl?.trim().isNotEmpty ?? false;
     if (resumeJobId == null && ((!includeVideo && hasImageUrl) || (includeVideo && hasVideoUrl))) return;
@@ -896,6 +987,7 @@ class AppState extends ChangeNotifier {
     if (dbStoryId == null || dbStoryId.isEmpty) return;
 
     session.mediaGenerationChapterNumbers.add(chapter.chapter);
+    chapter.mediaRetryVideo = includeVideo;
     chapter.mediaStatus = 'running';
     chapter.mediaError = null;
     notifyListeners();
@@ -921,6 +1013,7 @@ class AppState extends ChangeNotifier {
       }
 
       chapter.mediaJobId = media.jobId;
+      chapter.mediaRetryVideo = includeVideo || media.includeVideoRequested;
       chapter.mediaStatus = media.status;
       chapter.mediaError = media.error;
 
@@ -932,7 +1025,7 @@ class AppState extends ChangeNotifier {
       }
 
       final requestedVideoMissing =
-          includeVideo && !(media.videoUrl?.trim().isNotEmpty ?? false);
+          chapter.mediaRetryVideo && !(media.videoUrl?.trim().isNotEmpty ?? false);
       if (media.isPartial ||
           media.status == 'failed' ||
           requestedVideoMissing) {
@@ -967,7 +1060,18 @@ class AppState extends ChangeNotifier {
     chapter.mediaStatus = null;
     chapter.mediaError = null;
     notifyListeners();
-    await _generateMediaForChapter(session, chapter);
+    final pendingSync = _storySyncQueue[session];
+    if (pendingSync != null) {
+      try {
+        await pendingSync;
+      } catch (_) {}
+    }
+    if (!session.syncedChapterNumbers.contains(chapter.chapter)) {
+      await _syncSceneIfNeeded(session, chapter);
+    }
+    await _generateMediaForChapter(
+      session, chapter, includeVideo: chapter.mediaRetryVideo,
+    );
   }
 
   /// Videos are optional: illustrations are generated with each chapter, while
@@ -976,8 +1080,7 @@ class AppState extends ChangeNotifier {
     StorySession session,
     StoryChapter chapter,
   ) async {
-    if (session.mediaGenerationChapterNumbers.contains(chapter.chapter) ||
-        (chapter.videoUrl?.trim().isNotEmpty ?? false)) {
+    if (chapter.videoUrl?.trim().isNotEmpty ?? false) {
       return;
     }
 
@@ -986,6 +1089,24 @@ class AppState extends ChangeNotifier {
       chapter.mediaStatus = 'completed';
       chapter.mediaError = null;
       notifyListeners();
+      return;
+    }
+
+    final pendingSync = _storySyncQueue[session];
+    if (pendingSync != null) {
+      try {
+        await pendingSync;
+      } catch (_) {}
+    }
+    if (!session.syncedChapterNumbers.contains(chapter.chapter)) {
+      await _syncSceneIfNeeded(session, chapter);
+    }
+
+    while (session.mediaGenerationChapterNumbers.contains(chapter.chapter)) {
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+
+    if (chapter.videoUrl?.trim().isNotEmpty ?? false) {
       return;
     }
 

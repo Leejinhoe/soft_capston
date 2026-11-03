@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'DB연결 테스트'))
+sys.path.insert(0, str(ROOT / 'backend'))
 from media_compositor import compose_story_scene
 
 

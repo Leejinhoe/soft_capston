@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:percent_indicator/percent_indicator.dart';
 import 'main.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
@@ -12,6 +13,177 @@ class PsychPage extends StatefulWidget {
 }
 
 class _PsychPageState extends State<PsychPage> {
+  Widget _buildStoryEmotionGraph(StorySession story) {
+    final choices = story.choiceEmotionHistory;
+    final analyzedCount = choices
+        .where((record) => record.emotion?.topEmotions.isNotEmpty ?? false)
+        .length;
+    final emotions = _aggregateStoryEmotions(story);
+    if (emotions.isEmpty) {
+      return const Text(
+        '저장된 선택지 감정 분석 결과가 없어요.',
+        style: TextStyle(color: Colors.white70, fontSize: 13),
+      );
+    }
+    final isExample = story.chapters.any(
+      (chapter) => (chapter.choiceMade?.trim().isNotEmpty ?? false) &&
+          chapter.selectedChoiceEmotion?.emotionLabelSource == 'temporary_kote',
+    );
+
+    const colors = [
+      AppColors.p500,
+      AppColors.pink,
+      AppColors.teal,
+      Color(0xFFF59E0B),
+      Color(0xFF10B981),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF140028),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.insights_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '감정 그래프',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isExample
+                          ? '임시 동화의 예시값이며 실제 감정 분석 결과가 아니에요'
+                          : '고른 선택의 감정 후보별 모델 활성값이에요',
+                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                    Text(
+                      '선택 ${choices.length}개 중 분석 결과 $analyzedCount개',
+                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...emotions.asMap().entries.map((entry) {
+            final color = colors[entry.key % colors.length];
+            final item = entry.value;
+            final label = item.labelDisplay.isNotEmpty
+                ? item.labelDisplay
+                : item.label;
+            final percent = item.score.clamp(0.0, 1.0);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '활성값 ${percent.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  LinearPercentIndicator(
+                    percent: percent,
+                    lineHeight: 8,
+                    barRadius: const Radius.circular(4),
+                    backgroundColor: color.withValues(alpha: 0.15),
+                    progressColor: color,
+                    padding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  List<EmotionScoreItem> _aggregateStoryEmotions(StorySession story) {
+    final totals = <String, double>{};
+    final counts = <String, int>{};
+    final indexes = <String, int>{};
+    final displays = <String, String>{};
+
+    void collect(EmotionAnalysis? analysis) {
+      if (analysis == null) return;
+      for (final item in analysis.topEmotions.take(5)) {
+        final key = item.labelDisplay.isNotEmpty
+            ? item.labelDisplay
+            : item.label;
+        totals[key] = (totals[key] ?? 0) + item.score;
+        counts[key] = (counts[key] ?? 0) + 1;
+        indexes[key] = item.labelIndex;
+        displays[key] = key;
+      }
+    }
+
+    for (final chapter in story.chapters) {
+      if (chapter.choiceMade?.trim().isNotEmpty ?? false) {
+        collect(chapter.selectedChoiceEmotion);
+      }
+    }
+    final result = totals.entries.map((entry) {
+      final count = counts[entry.key] ?? 1;
+      final score = (entry.value / count).clamp(0.0, 1.0);
+      return EmotionScoreItem(
+        labelIndex: indexes[entry.key] ?? -1,
+        label: entry.key,
+        labelDisplay: displays[entry.key] ?? entry.key,
+        score: double.parse(score.toStringAsFixed(3)),
+      );
+    }).toList()..sort((a, b) => b.score.compareTo(a.score));
+
+    return result.take(5).toList();
+  }
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
@@ -38,6 +210,13 @@ class _PsychPageState extends State<PsychPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF070018),
+      appBar: Navigator.canPop(context)
+          ? AppBar(
+              backgroundColor: const Color(0xFF070018),
+              foregroundColor: Colors.white,
+              leading: const BackButton(),
+            )
+          : null,
       body: SafeArea(
         child: _buildBody(
           context,
@@ -95,13 +274,13 @@ class _PsychPageState extends State<PsychPage> {
   }
 
   Widget _buildEndingRequiredState(StorySession story) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildPageTitle(),
-          const Spacer(),
+          const SizedBox(height: 24),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(28),
@@ -119,7 +298,7 @@ class _PsychPageState extends State<PsychPage> {
                 ),
                 const SizedBox(height: 18),
                 const Text(
-                  '엔딩을 본 뒤 분석할 수 있어요',
+                  '선택 해설은 엔딩을 본 뒤 볼 수 있어요',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
@@ -141,7 +320,7 @@ class _PsychPageState extends State<PsychPage> {
               ],
             ),
           ),
-          const Spacer(),
+          const SizedBox(height: 24),
           const SizedBox(height: 100),
         ],
       ),
@@ -242,6 +421,8 @@ class _PsychPageState extends State<PsychPage> {
         children: [
           _buildPageTitle(),
           const SizedBox(height: 30),
+          _buildStoryEmotionGraph(story),
+          const SizedBox(height: 16),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
@@ -371,6 +552,8 @@ class _PsychPageState extends State<PsychPage> {
         children: [
           _buildPageTitle(),
           const SizedBox(height: 30),
+          _buildStoryEmotionGraph(story),
+          const SizedBox(height: 16),
           if (notice != null) ...[
             Container(
               width: double.infinity,

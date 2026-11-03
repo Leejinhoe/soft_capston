@@ -1,0 +1,5 @@
+# Optional CPU inference dependencies; install alongside requirements.txt.
+torch==2.11.0
+transformers==5.5.4
+tokenizers==0.22.2
+safetensors>=0.4.3

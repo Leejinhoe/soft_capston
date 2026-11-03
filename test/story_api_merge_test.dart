@@ -13,9 +13,18 @@ void main() {
     requests = [];
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     dotenv.testLoad(
-      fileInput: 'AI_API_BASE_URL=http://127.0.0.1:${server.port}',
+      fileInput:
+          'AI_API_BASE_URL=http://127.0.0.1:${server.port}\n'
+          'DB_API_BASE_URL=http://127.0.0.1:${server.port}',
     );
     server.listen((request) async {
+      if (request.uri.path == '/api/emotions/analyze') {
+        await utf8.decoder.bind(request).join();
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'emotion_scoring_enabled': false}));
+        await request.response.close();
+        return;
+      }
       requests.add(
         Map<String, dynamic>.from(
           jsonDecode(await utf8.decoder.bind(request).join()) as Map,

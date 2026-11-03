@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import 'main.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
+import 'services/db_service.dart';
 import 'story_page.dart';
+import 'widgets/story_video_player.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -51,6 +53,28 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   String _storyKey(StorySession story) => story.dbStoryId ?? story.storyId;
+
+  void _openStoryVideo(StorySession story) {
+    final url = story.assembledVideoUrl;
+    if (url == null || url.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: Text(story.initialPrompt, style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 520,
+          child: StoryVideoPlayer.network(
+            videoUrl: url,
+            title: '완성된 동화 영상',
+            description: '동화의 장면들을 순서대로 이어 만든 영상입니다.',
+            httpHeaders: DbService.mediaHeaders,
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('닫기'))],
+      ),
+    );
+  }
 
   Future<void> _deleteStory(AppState state, StorySession story) async {
     final ok = await showDialog<bool>(
@@ -279,6 +303,8 @@ class _LibraryPageState extends State<LibraryPage> {
                         ),
                       if (story.dbStoryId != null)
                         _chip('DB 저장됨', Colors.greenAccent),
+                      if (story.assembledVideoUrl?.isNotEmpty == true)
+                        _chip('동화 영상', AppColors.teal),
                     ],
                   ),
                 ],
@@ -294,6 +320,13 @@ class _LibraryPageState extends State<LibraryPage> {
                 : Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (story.assembledVideoUrl?.isNotEmpty == true)
+                        IconButton(
+                          onPressed: () => _openStoryVideo(story),
+                          icon: const Icon(Icons.play_circle_outline),
+                          color: AppColors.teal,
+                          tooltip: '동화 영상 보기',
+                        ),
                       IconButton(
                         onPressed: () => _renameStory(state, story),
                         icon: const Icon(Icons.edit_outlined),
@@ -403,7 +436,7 @@ class _LibraryPageState extends State<LibraryPage> {
           final storiesKey = state.completedStories
               .map(
                 (story) =>
-                    '${story.dbStoryId}|${story.storyId}|${story.initialPrompt}|${story.genre}|${story.chapters.length}|${story.fullStoryText.hashCode}|${story.allChoicesMade.length}|${story.currentChapter}|${story.hasReachedEnding}|${story.choices.length}',
+                    '${story.dbStoryId}|${story.storyId}|${story.initialPrompt}|${story.genre}|${story.chapters.length}|${story.fullStoryText.hashCode}|${story.allChoicesMade.length}|${story.currentChapter}|${story.hasReachedEnding}|${story.choices.length}|${story.assembledVideoUrl}',
               )
               .join('\u0000');
           return (

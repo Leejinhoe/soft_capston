@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/story_model.dart';
+import 'db_service.dart';
 
 /// A single newline-delimited event sent while the story model is generating.
 class StoryStreamEvent {
@@ -194,8 +195,8 @@ class ApiService {
         .timeout(const Duration(seconds: 600));
 
     if (response.statusCode == 200) {
-      return _normalizeStoryResponse(
-        json.decode(utf8.decode(response.bodyBytes)),
+      return attachKoteEmotions(
+        _normalizeStoryResponse(json.decode(utf8.decode(response.bodyBytes))),
       );
     }
     throw Exception('동화 생성 실패: ${response.statusCode}');
@@ -250,11 +251,71 @@ class ApiService {
         .timeout(const Duration(seconds: 600));
 
     if (response.statusCode == 200) {
-      return _normalizeStoryResponse(
-        json.decode(utf8.decode(response.bodyBytes)),
+      return attachKoteEmotions(
+        _normalizeStoryResponse(json.decode(utf8.decode(response.bodyBytes))),
+        selectedChoice: choice,
       );
     }
     throw Exception('이어쓰기 실패: ${response.statusCode}');
+  }
+
+  @visibleForTesting
+  static Future<Map<String, dynamic>> attachKoteEmotions(
+    Map<String, dynamic> story, {
+    String? selectedChoice,
+  }) async {
+    final result = Map<String, dynamic>.from(story);
+    result['emotion_scoring_enabled'] = false;
+    result['story_emotion'] = null;
+    result['selected_choice_emotion'] = null;
+    result['choice_emotions'] = const <dynamic>[];
+    final choices = (result['choices'] as List? ?? const [])
+        .map((e) => e.toString())
+        .toList();
+    final storyText =
+        (result['new_text'] ?? result['story_text'])?.toString() ?? '';
+    // A long story must not prevent independent choice analysis.
+    final storyForAnalysis = storyText.runes.length <= 20000 ? storyText : '';
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${DbService.baseUrl}/api/emotions/analyze'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'story_text': storyForAnalysis,
+              'choices': choices,
+              'selected_choice': ?selectedChoice,
+            }),
+          )
+          .timeout(const Duration(seconds: 90));
+      if (response.statusCode != 200) return result;
+      final data =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      if (data['emotion_scoring_enabled'] != true) return result;
+      final analyses = data['choice_emotions'] as List? ?? const [];
+      if (analyses.length != choices.length) return result;
+      Map<String, dynamic>? accepted(dynamic raw) {
+        if (raw is! Map ||
+            raw['emotion_label_source'] != 'kote_checkpoint_v1' ||
+            raw['emotion_scoring_enabled'] != true ||
+            raw['abstained'] == true ||
+            raw['requires_review'] == true ||
+            (raw['top_emotions'] as List? ?? const []).isEmpty) {
+          return null;
+        }
+        return Map<String, dynamic>.from(raw);
+      }
+
+      result['emotion_scoring_enabled'] = true;
+      result['story_emotion'] = accepted(data['story_emotion']);
+      result['choice_emotions'] = analyses.map(accepted).toList();
+      result['selected_choice_emotion'] = accepted(
+        data['selected_choice_emotion'],
+      );
+    } catch (_) {
+      // An optional analysis must never discard a successfully generated story.
+    }
+    return result;
   }
 
   /// Converts a Flutter-recorded WAV to Korean text on the Colab GPU.
