@@ -51,6 +51,7 @@ from meaning_cache import cached_explain_word, ensure_indexes as ensure_meaning_
 from word_meaning import is_ambiguous_text, to_dictionary_style
 from story_vocab import recommend_vocab
 import branching
+import psych
 from branching import STATUS_IN_PROGRESS, story_status
 from security import (
     ROLE_ADMIN,
@@ -85,6 +86,7 @@ async def create_community_indexes():
     await ensure_report_indexes()
     await ensure_message_indexes()
     await ensure_password_reset_indexes()
+    await psych.ensure_indexes()
 
 
 # ----------------------------------------
@@ -141,6 +143,10 @@ def log_gemini_error(where: str, e: Exception) -> None:
 # 분기형 동화 (선택지로 이어 가기): 엔진은 story_engine.py, API는 branching.py
 branching.configure(llm_model, on_error=log_gemini_error)
 app.include_router(branching.router)
+
+# 심리분석 (분기형 동화의 고른 선택지 기록으로 성향 보기): 엔진은 psych_engine.py, API는 psych.py
+psych.configure(llm_model, on_error=log_gemini_error)
+app.include_router(psych.router)
 
 
 # ----------------------------------------

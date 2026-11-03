@@ -16,9 +16,9 @@ Flutter 프로젝트가 저장소 루트에 있고(`lib/`, `web/`, `android/`, `
 lib/                     # Flutter 앱 (http 패키지, shared_preferences)
   main.dart
   core/                  # 공통: api_client(백엔드 주소·토큰·에러 문구), auth_service(로그인/자동 로그인/로그아웃),
-                         #       admin_ui(관리자 화면 공통 위젯), password_rules, story_genres, linked_items, banned_notice
+                         #       admin_ui(관리자 화면 공통 위젯), password_rules, story_genres, linked_items, banned_notice, psych_traits
   pages/                 # 화면 한 개 = 파일 한 개 (login, signup, password_reset, home, story, vocabulary, quiz,
-                         #       board, post_detail, profile, inbox, my_items, scrap_list, message_box, mind,
+                         #       board, post_detail, profile, inbox, my_items, scrap_list, message_box, mind, mind_detail,
                          #       admin_page, user_list/detail, report_list/detail, story_admin_list/detail, notice_admin/edit)
   widgets/               # 여러 화면이 같이 쓰는 위젯 (bottom nav, post_card, report_sheet, mini_profile_sheet, message_compose_sheet)
 backend/                 # FastAPI (uvicorn main:app), .env도 여기
@@ -34,6 +34,7 @@ backend/                 # FastAPI (uvicorn main:app), .env도 여기
   branching.py           # 분기형 동화 API (/api/stories/branching/start, /{id}/choose, /{id}/finish, /{id}/branching)
   story_engine.py        # 장면 생성 엔진: Colab(STORY_SERVER_URL, 연결 전) → Gemini → 예비 장면
   story_vocab.py         # 동화 본문 기반 추천 단어 (예전 generate-story와 분기형 완료 때 공통)
+  psych.py psych_engine.py   # 심리분석 API(/api/psych/...) / 분석 엔진: Colab(/story/psych, 연결 전) → Gemini
   create_admin.py        # 관리자 계정 만들기 스크립트
   static/profile_images/ # 업로드한 프로필 사진
 team_code/               # 팀원 코드 원본 (수정 금지)

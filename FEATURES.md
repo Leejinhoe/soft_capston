@@ -31,6 +31,25 @@
 - [x] 마이페이지 "내가 만든 동화": 진행 중이면 "✏️ 만드는 중" 배지 + "이어하기" (`MyItem.status`)
 - [ ] 팀원 Colab 동화 서버 연결 (`RemoteStoryEngine` 세 메서드만 채우면 됨)
 
+## 심리분석 (mind) — `backend/psych.py`, `backend/psych_engine.py`, `lib/pages/mind_page.dart`, `lib/pages/mind_detail_page.dart`
+- [x] 분석 대상: 완료된 분기형 동화 중 선택을 1번 이상 한 것 (`choice_history`), 진행 중·선택 없이 마무리한 동화·예전 통짜 동화는 제외
+- [x] 동화 하나당 Gemini 1번: 5가지 성향 점수 0~100 (용기·도전 `courage`, 배려·공감 `empathy`, 호기심·탐구 `curiosity`, 신중함 `caution`, 창의성 `creativity`)
+  + 선택마다 해석 한 줄 + 요약 2~3문장 + 보호자 대화 질문 2개
+  - 프롬프트에 장면 내용·보여 준 선택지·고른 것을 같이 줌 ("다른 것 대신 이것을 고른 것"이 근거), 진단·부정적 평가 금지
+  - 응답 정리: 점수 0~100으로 자르기(한글 이름·0.7 같은 비율도 받음), 점수가 3개 미만이면 실패, 해석 개수는 선택 수에 맞춰 채움, 질문 2개로 채움
+- [x] 결과는 그 동화 문서 `stories.psych_analysis`에 저장 → 다시 볼 때 Gemini 안 부름
+  - `{traits, insights[{scene, choice, options, insight}], summary, questions, engine, analyzed_at}`
+- [x] `GET /api/psych/me`: 열 때 아직 분석 안 된 완료 동화만 최신순 최대 3개 분석 → 평균(`average`), 최근 5개 변화(`trend`, 오래된 것부터), 동화별 카드(`stories`), 대기 수(`pending_count`)
+  - 실패하면 저장하지 않고 그 방문에서는 더 시도 안 함(한도 초과 대비), 다음에 열 때 다시
+  - 분석 중 표시(`psych_claimed_at`, 2분)로 동시에 두 번 열어도 같은 동화를 두 번 분석하지 않음
+- [x] `GET /api/psych/stories/{id}`: 상세 (아직 분석 전이면 이때 분석, 실패면 503 다정한 문구), 남의 것·진행 중은 404
+- [x] 엔진 구조: Colab 서버(STORY_SERVER_URL의 `/story/psych`, 아직 연결 전) → Gemini 순 (`RemotePsychEngine.analyze`만 채우면 됨)
+- [x] "놀이 속 선택을 바탕으로 한 참고용 이야기예요" 안내 (응답 `notice`, 목록·상세 모두 표시)
+- [x] 화면 (하단 탭 "심리"): 맨 위 평균 성향 레이더 차트 + 점수 칩, 최근 5편 성향 변화 꺾은선(범례 눌러 선 켜고 끄기, 눌러서 점수 보기), 동화별 카드(돋보인 성향 + 요약)
+- [x] 상세: 요약, 성향 막대그래프(성향별 고정 색 + 아래 숫자), 선택별 해석(고른 것 + 다른 길), 보호자 대화 질문 2개
+- [x] 완료한 동화가 없으면 "동화를 끝까지 만들면 분석해 줄게요!" + "동화 만들러 가기"
+- [ ] 팀원 Colab 심리분석 서버 연결 (`RemotePsychEngine`, 요청 형식은 클래스 설명에 적어 둠)
+
 ## Gemini 공통
 - [x] 한도 초과(429) 시 대체 모델로 자동 재시도 (`backend/gemini_client.py`)
   - `.env`: `GEMINI_FALLBACK_MODELS=모델1,모델2` (쉼표로 구분), 429 난 모델은 10분 동안 건너뜀
