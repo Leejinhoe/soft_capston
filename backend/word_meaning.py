@@ -175,7 +175,8 @@ async def fetch_senses(word: str, client: Optional[httpx.AsyncClient] = None) ->
     try:
         homonyms = await _search_homonyms(client, word)
         groups = await asyncio.gather(*[_view_senses(client, h) for h in homonyms])
-        return [s for g in groups for s in g][:MAX_SENSES_TOTAL]
+        # homonym: 몇 번째 동음이의어인지 (Gemini 실패 시 동음이의어별 대표 뜻을 고르는 데 씀)
+        return [{**s, "homonym": n} for n, g in enumerate(groups) for s in g][:MAX_SENSES_TOTAL]
     except Exception as e:
         _log(f"사전 검색({word})", e)
         return []
@@ -259,31 +260,68 @@ JSON 배열로만 답해. 단어 순서대로 하나씩:
                     "definition": definition,
                     "dict_definition": chosen,
                     "source": SOURCE_DICT if chosen else SOURCE_AI,
+                    "ambiguous": False,
                 }
     except Exception as e:
         _log("문맥 뜻 고르기", e)
 
-    # Gemini가 실패했거나 빠뜨린 단어: 사전에 있는 마지막 후보(용언 기본형일 가능성이 큼)의 첫 뜻
+    # Gemini가 실패했거나 빠뜨린 단어: 사전에 있는 마지막 후보(용언 기본형일 가능성이 큼)
     for i, e in enumerate(entries):
-        if results[i] is not None:
-            continue
-        found = [(lemma, senses) for lemma, senses in e["candidates"].items() if senses]
-        lemma, senses = found[-1] if found else (e["default_lemma"], [])
-        first = senses[0]["definition"] if senses else ""
-        results[i] = {
-            "hard": lemma,
-            "definition": to_dictionary_style(first),
-            "dict_definition": first,
-            "source": SOURCE_FALLBACK,
-        }
+        if results[i] is None:
+            found = [(lemma, senses) for lemma, senses in e["candidates"].items() if senses]
+            lemma, senses = found[-1] if found else (e["default_lemma"], [])
+            results[i] = fallback_result(lemma, senses)
     return results
 
 
+AMBIGUOUS_TITLE = "뜻이 여러 가지예요."
+MAX_AMBIGUOUS_SHOWN = 3
+SHORT_DEFINITION_LEN = 40
+
+
+def _short(definition: str) -> str:
+    text = to_dictionary_style(definition)
+    if len(text) <= SHORT_DEFINITION_LEN:
+        return text
+    cut = text[:SHORT_DEFINITION_LEN]
+    cut = cut[: cut.rfind(" ")] if " " in cut else cut
+    return cut.rstrip(" ,.") + "…"
+
+
+def _representative_senses(senses: list[dict]) -> list[dict]:
+    """동음이의어마다 대표 뜻(첫 뜻)을 먼저, 모자라면 나머지 뜻으로 채워 최대 3개"""
+    firsts, rest, seen = [], [], set()
+    for s in senses:
+        (rest if s.get("homonym") in seen else firsts).append(s)
+        seen.add(s.get("homonym"))
+    return (firsts + rest)[:MAX_AMBIGUOUS_SHOWN]
+
+
+def fallback_result(lemma: str, senses: list[dict]) -> dict:
+    """Gemini 없이 보여줄 뜻.
+
+    - 사전 뜻이 1개뿐이면 그대로 보여줍니다.
+    - 여러 개면 엉뚱한 동음이의어를 고르지 않도록 "뜻이 여러 가지예요" + 짧은 뜻 2~3개를 번호로 보여주고,
+      ambiguous=True로 표시합니다. (단어장에 확정 뜻으로 저장하지 않고, 나중에 다시 고릅니다)
+    """
+    base = {"hard": lemma, "source": SOURCE_FALLBACK}
+    if len(senses) <= 1:
+        first = senses[0]["definition"] if senses else ""
+        return {**base, "definition": to_dictionary_style(first), "dict_definition": first, "ambiguous": False}
+    picked = _representative_senses(senses)
+    lines = [AMBIGUOUS_TITLE] + [f"{n}. {_short(s['definition'])}" for n, s in enumerate(picked, 1)]
+    return {**base, "definition": "\n".join(lines), "dict_definition": "", "ambiguous": True}
+
+
+def is_ambiguous_text(text: str) -> bool:
+    return (text or "").strip().startswith(AMBIGUOUS_TITLE)
+
+
 async def explain_word(model, word: str, sentence: str, age: str = "5-7세") -> dict:
-    """단어 클릭 팝업 / 단어 저장용: {hard, definition, dict_definition, source}"""
+    """단어 클릭 팝업 / 단어 저장용: {hard, definition, dict_definition, source, ambiguous}"""
     lemmas = lemma_candidates(word)
     if not lemmas:
-        return {"hard": "", "definition": "", "dict_definition": "", "source": SOURCE_FALLBACK}
+        return fallback_result("", [])
     async with httpx.AsyncClient(timeout=6.0) as client:
         sense_lists = await asyncio.gather(*[fetch_senses(l, client) for l in lemmas])
     candidates = dict(zip(lemmas, sense_lists))

@@ -65,7 +65,11 @@ def build_questions(vocabs: list[dict], rng: Optional[random.Random] = None) -> 
         if word and word not in unique:
             unique[word] = item
 
-    candidates = [item for item in unique.values() if friendly_meaning(item)]
+    # 뜻을 아직 못 고른 단어("뜻이 여러 가지예요")는 문제로 내지 않습니다.
+    candidates = [
+        item for item in unique.values()
+        if friendly_meaning(item) and not item.get("meaning_pending")
+    ]
     learning = [item for item in candidates if not item.get("is_mastered")]
     mastered = [item for item in candidates if item.get("is_mastered")]
     rng.shuffle(learning)

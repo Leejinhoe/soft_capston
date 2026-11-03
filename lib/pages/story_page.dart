@@ -74,6 +74,8 @@ class _StoryPageState extends State<StoryPage> {
           'definition': wordItem['definition'] ?? '',
           'dict_definition': wordItem['dict_definition'] ?? '',
           'sentence': wordItem['sentence'] ?? '',
+          // "뜻이 여러 가지예요" 상태면 서버가 저장할 때 다시 고릅니다.
+          'ambiguous': wordItem['ambiguous'] == true,
           'source_story_title': promptController.text.isEmpty
               ? '신비한 동화 이야기'
               : promptController.text,
@@ -170,6 +172,7 @@ class _StoryPageState extends State<StoryPage> {
           'hard': data['hard'] ?? cleanWord,
           'definition': data['definition'] ?? '',
           'dict_definition': data['dict_definition'] ?? '',
+          'ambiguous': data['ambiguous'] == true,
           'sentence': fullSentence,
         });
       } else {

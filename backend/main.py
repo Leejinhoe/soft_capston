@@ -43,7 +43,7 @@ from community import (
 )
 from quiz import build_questions, card_definition
 from story_text import clean_story_text
-from word_meaning import explain_word, explain_words, sentence_with, to_dictionary_style
+from word_meaning import explain_word, explain_words, is_ambiguous_text, sentence_with, to_dictionary_style
 from security import (
     ROLE_ADMIN,
     ROLE_USER,
@@ -266,7 +266,8 @@ class VocabularySchema(BaseModel):
     easy: Optional[str] = ""
     definition: Optional[str] = ""       # 문맥에 맞춘 사전식 한 문장 (팝업에서 받은 값)
     dict_definition: Optional[str] = ""  # 고른 표준국어대사전 원문 뜻 (없으면 "")
-    sentence: Optional[str] = ""         # definition이 비어 있을 때 뜻을 새로 찾기 위한 문장
+    sentence: Optional[str] = ""         # 뜻을 새로 찾을 때 쓰는 문장 (문맥)
+    ambiguous: bool = False              # True면 Gemini가 뜻을 못 골라 후보만 보여준 상태 → 저장 때 다시 고름
     source_story_title: Optional[str] = "동화"
     origin_story_id: Optional[str] = "650000000000000000000001"
     created_at: Optional[datetime] = None
@@ -316,19 +317,27 @@ async def add_vocabulary(vocab: VocabularySchema, current_user: dict = Depends(g
     user_id = current_user["user_id"]
     now = vocab.created_at or datetime.utcnow()
 
-    # 팝업/추천 단어에서 이미 문맥에 맞춘 뜻을 받았으면 그대로, 없으면 지금 찾습니다.
-    final_meaning = to_dictionary_style(vocab.definition or vocab.easy or "")
-    official_definition = (vocab.dict_definition or "").strip()
+    # 팝업/추천 단어에서 이미 문맥에 맞춘 뜻을 받았으면 그대로 저장합니다.
+    # 뜻이 없거나 "뜻이 여러 가지예요"(Gemini 실패) 상태면 지금 다시 고릅니다.
+    raw_meaning = vocab.definition or vocab.easy or ""
+    pending = vocab.ambiguous or is_ambiguous_text(raw_meaning)
+    final_meaning = "" if pending else to_dictionary_style(raw_meaning)
+    official_definition = "" if pending else (vocab.dict_definition or "").strip()
+    sentence = (vocab.sentence or "").strip()
     if not final_meaning:
-        found = await explain_word(llm_model, vocab.hard, vocab.sentence or vocab.hard)
+        found = await explain_word(llm_model, vocab.hard, sentence or vocab.hard)
         final_meaning = found["definition"]
-        official_definition = official_definition or found["dict_definition"]
+        official_definition = found["dict_definition"]
+        pending = found["ambiguous"]
 
     vocab_dict = {
         "user_id": user_id,
         "word": vocab.hard,
         "meaning": final_meaning,
         "official_definition": official_definition,
+        # 뜻을 아직 못 고른 단어: 확정 뜻으로 두지 않고 단어장을 열 때 다시 고릅니다.
+        "meaning_pending": pending,
+        "context_sentence": sentence,
         "easy_meaning": vocab.easy,
         "progress_rate": 0,
         "origin_story_title": vocab.source_story_title,
@@ -349,6 +358,13 @@ async def add_vocabulary(vocab: VocabularySchema, current_user: dict = Depends(g
         {"$setOnInsert": vocab_dict},
         upsert=True,
     )
+    if not pending:
+        # 예전에 뜻을 못 고른 채 저장된 같은 단어가 있으면 이번에 고른 뜻으로 채웁니다.
+        await vocabularies_collection.update_one(
+            {"user_id": user_id, "word": vocab.hard, "meaning_pending": True},
+            {"$set": {"meaning": final_meaning, "official_definition": official_definition,
+                      "meaning_pending": False, "context_sentence": sentence}},
+        )
     saved = await vocabularies_collection.find_one(
         {"user_id": user_id, "word": vocab.hard},
     )
@@ -357,6 +373,7 @@ async def add_vocabulary(vocab: VocabularySchema, current_user: dict = Depends(g
             "message": "단어가 성공적으로 데이터베이스 단어장에 등록되었습니다.",
             "id": str(saved["_id"]),
             "official_definition": official_definition,
+            "meaning_pending": pending,
             "created": bool(result.upserted_id),
         }
 
@@ -374,7 +391,8 @@ async def search_vocabulary_with_context(
 
     - 기본형 후보(노란 → 노랗다)를 모두 표준국어대사전에서 찾아 모든 뜻을 가져오고,
       Gemini가 문장 문맥에 맞는 뜻을 고릅니다. 맞는 뜻이 없으면 Gemini가 직접 씁니다.
-    - source: dictionary(사전 뜻) / ai(직접 씀) / fallback(Gemini 실패 → 사전 첫 뜻)
+    - source: dictionary(사전 뜻) / ai(직접 씀) / fallback(Gemini 실패)
+    - Gemini 실패 시 사전 뜻이 1개면 그대로, 여러 개면 "뜻이 여러 가지예요" + 짧은 뜻 2~3개 (ambiguous=true)
     """
     result = await explain_word(llm_model, body.word, body.sentence.strip(), body.age or "5-7세")
     hard = result["hard"] or re.sub(r"[^\w가-힣]", "", body.word)
@@ -384,6 +402,7 @@ async def search_vocabulary_with_context(
         "definition": result["definition"] or "사전에서 뜻을 찾지 못했어요.",
         "dict_definition": result["dict_definition"],
         "source": result["source"],
+        "ambiguous": result["ambiguous"],
     }
 
 
@@ -394,9 +413,10 @@ async def search_vocabulary_with_context(
 async def get_my_vocabularies(current_user: dict = Depends(get_current_user)):
     clean_id = current_user["user_id"]
     vocab_list = []
+    items = await vocabularies_collection.find({"user_id": clean_id}).sort("saved_at", -1).to_list(length=2000)
+    await _resolve_pending_meanings(items)
 
-    cursor = vocabularies_collection.find({"user_id": clean_id}).sort("saved_at", -1)
-    async for item in cursor:
+    for item in items:
         vocab_list.append({
             "id": str(item["_id"]),
             "word": item.get("word", ""),
@@ -406,9 +426,26 @@ async def get_my_vocabularies(current_user: dict = Depends(get_current_user)):
             "source_story_title": item.get("origin_story_title", "동화"),
             "saved_at": item.get("saved_at").isoformat() if item.get("saved_at") else "",
             "is_mastered": bool(item.get("is_mastered")),
+            "meaning_pending": bool(item.get("meaning_pending")),
         })
 
     return vocab_list
+
+
+RESOLVE_PENDING_PER_REQUEST = 3  # 무료 Gemini 할당량을 아끼려고 한 번에 조금씩만 다시 고릅니다.
+
+
+async def _resolve_pending_meanings(items: list[dict]) -> None:
+    """뜻을 못 고른 채 저장된 단어를 다시 골라 봅니다. (Gemini가 돌아왔으면 확정 뜻으로 바뀜)"""
+    pending = [it for it in items if it.get("meaning_pending")][:RESOLVE_PENDING_PER_REQUEST]
+    for item in pending:
+        found = await explain_word(llm_model, item.get("word", ""), item.get("context_sentence") or item.get("word", ""))
+        if found["ambiguous"] or not found["definition"]:
+            continue
+        fields = {"meaning": found["definition"], "official_definition": found["dict_definition"],
+                  "meaning_pending": False}
+        await vocabularies_collection.update_one({"_id": item["_id"]}, {"$set": fields})
+        item.update(fields)
 
 
 # ----------------------------------------
@@ -578,10 +615,12 @@ async def generate_story(body: GenerateStoryRequest, current_user: dict = Depend
         for item in vocab_list:
             hard = item["hard"].strip()
             needles = [(item.get("surface") or "").strip(), hard, hard[:-1] if hard.endswith("다") else ""]
-            items.append({"word": hard, "sentence": sentence_with(story_text, needles)})
+            item["sentence"] = sentence_with(story_text, needles)  # 단어장 저장 때 다시 고를 문맥
+            items.append({"word": hard, "sentence": item["sentence"]})
         for item, found in zip(vocab_list, await explain_words(llm_model, items, body.age)):
             item["definition"] = found["definition"] or to_dictionary_style(item.get("definition") or "")
             item["dict_definition"] = found["dict_definition"]
+            item["ambiguous"] = found["ambiguous"]
 
     return {
         "story_id": story_id,
