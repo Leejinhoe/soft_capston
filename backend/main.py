@@ -27,7 +27,6 @@ from auth import (
 # 📌 database.py에서 필요한 컬렉션들을 가져옵니다.
 from database import (
     users_collection,
-    reports_collection,
     stories_collection,
     posts_collection,
     notifications_collection,
@@ -41,6 +40,8 @@ from community import (
     remove_post_relations,
     router as community_router,
 )
+from messages import ensure_indexes as ensure_message_indexes, router as messages_router
+from reports import ensure_indexes as ensure_report_indexes, router as reports_router
 from quiz import build_questions, card_definition
 from story_text import clean_story_text
 from gemini_client import FallbackModel, parse_model_list
@@ -66,12 +67,16 @@ from security import (
 
 app = FastAPI()
 app.include_router(community_router)
+app.include_router(reports_router)
+app.include_router(messages_router)
 
 
 @app.on_event("startup")
 async def create_community_indexes():
     await ensure_community_indexes()
     await ensure_meaning_cache_indexes()
+    await ensure_report_indexes()
+    await ensure_message_indexes()
 
 
 # ----------------------------------------
@@ -159,12 +164,6 @@ class GoogleCodeRequest(BaseModel):
 
 class IdRequest(BaseModel):
     id: str
-
-class ReportRequest(BaseModel):
-    # 신고자는 토큰에서 꺼냅니다. (요청 본문의 reporter 값은 무시)
-    author: str
-    story_title: str
-    reason: str
 
 class WarningRequest(BaseModel):
     reason: Optional[str] = ""
@@ -1223,34 +1222,4 @@ async def delete_user(user_id: str, admin: dict = Depends(require_admin)):
     return {"success": True, "message": "회원이 삭제되었습니다."}
 
 
-@app.post("/report")
-async def report_story(body: ReportRequest, current_user: dict = Depends(get_current_user)):
-    reporter = user_summary(current_user)
-    report = {
-        "reporter": reporter["name"],
-        "reporter_id": reporter["id"],
-        "author": body.author,
-        "story_title": body.story_title,
-        "reason": body.reason,
-        "status": "waiting",
-        "created_at": datetime.utcnow(),
-    }
-    await reports_collection.insert_one(report)
-    return {"success": True, "message": "신고가 접수되었습니다."}
-
-
-@app.get("/admin/reports")
-async def get_admin_reports(admin: dict = Depends(require_admin)):
-    reports = []
-    cursor = reports_collection.find().sort("created_at", -1)
-    async for report in cursor:
-        reports.append({
-            "id": str(report["_id"]),
-            "reporter": report.get("reporter", ""),
-            "author": report.get("author", ""),
-            "story_title": report.get("story_title", ""),
-            "reason": report.get("reason", ""),
-            "status": report.get("status", "waiting"),
-            "created_at": report.get("created_at").isoformat() if report.get("created_at") else "",
-        })
-    return reports
+# 신고: POST /api/reports, 관리자 신고 목록: GET·PATCH /api/admin/reports (backend/reports.py)

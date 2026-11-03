@@ -6,6 +6,7 @@ import '../core/password_rules.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/custom_bottom_nav.dart';
+import 'message_box_page.dart';
 import 'my_items_page.dart';
 import 'scrap_list_page.dart';
 
@@ -40,6 +41,7 @@ class _ProfilePageState extends State<ProfilePage> {
   int storyCount = 0;
   int postCount = 0;
   int likeCount = 0;
+  int unreadMessages = 0; // 안 읽은 쪽지 수
 
   // 공지사항 / 받은 경고
   List<Map<String, dynamic>> notices = [];
@@ -53,6 +55,7 @@ class _ProfilePageState extends State<ProfilePage> {
     _fetchProfileData();
     _fetchUserStats();
     _fetchInbox();
+    _fetchUnreadMessages();
   }
 
   // [GET] 1. 백엔드 DB에서 프로필 정보 불러오기
@@ -117,6 +120,27 @@ class _ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       debugPrint('알림함 조회 실패: $e');
     }
+  }
+
+  // [GET] 4. 안 읽은 쪽지 수 (쪽지함 배지)
+  Future<void> _fetchUnreadMessages() async {
+    try {
+      final response = await ApiClient.get('/api/messages/unread-count');
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        setState(() => unreadMessages = ApiClient.decode(response)['count'] ?? 0);
+      }
+    } catch (e) {
+      debugPrint('안 읽은 쪽지 수 조회 실패: $e');
+    }
+  }
+
+  Future<void> _openMessageBox() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MessageBoxPage()),
+    );
+    if (mounted) _fetchUnreadMessages();
   }
 
   void _setFallbackData() {
@@ -599,6 +623,7 @@ class _ProfilePageState extends State<ProfilePage> {
     required String title,
     required String value,
     VoidCallback? onTap,
+    int badge = 0,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -634,13 +659,24 @@ class _ProfilePageState extends State<ProfilePage> {
                           const TextStyle(color: Colors.white54, fontSize: 14),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            value,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        if (badge > 0) ...[
+                          const SizedBox(width: 8),
+                          UnreadBadge(count: badge),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -923,6 +959,13 @@ class _ProfilePageState extends State<ProfilePage> {
                     context,
                     MaterialPageRoute(builder: (_) => const ScrapListPage()),
                   ),
+                ),
+                infoCard(
+                  icon: Icons.mail,
+                  title: '쪽지함',
+                  value: unreadMessages > 0 ? '새 쪽지가 왔어요!' : '쪽지 보기',
+                  badge: unreadMessages,
+                  onTap: _openMessageBox,
                 ),
                 infoCard(
                   icon: Icons.favorite,

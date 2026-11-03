@@ -73,4 +73,25 @@
 - [x] 댓글 작성(300자) / 목록 / 내 댓글 삭제
   - `GET·POST /api/community/posts/{id}/comments`, `DELETE /api/community/comments/{id}` (내 것만)
 - [x] 내 글은 상세에서 수정/삭제(연결 팝업 동일), 남의 글은 신고 버튼
-- [ ] 다음 단계: 게시글 그림(삽화) 표시, 댓글 신고, 관리자 게시글 관리
+- [ ] 다음 단계: 게시글 그림(삽화) 표시, 관리자 게시글 관리
+
+## 커뮤니티 2단계 — 신고 / 미니 프로필 / 1:1 쪽지
+### 신고 — `backend/reports.py`, `lib/widgets/report_sheet.dart`
+- [x] 게시글·댓글·사용자·쪽지 신고 `POST /api/reports` `{target_type, target_id, reason, detail}`
+  - 사유 선택지: 욕설/비방(`abuse`), 부적절한 내용(`inappropriate`), 도배/광고(`spam`), 기타(`other`, 직접 입력 필수, 200자)
+- [x] `reports` 컬렉션: `reporter_id, target_type(post/comment/user/message), target_id, target_user_id, post_id(댓글일 때), reason, detail, snapshot{title, content}(신고 당시 내용), status(pending/resolved/rejected), created_at, handled_at, handled_by, admin_memo`
+- [x] 같은 사람이 같은 대상 두 번 신고 불가 (고유 인덱스, 409 "이미 신고한 ○○이에요") + 화면에 "신고함" 표시 (`reported`)
+- [x] 내 글/내 댓글/나 자신은 신고 버튼 숨김 + 서버에서도 막음, 쪽지는 내가 받은 것만 신고 가능
+- [x] 예전 `POST /report`, `GET /admin/reports` 삭제 → 새 구조로 정리, 예전 문서의 `waiting` 상태는 서버 시작 시 `pending`으로 바꿈
+- [x] 관리자 API: `GET /api/admin/reports?status=&target_type=&page=&size=`, `GET·PATCH /api/admin/reports/{id}` `{status, admin_memo}`
+  - 응답에 신고자/신고당한 회원 닉네임·누적 경고, 원본 남아 있는지(`target_exists`), 같은 대상 신고 수(`same_target_count`) 포함
+  - 관리자 신고 관리 화면(`report_list_page.dart`, `report_detail_page.dart`)을 새 구조로 연결: 상태 필터, 경고(공개 id로 정확히), 처리 완료/반려
+### 작성자 미니 프로필 — `lib/widgets/mini_profile_sheet.dart`
+- [x] 게시글 상세·댓글에서 작성자 이름/사진 누르면 아래에서 올라옴 `GET /api/users/{user_id}/profile`
+  - 사진, 닉네임, 한 줄 소개, 공개한 동화 수(커뮤니티 게시글 수), 받은 좋아요 수
+- [x] "쪽지 보내기", "신고하기" 버튼 (내 프로필이면 숨김, `is_me`)
+### 1:1 쪽지 — `backend/messages.py`, `lib/pages/message_box_page.dart`
+- [x] `messages` 컬렉션: `sender_id, receiver_id, content(300자), is_read, read_at, reply_to, deleted_by_sender, deleted_by_receiver, created_at`
+- [x] `POST /api/messages` 보내기 (자기 자신에게는 불가), `GET /api/messages?box=received|sent`, `GET /api/messages/{id}`(열면 읽음), `GET /api/messages/unread-count`, `DELETE /api/messages/{id}`(내 쪽지함에서만, 양쪽 다 지우면 실제 삭제)
+- [x] 마이페이지 "쪽지함": 받은 쪽지 / 보낸 쪽지 탭, 안 읽은 쪽지 배지(마이페이지 카드 + 탭)
+- [x] 받은 쪽지: 답장 / 삭제 / 신고, 보낸 쪽지: 읽음 여부 표시, 삭제

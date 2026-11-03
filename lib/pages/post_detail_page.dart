@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/linked_items.dart';
+import '../widgets/mini_profile_sheet.dart';
 import '../widgets/post_card.dart';
+import '../widgets/report_sheet.dart';
 
 /// 상세 화면에서 돌아갈 때 목록에 알려줄 변화
 class PostDetailResult {
@@ -232,37 +234,22 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  // ---------- 신고 / 작성자 프로필 ----------
   Future<void> _report() async {
-    final post = _post!;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('🚨 신고하기'),
-        content: Text("'${post['title']}' 게시글을 신고하시겠습니까?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('신고'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      // 신고자는 서버가 토큰으로 확인합니다.
-      final response = await ApiClient.post('/report', body: {
-        'author': post['author']?['nickname'] ?? '',
-        'story_title': post['title'] ?? '',
-        'reason': '부적절한 내용',
-      });
-      if (mounted && response.statusCode == 200) _toast('신고가 접수되었습니다.');
-    } catch (e) {
-      debugPrint('신고 처리 에러: $e');
-    }
+    final reported = await showReportSheet(context,
+        target: ReportTarget.post, targetId: widget.postId);
+    if (reported && mounted) setState(() => _post!['reported'] = true);
+  }
+
+  Future<void> _reportComment(Map<String, dynamic> comment) async {
+    final reported = await showReportSheet(context,
+        target: ReportTarget.comment, targetId: comment['id']);
+    if (reported && mounted) setState(() => comment['reported'] = true);
+  }
+
+  void _openProfile(Map<String, dynamic>? author) {
+    final id = (author?['id'] ?? '').toString();
+    if (id.isNotEmpty) showMiniProfileSheet(context, id);
   }
 
   // ---------- 화면 ----------
@@ -300,9 +287,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
               )
             else if (post != null)
               IconButton(
-                tooltip: '신고하기',
-                icon: const Icon(Icons.report, color: Colors.redAccent),
-                onPressed: _report,
+                tooltip: post['reported'] == true ? '이미 신고했어요' : '신고하기',
+                icon: Icon(Icons.report,
+                    color: post['reported'] == true ? Colors.white24 : Colors.redAccent),
+                onPressed: post['reported'] == true ? null : _report,
               ),
           ],
         ),
@@ -342,24 +330,32 @@ class _PostDetailPageState extends State<PostDetailPage> {
             style: const TextStyle(
                 color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            AuthorAvatar(author: author, radius: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(author?['nickname'] ?? '친구',
-                      style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 2),
-                  Text(communityDate(post['created_at']),
-                      style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                ],
-              ),
+        // 작성자 이름/사진을 누르면 미니 프로필
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _openProfile(author),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                AuthorAvatar(author: author, radius: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(author?['nickname'] ?? '친구',
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                      const SizedBox(height: 2),
+                      Text(communityDate(post['created_at']),
+                          style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         const SizedBox(height: 20),
         Container(
@@ -450,7 +446,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AuthorAvatar(author: author, radius: 15),
+          GestureDetector(
+            onTap: () => _openProfile(author),
+            child: AuthorAvatar(author: author, radius: 15),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -459,10 +458,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(author?['nickname'] ?? '친구',
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold)),
+                      child: GestureDetector(
+                        onTap: () => _openProfile(author),
+                        child: Text(author?['nickname'] ?? '친구',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(communityDate(comment['created_at']),
@@ -480,6 +482,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
               tooltip: '댓글 삭제',
               icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
               onPressed: () => _deleteComment(comment),
+            )
+          else
+            IconButton(
+              tooltip: comment['reported'] == true ? '이미 신고했어요' : '댓글 신고',
+              icon: Icon(Icons.report_outlined,
+                  color: comment['reported'] == true ? Colors.white12 : Colors.white38,
+                  size: 20),
+              onPressed: comment['reported'] == true ? null : () => _reportComment(comment),
             ),
         ],
       ),

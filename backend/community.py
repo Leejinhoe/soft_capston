@@ -20,7 +20,8 @@ from database import (
     stories_collection,
     users_collection,
 )
-from security import get_current_user, public_user_id
+from reports import reported_target_ids
+from security import find_user_by_public_id, get_current_user, public_user_id
 
 router = APIRouter(tags=["community"])
 
@@ -62,6 +63,7 @@ class PostDetail(PostSummary):
     liked: bool = False
     scrapped: bool = False
     is_mine: bool = False
+    reported: bool = False  # 내가 이미 신고한 글인지
     linked_id: str = ""   # 내 글일 때만: 연결된 원본 동화 id (동화가 지워졌으면 "")
 
 
@@ -90,6 +92,7 @@ class CommentItem(BaseModel):
     content: str
     author: Author
     is_mine: bool = False
+    reported: bool = False  # 내가 이미 신고한 댓글인지
     created_at: str = ""
 
 
@@ -100,6 +103,17 @@ class CommentCreateRequest(BaseModel):
 class SimpleResult(BaseModel):
     success: bool
     message: str = ""
+
+
+class MiniProfile(BaseModel):
+    """작성자 미니 프로필 (게시글 상세/댓글에서 이름·사진을 누르면 보임)"""
+    id: str
+    nickname: str
+    profile_image_url: Optional[str] = None
+    bio: str = ""
+    public_story_count: int = 0   # 커뮤니티에 공개한 동화 수
+    received_likes: int = 0       # 받은 좋아요 수
+    is_me: bool = False
 
 
 # ----------------------------------------
@@ -120,7 +134,7 @@ def _preview(content: str, length: int = 80) -> str:
     return text if len(text) <= length else text[:length] + "…"
 
 
-async def _authors(user_ids: list[str]) -> dict[str, Author]:
+async def author_map(user_ids: list[str]) -> dict[str, Author]:
     """공개 id 목록 → 작성자 정보(닉네임, 프로필 사진). 탈퇴한 사용자는 '알 수 없는 친구'."""
     ids = list({uid for uid in user_ids if uid})
     found: dict[str, Author] = {}
@@ -153,7 +167,7 @@ def _summary(doc: dict, author: Author) -> PostSummary:
 
 
 async def _summaries(docs: list[dict]) -> list[PostSummary]:
-    authors = await _authors([d.get("user_id", "") for d in docs])
+    authors = await author_map([d.get("user_id", "") for d in docs])
     return [_summary(d, authors[d.get("user_id", "")]) for d in docs]
 
 
@@ -284,7 +298,7 @@ async def list_posts(
 async def get_post_detail(post_id: str, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     doc = await _get_post_or_404(post_id)
-    author = (await _authors([doc.get("user_id", "")]))[doc.get("user_id", "")]
+    author = (await author_map([doc.get("user_id", "")]))[doc.get("user_id", "")]
     is_mine = doc.get("user_id") == user_id
 
     linked_id = ""
@@ -294,6 +308,7 @@ async def get_post_detail(post_id: str, current_user: dict = Depends(get_current
 
     liked = await post_likes_collection.find_one({"post_id": post_id, "user_id": user_id}) is not None
     scrapped = await post_scraps_collection.find_one({"post_id": post_id, "user_id": user_id}) is not None
+    reported = not is_mine and bool(await reported_target_ids(user_id, "post", [post_id]))
     return PostDetail(
         **_summary(doc, author).model_dump(),
         content=doc.get("content") or "",
@@ -301,6 +316,7 @@ async def get_post_detail(post_id: str, current_user: dict = Depends(get_current
         liked=liked,
         scrapped=scrapped,
         is_mine=is_mine,
+        reported=reported,
         linked_id=linked_id,
     )
 
@@ -351,12 +367,13 @@ async def get_my_scraps(current_user: dict = Depends(get_current_user)):
 # ----------------------------------------
 # 댓글
 # ----------------------------------------
-def _comment(doc: dict, author: Author, user_id: str) -> CommentItem:
+def _comment(doc: dict, author: Author, user_id: str, reported: bool = False) -> CommentItem:
     return CommentItem(
         id=str(doc["_id"]),
         content=doc.get("content") or "",
         author=author,
         is_mine=doc.get("user_id") == user_id,
+        reported=reported,
         created_at=_iso(doc.get("created_at")),
     )
 
@@ -365,8 +382,10 @@ def _comment(doc: dict, author: Author, user_id: str) -> CommentItem:
 async def list_comments(post_id: str, current_user: dict = Depends(get_current_user)):
     await _get_post_or_404(post_id)
     docs = await comments_collection.find({"post_id": post_id}).sort("created_at", 1).to_list(length=1000)
-    authors = await _authors([d.get("user_id", "") for d in docs])
-    return [_comment(d, authors[d.get("user_id", "")], current_user["user_id"]) for d in docs]
+    user_id = current_user["user_id"]
+    authors = await author_map([d.get("user_id", "") for d in docs])
+    reported = await reported_target_ids(user_id, "comment", [str(d["_id"]) for d in docs])
+    return [_comment(d, authors[d.get("user_id", "")], user_id, str(d["_id"]) in reported) for d in docs]
 
 
 @router.post("/api/community/posts/{post_id}/comments", response_model=CommentItem)
@@ -383,7 +402,7 @@ async def create_comment(post_id: str, body: CommentCreateRequest, current_user:
     result = await comments_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
     await posts_collection.update_one({"_id": post["_id"]}, {"$inc": {"comments_count": 1}})
-    author = (await _authors([user_id]))[user_id]
+    author = (await author_map([user_id]))[user_id]
     return _comment(doc, author, user_id)
 
 
@@ -400,3 +419,28 @@ async def delete_comment(comment_id: str, current_user: dict = Depends(get_curre
             {"$inc": {"comments_count": -1}},
         )
     return SimpleResult(success=True, message="댓글을 지웠어요.")
+
+
+# ----------------------------------------
+# 작성자 미니 프로필
+# ----------------------------------------
+@router.get("/api/users/{user_id}/profile", response_model=MiniProfile)
+async def get_mini_profile(user_id: str, current_user: dict = Depends(get_current_user)):
+    user = await find_user_by_public_id(user_id.strip())
+    if not user:
+        raise HTTPException(status_code=404, detail="친구 정보를 찾지 못했어요.")
+    uid = public_user_id(user)
+    story_count = await posts_collection.count_documents({"user_id": uid})
+    likes = await posts_collection.aggregate([
+        {"$match": {"user_id": uid}},
+        {"$group": {"_id": None, "total": {"$sum": "$likes_count"}}},
+    ]).to_list(length=1)
+    return MiniProfile(
+        id=uid,
+        nickname=user.get("nickname") or user.get("name") or "친구",
+        profile_image_url=user.get("profile_image_url") or None,
+        bio=user.get("bio") or "상상력이 풍부한 동화 탐험가 ✨",
+        public_story_count=story_count,
+        received_likes=int(likes[0]["total"]) if likes else 0,
+        is_me=uid == current_user["user_id"],
+    )
