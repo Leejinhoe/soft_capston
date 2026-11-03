@@ -70,7 +70,10 @@ class _StoryPageState extends State<StoryPage> {
         body: {
           'hard': wordItem['hard'],
           'easy': '',
-          'definition': wordItem['definition'],
+          // 문맥에 맞춘 사전식 뜻 + 고른 사전 원문 뜻 (비어 있으면 서버가 문장으로 다시 찾음)
+          'definition': wordItem['definition'] ?? '',
+          'dict_definition': wordItem['dict_definition'] ?? '',
+          'sentence': wordItem['sentence'] ?? '',
           'source_story_title': promptController.text.isEmpty
               ? '신비한 동화 이야기'
               : promptController.text,
@@ -165,21 +168,24 @@ class _StoryPageState extends State<StoryPage> {
         final data = ApiClient.decode(response);
         showVocabularyDialog({
           'hard': data['hard'] ?? cleanWord,
-          'definition': data['definition'] ?? '표준 사전 정보 없음',
+          'definition': data['definition'] ?? '',
+          'dict_definition': data['dict_definition'] ?? '',
+          'sentence': fullSentence,
         });
       } else {
-        showVocabularyDialog({
-          'hard': cleanWord,
-          'definition': '국립국어원 표준 정의 연동 중입니다.',
-        });
+        _showLookupError();
       }
     } catch (e) {
       if (mounted) Navigator.pop(context); // 로딩 닫기
-      showVocabularyDialog({
-        'hard': cleanWord,
-        'definition': '단어 뜻풀이를 성공적으로 불러왔습니다.',
-      });
+      _showLookupError();
     }
+  }
+
+  void _showLookupError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('뜻을 불러오지 못했어요. 잠시 후 다시 눌러 주세요.')),
+    );
   }
 
   // 📖 단어 팝업 사전 다이얼로그 (쉬운 뜻 항목 완전 제거)

@@ -2,16 +2,20 @@
 
 ## 동화 (story)
 - [x] `POST /api/generate-story` 동화 생성 + `stories_collection` 자동 저장
-- [x] 동화 본문 기반 추천 단어 3~5개 (Gemini + 파이썬 2차 검증)
+- [x] 동화 본문 기반 추천 단어 3~5개 (Gemini + 파이썬 2차 검증, 뜻은 본문 문장 문맥으로 사전에서 골라 통일 형식)
 - [x] 동화 본문 정리: 프롬프트로 마크다운·제목 금지 + 저장 전 `**`, `##`, `*` 등 기호 제거, 첫 줄 제목 빼기 (`backend/story_text.py`)
-- [x] 단어 클릭 → 원형 정제 + 문맥 기반 다정한 뜻풀이 팝업
+- [x] 단어 클릭 → 기본형 + 문맥에 맞는 사전 뜻 팝업 (`backend/word_meaning.py`)
+  - 기본형 후보를 파이썬으로 만들어(노란→노랗다, 반짝이는→반짝이다, 푹신한→푹신하다) 모두 표준국어대사전에서 조회
+  - 동음이의어·다의어의 모든 뜻(`search.do` + `view.do`)을 Gemini에 주고 문맥에 맞는 뜻을 고르게 함 (Gemini 1번)
+  - 맞는 뜻이 없으면 Gemini가 직접 씀, Gemini 실패 시 사전 첫 뜻 (`source`: dictionary / ai / fallback)
+- [x] 뜻풀이 형식 통일: 국어사전처럼 간결한 한 문장 (팝업·단어장 저장·추천 단어 공통, 예: "작은 빛이 잠깐 나타났다가 사라지다.")
 - [ ] 팀원 Colab 동화 서버 연결 (분기 선택지 / 마무리 결말)
 
 ## 단어장 (vocabulary)
 - [x] `POST /api/vocabularies/add` 단어 저장
 - [x] `GET /api/vocabularies/me` 내 단어 목록 (`is_mastered` 포함)
 - [x] `DELETE /api/vocabularies/{id}` 내 단어 삭제
-- [x] VocabularyPage: 단어 / 출처 동화 제목 / 뜻풀이 (사전 뜻 우선, 비어 있거나 실패 문구면 다정한 뜻풀이)
+- [x] VocabularyPage: 단어 / 출처 동화 제목 / 뜻풀이 (문맥에 맞춘 사전식 뜻 `meaning` 우선)
 - [x] VocabularyPage: 삭제 버튼(확인 창), 외운 단어 ⭐ 배지, "퀴즈 풀기" 버튼
 
 ## 퀴즈 (quiz)

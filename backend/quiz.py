@@ -27,13 +27,17 @@ def _first_valid(item: dict, keys: tuple[str, ...]) -> str:
 
 
 def friendly_meaning(item: dict) -> str:
-    """저장된 단어에서 아이에게 보여줄 다정한 뜻풀이를 고릅니다. (퀴즈용)"""
+    """저장된 단어의 뜻풀이 (퀴즈용). meaning = 문맥에 맞춘 사전식 한 문장."""
     return _first_valid(item, ("meaning", "easy_meaning", "official_definition"))
 
 
 def card_definition(item: dict) -> str:
-    """단어장 카드용: 사전 뜻을 먼저, 비어 있거나 실패 문구면 다정한 뜻풀이."""
-    return _first_valid(item, ("official_definition", "meaning", "easy_meaning"))
+    """단어장 카드용: 문맥에 맞춘 사전식 뜻(meaning)을 먼저.
+
+    official_definition은 예전에 사전 '첫 뜻'을 그대로 저장한 값이라
+    동음이의어(노란 → 호인들이 일으킨 난리)가 섞여 있을 수 있어 마지막에만 씁니다.
+    """
+    return _first_valid(item, ("meaning", "easy_meaning", "official_definition"))
 
 
 def mask_word(definition: str, word: str) -> str:

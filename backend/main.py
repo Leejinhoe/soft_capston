@@ -1,11 +1,9 @@
 import os
 import re
 import json
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Optional
 
-import httpx
 import bcrypt
 import google.generativeai as genai
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
@@ -45,6 +43,7 @@ from community import (
 )
 from quiz import build_questions, card_definition
 from story_text import clean_story_text
+from word_meaning import explain_word, explain_words, sentence_with, to_dictionary_style
 from security import (
     ROLE_ADMIN,
     ROLE_USER,
@@ -102,37 +101,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ----------------------------------------
-# 国立国語院 (국립국어원) API 키 설정
-# ----------------------------------------
-DICT_API_KEY = os.getenv("KOREAN_DICT_API_KEY")
-
-async def fetch_korean_dict_definition(word: str) -> str:
-    """국립국어원 표준국어대사전 API를 호출하여 단어의 정확한 표준 정의를 가져옵니다."""
-    url = "https://stdict.korean.go.kr/api/search.do"
-    params = {
-        "key": DICT_API_KEY,
-        "q": word,
-        "req_type": "xml",
-        "part": "word",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url, params=params)
-
-            if response.status_code == 200:
-                root = ET.fromstring(response.text)
-                definition_node = root.find(".//definition")
-                if definition_node is not None and definition_node.text:
-                    return definition_node.text.strip()
-
-                return "표준 사전 정의를 찾을 수 없습니다."
-    except Exception as e:
-        print(f"국립국어원 API 호출 실패: {e}")
-
-    return "사전 정보 불러오기 실패"
 
 # ----------------------------------------
 # Gemini API 설정
@@ -296,7 +264,9 @@ class VocabularySchema(BaseModel):
     # user_id는 토큰에서 꺼냅니다.
     hard: str
     easy: Optional[str] = ""
-    definition: Optional[str] = ""
+    definition: Optional[str] = ""       # 문맥에 맞춘 사전식 한 문장 (팝업에서 받은 값)
+    dict_definition: Optional[str] = ""  # 고른 표준국어대사전 원문 뜻 (없으면 "")
+    sentence: Optional[str] = ""         # definition이 비어 있을 때 뜻을 새로 찾기 위한 문장
     source_story_title: Optional[str] = "동화"
     origin_story_id: Optional[str] = "650000000000000000000001"
     created_at: Optional[datetime] = None
@@ -339,46 +309,20 @@ class QuizResultResponse(BaseModel):
 
 
 # ----------------------------------------
-# 💡 Gemini 단어 원형(기본형) 정제 함수
-# ----------------------------------------
-async def normalize_word_with_gemini(raw_word: str) -> str:
-    """'토끼를' -> '토끼', '작은' -> '작다', '숲으로' -> '숲' 변환"""
-    clean_raw = raw_word.strip()
-    if not clean_raw:
-        return clean_raw
-
-    prompt = f"""
-    너는 한국어 어휘 분석 전문가야.
-    다음 단어에서 조사, 어미, 접미사를 제거하고 국어사전에 등재된 '기본형' 또는 '원형' 단어 1개만 추출해줘.
-
-    [규칙]
-    - 명사 + 조사 ("토끼를", "숲으로") -> 명사 원형 ("토끼", "숲")
-    - 용언 관형형 ("작은", "빛나는") -> 기본형 ("작다", "빛나다")
-    - 과거형/어미 ("떠났답니다", "웃었어요") -> 기본형 ("떠나다", "웃다")
-
-    입력 단어: {clean_raw}
-    응답: 오직 변환된 단어 1개만 텍스트로 출력 (부연설명 금지)
-    """
-    try:
-        response = llm_model.generate_content(prompt)
-        normalized = response.text.strip().replace(" ", "").replace("\n", "")
-        return normalized if normalized else clean_raw
-    except Exception as e:
-        log_gemini_error("단어 원형 정제", e)
-        clean = re.sub(r"[^\w\s가-힣]", "", clean_raw)
-        return re.sub(r"(은|는|이|가|을|를|과|와|으로|로|에서|에게|도|만|의|에)$", "", clean)
-
-
-# ----------------------------------------
 # [신규] 단어장 추가 API (국립국어원 연동)
 # ----------------------------------------
 @app.post("/api/vocabularies/add", response_description="모르는 단어 추가")
 async def add_vocabulary(vocab: VocabularySchema, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     now = vocab.created_at or datetime.utcnow()
-    official_definition = await fetch_korean_dict_definition(vocab.hard)
 
-    final_meaning = vocab.definition or vocab.easy or official_definition
+    # 팝업/추천 단어에서 이미 문맥에 맞춘 뜻을 받았으면 그대로, 없으면 지금 찾습니다.
+    final_meaning = to_dictionary_style(vocab.definition or vocab.easy or "")
+    official_definition = (vocab.dict_definition or "").strip()
+    if not final_meaning:
+        found = await explain_word(llm_model, vocab.hard, vocab.sentence or vocab.hard)
+        final_meaning = found["definition"]
+        official_definition = official_definition or found["dict_definition"]
 
     vocab_dict = {
         "user_id": user_id,
@@ -426,54 +370,21 @@ async def add_vocabulary(vocab: VocabularySchema, current_user: dict = Depends(g
 async def search_vocabulary_with_context(
     body: ContextSearchRequest, current_user: dict = Depends(get_current_user)
 ):
-    raw_word = body.word.strip()
-    sentence = body.sentence.strip()
-    age = body.age or "5-7세"
+    """클릭한 말 → 기본형 + 문맥에 맞는 사전 뜻 (국어사전 형식 한 문장)
 
-    prompt = f"""
-    너는 다정한 동화 선생님이야.
-    아래 [문장] 속에 나오는 [클릭한 단어]의 조사/어미를 떼어내고, 아이에게 설명해줄 다정한 뜻풀이를 작성해줘.
-
-    [전체 문장]: "{sentence}"
-    [클릭한 단어]: "{raw_word}"
-
-    [요구사항]
-    1. 'normalized_word': 문맥에 맞게 조사/어미를 뗀 사전용 기본형 단어 1개 (예: "토끼를" -> "토끼", "작은" -> "작다")
-    2. 'definition': {age} 아이에게 말해주듯 다정하고 명확한 1~2문장의 뜻풀이
-
-    반드시 아래 JSON 형식으로 응답해줘:
-    {{
-      "normalized_word": "원형 단어",
-      "definition": "다정한 뜻풀이"
-    }}
+    - 기본형 후보(노란 → 노랗다)를 모두 표준국어대사전에서 찾아 모든 뜻을 가져오고,
+      Gemini가 문장 문맥에 맞는 뜻을 고릅니다. 맞는 뜻이 없으면 Gemini가 직접 씁니다.
+    - source: dictionary(사전 뜻) / ai(직접 씀) / fallback(Gemini 실패 → 사전 첫 뜻)
     """
-
-    try:
-        response = llm_model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
-        res_json = json.loads(response.text)
-        normalized_word = res_json.get("normalized_word", raw_word)
-        detailed_def = res_json.get("definition", "")
-
-        if not detailed_def:
-            detailed_def = await fetch_korean_dict_definition(normalized_word)
-
-        return {
-            "hard": normalized_word,
-            "easy": "",
-            "definition": detailed_def
-        }
-    except Exception as e:
-        log_gemini_error("단어 클릭 뜻풀이(search-context)", e)
-        clean_word = re.sub(r"[^\w\s가-힣]", "", raw_word)
-        official_def = await fetch_korean_dict_definition(clean_word)
-        return {
-            "hard": clean_word,
-            "easy": "",
-            "definition": official_def
-        }
+    result = await explain_word(llm_model, body.word, body.sentence.strip(), body.age or "5-7세")
+    hard = result["hard"] or re.sub(r"[^\w가-힣]", "", body.word)
+    return {
+        "hard": hard,
+        "easy": "",
+        "definition": result["definition"] or "사전에서 뜻을 찾지 못했어요.",
+        "dict_definition": result["dict_definition"],
+        "source": result["source"],
+    }
 
 
 # ----------------------------------------
@@ -617,14 +528,14 @@ async def generate_story(body: GenerateStoryRequest, current_user: dict = Depend
     1. 'surface' 항목은 동화 텍스트에 쓰인 모습 그대로 복사할 것. (예: '날아갔어요')
     2. 'hard' 항목은 그 단어의 조사/어미를 뗀 기본형/원형으로 작성할 것. (예: '날아가다')
     3. 절대 동화 텍스트 본문에 없는 단어를 지어내지 마!
-    4. 'definition': 아이 눈높이에 맞춘 다정한 뜻풀이 1문장.
+    4. 'definition': 국어사전처럼 간결한 한 문장 (동사·형용사는 '~다.', 명사는 명사로 끝냄. '~해요/~랍니다' 말투 금지).
 
     반드시 아래 JSON 배열 형식으로만 응답해줘:
     [
       {{
         "surface": "본문에 쓰인 그대로의 표현",
         "hard": "본문에 있는 단어 원형",
-        "definition": "다정한 뜻풀이"
+        "definition": "사전식 한 문장."
       }}
     ]
     """
@@ -640,8 +551,8 @@ async def generate_story(body: GenerateStoryRequest, current_user: dict = Depend
     except Exception as e:
         log_gemini_error("추천 단어 추출", e)
         raw_vocab = [
-            {"hard": "여행", "definition": "새로운 곳으로 떠나는 즐거운 길이에요."},
-            {"hard": "친구", "definition": "서로 사이좋게 지내는 다정한 사이예요."}
+            {"hard": "여행", "definition": "일이나 구경을 위하여 다른 고장이나 나라에 가는 일."},
+            {"hard": "친구", "definition": "가깝게 오래 사귄 사람."}
         ]
 
     # 최종 목록: 동화 본문에 실제로 들어 있는 단어만 (예비용 기본 단어도 동일하게 검증)
@@ -660,6 +571,17 @@ async def generate_story(body: GenerateStoryRequest, current_user: dict = Depend
             print(f"[추천 단어 제외] 본문에 없음: {hard!r}", flush=True)
         if len(vocab_list) >= 5:
             break
+
+    # 3. 추천 단어 뜻: 본문 문장 문맥에 맞는 사전 뜻으로 맞춥니다. (단어 클릭 팝업과 같은 형식, Gemini 1번)
+    if vocab_list:
+        items = []
+        for item in vocab_list:
+            hard = item["hard"].strip()
+            needles = [(item.get("surface") or "").strip(), hard, hard[:-1] if hard.endswith("다") else ""]
+            items.append({"word": hard, "sentence": sentence_with(story_text, needles)})
+        for item, found in zip(vocab_list, await explain_words(llm_model, items, body.age)):
+            item["definition"] = found["definition"] or to_dictionary_style(item.get("definition") or "")
+            item["dict_definition"] = found["dict_definition"]
 
     return {
         "story_id": story_id,
