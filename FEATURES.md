@@ -32,7 +32,29 @@
   - `GET /api/users/me/stories`, `GET·PATCH·DELETE /api/stories/{id}` (내 것만, 남의 것은 404)
 - [x] 내가 올린 게시글: 목록 / 보기 / 수정 / 삭제
   - `GET /api/users/me/posts`, `GET·PATCH·DELETE /api/posts/{id}` (내 것만)
+- [x] 동화 ↔ 게시글 연결 팝업 (아래 커뮤니티 항목과 같은 동작, 목록에 🔗 "연결됨" 표시)
+- [x] 스크랩한 글 목록 (`GET /api/users/me/scraps`, 최근 스크랩 순) — `lib/pages/scrap_list_page.dart`
 - [x] 받은 좋아요 총합 (`GET /api/users/me/stats` 의 `like_count`)
 - [x] 알림함: 공지사항 + 받은 경고(`users.warnings`), 경고가 없으면 공지사항만
   - `GET /api/users/me/inbox`, 공지 등록은 `POST /api/admin/notices` (관리자, 화면은 아직 없음 → `/docs`에서 등록)
 - [x] 로그아웃 (기존 유지)
+
+## 커뮤니티 1단계 (community) — `backend/community.py`, `lib/pages/board_page.dart`, `lib/pages/post_detail_page.dart`
+- [x] 동화 화면 "커뮤니티에 공유하기" → `POST /api/community/posts` `{story_id}`
+  - 게시글은 올린 시점의 복사본, `story_id`로 원본 동화와 연결. 같은 동화를 두 번 올리면 "이미 올린 동화예요"
+- [x] 연결 삭제: 게시글 삭제 시 "저장된 동화도 지울까요?", 동화 삭제 시(연결된 글이 있을 때만) "커뮤니티 글도 지울까요?"
+  - `DELETE /api/posts/{id}?with_linked=true`, `DELETE /api/stories/{id}?with_linked=true`
+  - 게시글이 지워지면 딸린 좋아요/스크랩/댓글도 함께 정리
+- [x] 연결 수정: 동화 수정 시(연결된 글이 있을 때만) "커뮤니티 글에도 반영할까요?", 게시글 수정 시 "내 동화에도 반영할까요?"
+  - `PATCH ...?sync=true`, 아니요를 골라도 연결은 유지
+  - 응답의 `linked_id`: 동화면 연결된 게시글 id, 게시글이면 남아 있는 원본 동화 id (없으면 "")
+- [x] 게시글 목록: 최신순, 장르 탭(전체 + 동화 장르 `lib/core/story_genres.dart`), 더보기(10개씩)
+  - `GET /api/community/posts?genre=&q=&page=&size=` → `items, total, has_more`
+- [x] 검색: 제목 또는 작성자 닉네임 (`q`, 대소문자 무시)
+- [x] 상세: 동화 본문, 작성자 프로필 사진·닉네임, 작성일 (`GET /api/community/posts/{id}`)
+- [x] 좋아요 토글 (한 사람 1번, `post_likes` 고유 인덱스) `POST /api/community/posts/{id}/like`
+- [x] 스크랩 토글 `POST /api/community/posts/{id}/scrap`
+- [x] 댓글 작성(300자) / 목록 / 내 댓글 삭제
+  - `GET·POST /api/community/posts/{id}/comments`, `DELETE /api/community/comments/{id}` (내 것만)
+- [x] 내 글은 상세에서 수정/삭제(연결 팝업 동일), 남의 글은 신고 버튼
+- [ ] 다음 단계: 게시글 그림(삽화) 표시, 댓글 신고, 관리자 게시글 관리

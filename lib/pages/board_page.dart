@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+
 import '../core/api_client.dart';
-
+import '../core/story_genres.dart';
 import '../widgets/custom_bottom_nav.dart';
+import '../widgets/post_card.dart';
+import 'post_detail_page.dart';
 
+/// 커뮤니티: 최신순 게시글 목록 + 장르 탭 + 제목/닉네임 검색 + 더보기
 class BoardPage extends StatefulWidget {
   final String displayName;
 
@@ -16,205 +20,167 @@ class BoardPage extends StatefulWidget {
 }
 
 class _BoardPageState extends State<BoardPage> {
-  Widget storyCard({
-    required String title,
-    required String author,
-    required String image,
-    required String tag,
-    required int likes,
-    required int comments,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 22),
-      decoration: BoxDecoration(
-        color: const Color(0xFF140028),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(
-          color: Colors.white10,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 이미지
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(26),
-            ),
-            child: Image.network(
-              image,
-              height: 190,
-              width: double.infinity,
-              fit: BoxFit.cover,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'by $author',
-                  style: const TextStyle(
-                    color: Colors.white54,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.purple.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    tag,
-                    style: const TextStyle(
-                      color: Colors.purpleAccent,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.favorite,
-                      color: Colors.pinkAccent,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$likes',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    const Icon(
-                      Icons.chat_bubble,
-                      color: Colors.lightBlueAccent,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$comments',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.report,
-                        color: Colors.redAccent,
-                      ),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (_) => AlertDialog(
-                            title: const Text("🚨 신고하기"),
-                            content: Text("'$title' 게시글을 신고하시겠습니까?"),
-                            actions: [
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                },
-                                child: const Text("취소"),
-                              ),
-                              ElevatedButton(
-                                onPressed: () async {
-                                  Navigator.pop(context);
-                                  await reportStory(author, title);
-                                },
-                                child: const Text("신고"),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  static const _pageSize = 10;
+  static const _allTab = '전체';
+
+  final TextEditingController _searchController = TextEditingController();
+  final List<String> _tabs = [_allTab, ...kStoryGenres];
+
+  String _genre = _allTab;
+  String _query = '';
+  List<Map<String, dynamic>> _posts = [];
+  int _page = 0;
+  int _total = 0;
+  bool _hasMore = false;
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
+  String? _error;
+  int _requestSeq = 0; // 탭을 빠르게 바꿀 때 늦게 온 예전 응답은 버립니다.
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _listPath(int page) {
+    final params = <String, String>{
+      'page': '$page',
+      'size': '$_pageSize',
+      if (_genre != _allTab) 'genre': _genre,
+      if (_query.isNotEmpty) 'q': _query,
+    };
+    return Uri(path: '/api/community/posts', queryParameters: params).toString();
+  }
+
+  Future<void> _reload() async {
+    final seq = ++_requestSeq;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final response = await ApiClient.get(_listPath(1));
+      if (!mounted || seq != _requestSeq) return;
+      if (response.statusCode == 200) {
+        final data = ApiClient.decode(response) as Map<String, dynamic>;
+        setState(() {
+          _posts = (data['items'] as List).cast<Map<String, dynamic>>();
+          _page = 1;
+          _total = data['total'] ?? 0;
+          _hasMore = data['has_more'] == true;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _error = ApiClient.errorMessage(response);
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted || seq != _requestSeq) return;
+      setState(() {
+        _error = '서버에 연결하지 못했어요.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    final seq = _requestSeq;
+    setState(() => _isLoadingMore = true);
+    try {
+      final response = await ApiClient.get(_listPath(_page + 1));
+      if (!mounted || seq != _requestSeq) return;
+      if (response.statusCode == 200) {
+        final data = ApiClient.decode(response) as Map<String, dynamic>;
+        final more = (data['items'] as List).cast<Map<String, dynamic>>();
+        final known = _posts.map((p) => p['id']).toSet();
+        setState(() {
+          _posts.addAll(more.where((p) => !known.contains(p['id'])));
+          _page += 1;
+          _total = data['total'] ?? _total;
+          _hasMore = data['has_more'] == true;
+        });
+      } else {
+        _toast(ApiClient.errorMessage(response));
+      }
+    } catch (_) {
+      if (mounted) _toast('서버에 연결하지 못했어요.');
+    }
+    if (mounted) setState(() => _isLoadingMore = false);
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _search() {
+    FocusScope.of(context).unfocus();
+    final q = _searchController.text.trim();
+    if (q == _query) return;
+    _query = q;
+    _reload();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    if (_query.isEmpty) return;
+    _query = '';
+    _reload();
+  }
+
+  void _selectGenre(String genre) {
+    if (genre == _genre) return;
+    setState(() => _genre = genre);
+    _reload();
+  }
+
+  Future<void> _openPost(Map<String, dynamic> post) async {
+    final result = await Navigator.push<PostDetailResult>(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailPage(postId: post['id'])),
     );
+    if (!mounted || result == null) return;
+    setState(() {
+      if (result.deleted) {
+        _posts.removeWhere((p) => p['id'] == post['id']);
+        _total = (_total - 1).clamp(0, 1 << 30);
+      } else if (result.summary != null) {
+        final i = _posts.indexWhere((p) => p['id'] == post['id']);
+        if (i >= 0) _posts[i] = {..._posts[i], ...result.summary!};
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: kCommunityBg,
       bottomNavigationBar: CustomBottomNav(
         currentPage: 'board',
         displayName: widget.displayName,
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 10),
-              const Text(
-                '✨ 커뮤니티',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 34,
-                  fontWeight: FontWeight.bold,
-                ),
+        child: RefreshIndicator(
+          color: Colors.purpleAccent,
+          onRefresh: _reload,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                sliver: SliverToBoxAdapter(child: _header()),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                '다른 친구들의 이야기를 만나보세요',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 30),
-              storyCard(
-                title: '달빛 토끼의 모험',
-                author: '민지',
-                image:
-                'https://images.unsplash.com/photo-1518791841217-8f162f1e1131',
-                tag: '#판타지',
-                likes: 24,
-                comments: 8,
-              ),
-              storyCard(
-                title: '용감한 꼬마 마법사',
-                author: '준호',
-                image:
-                'https://images.unsplash.com/photo-1506744038136-46273834b3fb',
-                tag: '#모험',
-                likes: 18,
-                comments: 5,
-              ),
-              storyCard(
-                title: '하늘을 나는 고래',
-                author: '서아',
-                image:
-                'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
-                tag: '#감성',
-                likes: 31,
-                comments: 12,
-              ),
-              const SizedBox(height: 100),
+              SliverToBoxAdapter(child: _genreTabs()),
+              ..._content(),
             ],
           ),
         ),
@@ -222,29 +188,175 @@ class _BoardPageState extends State<BoardPage> {
     );
   }
 
-  Future<void> reportStory(String author, String title) async {
-    try {
-      // 신고자는 서버가 토큰으로 확인합니다.
-      final response = await ApiClient.post(
-        "/report",
-        body: {
-          "author": author,
-          "story_title": title,
-          "reason": "부적절한 내용",
-        },
-      );
+  Widget _header() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '✨ 커뮤니티',
+          style: TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          '다른 친구들의 이야기를 만나보세요',
+          style: TextStyle(color: Colors.white70, fontSize: 16),
+        ),
+        const SizedBox(height: 22),
+        TextField(
+          controller: _searchController,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => _search(),
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: '제목이나 닉네임으로 찾아보세요',
+            hintStyle: const TextStyle(color: Colors.white38),
+            prefixIcon: const Icon(Icons.search, color: Colors.white54),
+            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _searchController,
+              builder: (_, value, _) => value.text.isEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_forward, color: Colors.purpleAccent),
+                      onPressed: _search,
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white54),
+                      onPressed: _clearSearch,
+                    ),
+            ),
+            filled: true,
+            fillColor: const Color(0xFF1A0B3A),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
 
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("신고가 접수되었습니다."),
+  Widget _genreTabs() {
+    return SizedBox(
+      height: 46,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: _tabs.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final genre = _tabs[i];
+          final selected = genre == _genre;
+          return GestureDetector(
+            onTap: () => _selectGenre(genre),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kCommunityPurple : const Color(0xFF1A0B3A),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Text(
+                genre,
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.white70,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           );
-        }
-      }
-    } catch (e) {
-      debugPrint('신고 처리 에러: $e');
+        },
+      ),
+    );
+  }
+
+  List<Widget> _content() {
+    if (_isLoading) {
+      return const [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: CircularProgressIndicator(color: Colors.purpleAccent)),
+        ),
+      ];
     }
+    if (_error != null) {
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_error!, style: const TextStyle(color: Colors.white70)),
+                TextButton(
+                  onPressed: _reload,
+                  child: const Text('다시 불러오기', style: TextStyle(color: Colors.purpleAccent)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ];
+    }
+    if (_posts.isEmpty) {
+      final message = _query.isNotEmpty
+          ? "'$_query'(으)로 찾은 이야기가 없어요.\n다른 말로 찾아볼까요? 🔍"
+          : '아직 올라온 이야기가 없어요.\n동화를 만들고 첫 번째로 공유해 볼까요? 📖';
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 16, height: 1.6),
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+        sliver: SliverToBoxAdapter(
+          child: Text('이야기 $_total개',
+              style: const TextStyle(color: Colors.white54, fontSize: 13)),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+        sliver: SliverList.builder(
+          itemCount: _posts.length,
+          itemBuilder: (_, i) => PostCard(post: _posts[i], onTap: () => _openPost(_posts[i])),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
+        sliver: SliverToBoxAdapter(
+          child: _hasMore
+              ? OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.purpleAccent,
+                    side: const BorderSide(color: Colors.purpleAccent),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: _isLoadingMore ? null : _loadMore,
+                  child: _isLoadingMore
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.purpleAccent))
+                      : const Text('더보기', style: TextStyle(fontWeight: FontWeight.bold)),
+                )
+              : const Center(
+                  child: Text('모든 이야기를 다 봤어요 🌙',
+                      style: TextStyle(color: Colors.white38)),
+                ),
+        ),
+      ),
+    ];
   }
 }

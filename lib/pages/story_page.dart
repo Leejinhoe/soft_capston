@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/api_client.dart';
+import '../core/story_genres.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../widgets/custom_bottom_nav.dart';
@@ -27,16 +28,12 @@ class _StoryPageState extends State<StoryPage> {
   bool isPlayingTTS = false; // 🔊 TTS 재생 상태 관리
 
   String storyText = '';
+  String storyId = ''; // 생성 즉시 저장된 동화 id (커뮤니티 공유 시 원본 연결용)
+  bool isSharing = false;
 
   List<dynamic> vocabList = [];
 
-  final List<String> genres = [
-    '판타지',
-    '모험',
-    'SF',
-    '일상',
-    '전래동화',
-  ];
+  final List<String> genres = kStoryGenres;
 
   final List<String> ages = [
     '5-7세',
@@ -105,31 +102,37 @@ class _StoryPageState extends State<StoryPage> {
     }
   }
 
-  // 🌐 커뮤니티 공유 전용 API 호출 함수 ('보관함 저장'은 동화 생성 시 자동 완료됨)
+  // 🌐 커뮤니티 공유: 자동 저장된 동화(story_id)를 복사해 게시글로 올리고, 원본과 연결해 둡니다.
   Future<void> shareStoryToCommunity() async {
+    if (storyId.isEmpty || isSharing) return;
+    setState(() => isSharing = true);
     try {
       final response = await ApiClient.post(
-        '/api/stories/save',
-        body: {
-          'title': promptController.text.isEmpty ? '신비한 동화 이야기' : promptController.text,
-          'content': storyText,
-          'genre': selectedGenre,
-          'is_public': true, // 커뮤니티 공유 처리
-        },
+        '/api/community/posts',
+        body: {'story_id': storyId},
       );
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('커뮤니티에 동화가 공유되었습니다! 🌐'),
-              backgroundColor: Color(0xFF8B5CF6),
-            ),
-          );
-        }
-      }
+      if (!mounted) return;
+      final ok = response.statusCode == 200;
+      final data = ApiClient.decode(response);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? (data['already_shared'] == true
+                  ? '이미 커뮤니티에 올린 동화예요 😊'
+                  : '커뮤니티에 동화가 공유되었어요! 🌐')
+              : ApiClient.errorMessage(response)),
+          backgroundColor: ok ? const Color(0xFF8B5CF6) : null,
+        ),
+      );
     } catch (e) {
       debugPrint('커뮤니티 공유 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('서버에 연결하지 못했어요.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isSharing = false);
     }
   }
 
@@ -327,6 +330,7 @@ class _StoryPageState extends State<StoryPage> {
     setState(() {
       isLoading = true;
       storyText = '';
+      storyId = '';
       vocabList = [];
       isPlayingTTS = false;
     });
@@ -345,6 +349,7 @@ class _StoryPageState extends State<StoryPage> {
         final data = ApiClient.decode(response);
         setState(() {
           storyText = data['story'] ?? '';
+          storyId = (data['story_id'] ?? '').toString();
           vocabList = data['vocab_list'] ?? [];
           isLoading = false;
         });
@@ -735,7 +740,9 @@ class _StoryPageState extends State<StoryPage> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      onPressed: shareStoryToCommunity,
+                      onPressed: (storyId.isEmpty || isSharing)
+                          ? null
+                          : shareStoryToCommunity,
                       icon: const Icon(Icons.share, color: Colors.white),
                       label: const Text(
                         '커뮤니티에 이 동화 공유하기',

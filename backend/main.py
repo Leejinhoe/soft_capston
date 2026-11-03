@@ -36,6 +36,13 @@ from database import (
     notices_collection,
     vocabularies_collection,
 )
+from community import (
+    ensure_indexes as ensure_community_indexes,
+    existing_story_ids,
+    linked_post_ids,
+    remove_post_relations,
+    router as community_router,
+)
 from quiz import build_questions, card_definition
 from security import (
     ROLE_ADMIN,
@@ -56,6 +63,12 @@ from security import (
 )
 
 app = FastAPI()
+app.include_router(community_router)
+
+
+@app.on_event("startup")
+async def create_community_indexes():
+    await ensure_community_indexes()
 
 
 # ----------------------------------------
@@ -244,6 +257,8 @@ class MyItem(BaseModel):
     likes_count: int = 0
     created_at: str = ""
     updated_at: str = ""
+    # 동화 ↔ 게시글 연결: 동화면 연결된 게시글 id, 게시글이면 원본 동화 id (없거나 지워졌으면 "")
+    linked_id: str = ""
 
 class ItemUpdateRequest(BaseModel):
     title: Optional[str] = None
@@ -673,6 +688,7 @@ async def save_story(body: SaveStoryRequest, current_user: dict = Depends(get_cu
             "content": body.content,
             "genre": body.genre,
             "likes_count": 0,
+            "comments_count": 0,
             "created_at": now
         }
         await posts_collection.insert_one(post_doc)
@@ -833,7 +849,7 @@ STORY_NOT_FOUND = "동화를 찾지 못했어요."
 POST_NOT_FOUND = "게시글을 찾지 못했어요."
 
 
-def _to_my_item(doc: dict) -> MyItem:
+def _to_my_item(doc: dict, linked_id: str = "") -> MyItem:
     return MyItem(
         id=str(doc["_id"]),
         title=doc.get("title") or "제목 없는 이야기",
@@ -842,6 +858,7 @@ def _to_my_item(doc: dict) -> MyItem:
         likes_count=int(doc.get("likes_count") or 0),
         created_at=iso(doc.get("created_at")),
         updated_at=iso(doc.get("updated_at")),
+        linked_id=linked_id,
     )
 
 
@@ -863,71 +880,127 @@ def _item_update_fields(body: ItemUpdateRequest) -> dict:
     return fields
 
 
-async def _list_mine(collection, user_id: str) -> list[MyItem]:
-    cursor = collection.find({"user_id": user_id}).sort("created_at", -1)
-    return [_to_my_item(doc) async for doc in cursor]
+async def _story_items(docs: list[dict], user_id: str) -> list[MyItem]:
+    links = await linked_post_ids([str(d["_id"]) for d in docs], user_id)
+    return [_to_my_item(d, links.get(str(d["_id"]), "")) for d in docs]
 
 
-async def _get_mine(collection, item_id: str, user_id: str, not_found: str) -> MyItem:
+async def _post_items(docs: list[dict], user_id: str) -> list[MyItem]:
+    alive = await existing_story_ids([d.get("story_id") or "" for d in docs], user_id)
+    return [_to_my_item(d, d.get("story_id") if d.get("story_id") in alive else "") for d in docs]
+
+
+async def _find_mine_or_404(collection, item_id: str, user_id: str, not_found: str) -> dict:
     doc = await collection.find_one(_my_doc_filter(item_id, user_id))
     if not doc:
         raise HTTPException(status_code=404, detail=not_found)
-    return _to_my_item(doc)
+    return doc
 
 
-async def _update_mine(collection, item_id: str, user_id: str, body: ItemUpdateRequest, not_found: str) -> MyItem:
-    query = _my_doc_filter(item_id, user_id)
-    result = await collection.update_one(query, {"$set": _item_update_fields(body)})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail=not_found)
-    return _to_my_item(await collection.find_one(query))
+async def _delete_my_posts(query: dict) -> int:
+    """게시글 삭제 + 딸린 좋아요/스크랩/댓글 정리"""
+    ids = [str(d["_id"]) async for d in posts_collection.find(query, {"_id": 1})]
+    if not ids:
+        return 0
+    await posts_collection.delete_many({"_id": {"$in": [ObjectId(i) for i in ids]}})
+    await remove_post_relations(ids)
+    return len(ids)
 
 
-async def _delete_mine(collection, item_id: str, user_id: str, not_found: str) -> SimpleResponse:
-    result = await collection.delete_one(_my_doc_filter(item_id, user_id))
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail=not_found)
-    return SimpleResponse(success=True, message="삭제했어요.")
-
-
+# ---------- 내 동화 ----------
 @app.get("/api/users/me/stories", response_model=list[MyItem])
 async def get_my_stories(current_user: dict = Depends(get_current_user)):
-    return await _list_mine(stories_collection, current_user["user_id"])
+    user_id = current_user["user_id"]
+    docs = await stories_collection.find({"user_id": user_id}).sort("created_at", -1).to_list(length=1000)
+    return await _story_items(docs, user_id)
 
 
 @app.get("/api/stories/{story_id}", response_model=MyItem)
 async def get_my_story(story_id: str, current_user: dict = Depends(get_current_user)):
-    return await _get_mine(stories_collection, story_id, current_user["user_id"], STORY_NOT_FOUND)
+    user_id = current_user["user_id"]
+    doc = await _find_mine_or_404(stories_collection, story_id, user_id, STORY_NOT_FOUND)
+    return (await _story_items([doc], user_id))[0]
 
 
 @app.patch("/api/stories/{story_id}", response_model=MyItem)
-async def update_my_story(story_id: str, body: ItemUpdateRequest, current_user: dict = Depends(get_current_user)):
-    return await _update_mine(stories_collection, story_id, current_user["user_id"], body, STORY_NOT_FOUND)
+async def update_my_story(
+    story_id: str,
+    body: ItemUpdateRequest,
+    sync: bool = False,  # True면 연결된 커뮤니티 글에도 반영
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+    query = _my_doc_filter(story_id, user_id)
+    fields = _item_update_fields(body)
+    result = await stories_collection.update_one(query, {"$set": fields})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail=STORY_NOT_FOUND)
+    if sync:
+        await posts_collection.update_many({"user_id": user_id, "story_id": story_id}, {"$set": fields})
+    return (await _story_items([await stories_collection.find_one(query)], user_id))[0]
 
 
 @app.delete("/api/stories/{story_id}", response_model=SimpleResponse)
-async def delete_my_story(story_id: str, current_user: dict = Depends(get_current_user)):
-    return await _delete_mine(stories_collection, story_id, current_user["user_id"], STORY_NOT_FOUND)
+async def delete_my_story(
+    story_id: str,
+    with_linked: bool = False,  # True면 연결된 커뮤니티 글도 함께 삭제
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+    result = await stories_collection.delete_one(_my_doc_filter(story_id, user_id))
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail=STORY_NOT_FOUND)
+    if with_linked:
+        await _delete_my_posts({"user_id": user_id, "story_id": story_id})
+    return SimpleResponse(success=True, message="삭제했어요.")
 
 
+# ---------- 내 게시글 ----------
 @app.get("/api/users/me/posts", response_model=list[MyItem])
 async def get_my_posts(current_user: dict = Depends(get_current_user)):
-    return await _list_mine(posts_collection, current_user["user_id"])
+    user_id = current_user["user_id"]
+    docs = await posts_collection.find({"user_id": user_id}).sort("created_at", -1).to_list(length=1000)
+    return await _post_items(docs, user_id)
 
 
 @app.get("/api/posts/{post_id}", response_model=MyItem)
 async def get_my_post(post_id: str, current_user: dict = Depends(get_current_user)):
-    return await _get_mine(posts_collection, post_id, current_user["user_id"], POST_NOT_FOUND)
+    user_id = current_user["user_id"]
+    doc = await _find_mine_or_404(posts_collection, post_id, user_id, POST_NOT_FOUND)
+    return (await _post_items([doc], user_id))[0]
 
 
 @app.patch("/api/posts/{post_id}", response_model=MyItem)
-async def update_my_post(post_id: str, body: ItemUpdateRequest, current_user: dict = Depends(get_current_user)):
-    return await _update_mine(posts_collection, post_id, current_user["user_id"], body, POST_NOT_FOUND)
+async def update_my_post(
+    post_id: str,
+    body: ItemUpdateRequest,
+    sync: bool = False,  # True면 원본 동화(내 동화)에도 반영
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+    query = _my_doc_filter(post_id, user_id)
+    doc = await _find_mine_or_404(posts_collection, post_id, user_id, POST_NOT_FOUND)
+    fields = _item_update_fields(body)
+    await posts_collection.update_one(query, {"$set": fields})
+    story_id = doc.get("story_id") or ""
+    if sync and ObjectId.is_valid(story_id):
+        await stories_collection.update_one({"_id": ObjectId(story_id), "user_id": user_id}, {"$set": fields})
+    return (await _post_items([await posts_collection.find_one(query)], user_id))[0]
 
 
 @app.delete("/api/posts/{post_id}", response_model=SimpleResponse)
-async def delete_my_post(post_id: str, current_user: dict = Depends(get_current_user)):
-    return await _delete_mine(posts_collection, post_id, current_user["user_id"], POST_NOT_FOUND)
+async def delete_my_post(
+    post_id: str,
+    with_linked: bool = False,  # True면 원본 동화(내 동화)도 함께 삭제
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+    doc = await _find_mine_or_404(posts_collection, post_id, user_id, POST_NOT_FOUND)
+    await _delete_my_posts({"_id": doc["_id"], "user_id": user_id})
+    story_id = doc.get("story_id") or ""
+    if with_linked and ObjectId.is_valid(story_id):
+        await stories_collection.delete_one({"_id": ObjectId(story_id), "user_id": user_id})
+    return SimpleResponse(success=True, message="삭제했어요.")
 
 
 # ----------------------------------------

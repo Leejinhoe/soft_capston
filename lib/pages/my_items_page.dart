@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/linked_items.dart';
 
 const _bg = Color(0xFF070018);
 const _card = Color(0xFF140028);
@@ -9,7 +10,7 @@ const _card = Color(0xFF140028);
 class MyItemsPage extends StatefulWidget {
   final String title;
   final String listPath; // 예: /api/users/me/stories
-  final String itemPath; // 예: /api/stories  (뒤에 /{id})
+  final LinkedKind kind; // 동화 / 게시글 (수정·삭제 API와 "함께 할까요?" 팝업 문구)
   final String emptyMessage;
   final bool showLikes;
 
@@ -17,7 +18,7 @@ class MyItemsPage extends StatefulWidget {
     super.key,
     required this.title,
     required this.listPath,
-    required this.itemPath,
+    required this.kind,
     required this.emptyMessage,
     this.showLikes = false,
   });
@@ -25,14 +26,14 @@ class MyItemsPage extends StatefulWidget {
   const MyItemsPage.stories({super.key})
       : title = '내가 만든 동화',
         listPath = '/api/users/me/stories',
-        itemPath = '/api/stories',
+        kind = LinkedKind.story,
         emptyMessage = '아직 만든 동화가 없어요.\n첫 동화를 만들어 볼까요? 📖',
         showLikes = false;
 
   const MyItemsPage.posts({super.key})
       : title = '내가 올린 게시글',
         listPath = '/api/users/me/posts',
-        itemPath = '/api/posts',
+        kind = LinkedKind.post,
         emptyMessage = '아직 커뮤니티에 올린 글이 없어요.',
         showLikes = true;
 
@@ -100,11 +101,7 @@ class _MyItemsPageState extends State<MyItemsPage> {
     final updated = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (_) => _ItemEditPage(
-          item: item,
-          path: '${widget.itemPath}/${item['id']}',
-          pageTitle: '${widget.title} 수정',
-        ),
+        builder: (_) => LinkedItemEditPage(kind: widget.kind, item: item),
       ),
     );
     if (updated == null || !mounted) return;
@@ -116,51 +113,14 @@ class _MyItemsPageState extends State<MyItemsPage> {
     _toast('수정했어요.');
   }
 
+  /// 연결된 동화/게시글이 있으면 "함께 지울까요?"를 물어봅니다.
   Future<void> _delete(Map<String, dynamic> item) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Colors.white10),
-        ),
-        title: const Text('삭제할까요?',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Text(
-          '"${item['title']}"을(를) 지우면 되돌릴 수 없어요.',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소', style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      final response = await ApiClient.delete('${widget.itemPath}/${item['id']}');
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        setState(() {
-          items.removeWhere((e) => e['id'] == item['id']);
-          changed = true;
-        });
-        _toast('삭제했어요.');
-      } else {
-        _toast(ApiClient.errorMessage(response));
-      }
-    } catch (_) {
-      if (mounted) _toast('서버에 연결하지 못했어요.');
-    }
+    final deleted = await deleteLinkedItem(context, widget.kind, item);
+    if (!deleted || !mounted) return;
+    setState(() {
+      items.removeWhere((e) => e['id'] == item['id']);
+      changed = true;
+    });
   }
 
   @override
@@ -312,6 +272,12 @@ Widget _metaRow(Map<String, dynamic> item, bool showLikes) {
         ),
       Text(_date(item['created_at']),
           style: const TextStyle(color: Colors.white38, fontSize: 12)),
+      if (hasLink(item))
+        const Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.link, color: Colors.purpleAccent, size: 14),
+          SizedBox(width: 3),
+          Text('연결됨', style: TextStyle(color: Colors.purpleAccent, fontSize: 12)),
+        ]),
       if (showLikes)
         Row(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.favorite, color: Colors.pinkAccent, size: 14),
@@ -391,124 +357,6 @@ class _ItemDetailPage extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// 제목/내용 수정 화면. 저장에 성공하면 서버가 돌려준 항목을 pop 합니다.
-class _ItemEditPage extends StatefulWidget {
-  final Map<String, dynamic> item;
-  final String path;
-  final String pageTitle;
-
-  const _ItemEditPage(
-      {required this.item, required this.path, required this.pageTitle});
-
-  @override
-  State<_ItemEditPage> createState() => _ItemEditPageState();
-}
-
-class _ItemEditPageState extends State<_ItemEditPage> {
-  late final TextEditingController titleController =
-      TextEditingController(text: widget.item['title'] ?? '');
-  late final TextEditingController contentController =
-      TextEditingController(text: widget.item['content'] ?? '');
-  bool isSaving = false;
-
-  @override
-  void dispose() {
-    titleController.dispose();
-    contentController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final title = titleController.text.trim();
-    final content = contentController.text.trim();
-    if (title.isEmpty || content.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('제목과 내용을 모두 적어 주세요.')));
-      return;
-    }
-    setState(() => isSaving = true);
-    try {
-      final response = await ApiClient.patch(widget.path,
-          body: {'title': title, 'content': content});
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        Navigator.pop(context, Map<String, dynamic>.from(ApiClient.decode(response)));
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ApiClient.errorMessage(response))));
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('서버에 연결하지 못했어요.')));
-      }
-    }
-    if (mounted) setState(() => isSaving = false);
-  }
-
-  InputDecoration _decoration(String label) => InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: Colors.white70),
-        filled: true,
-        fillColor: _card,
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Colors.white10),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Colors.purpleAccent),
-        ),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: _bg,
-        foregroundColor: Colors.white,
-        title: Text(widget.pageTitle),
-        actions: [
-          TextButton(
-            onPressed: isSaving ? null : _save,
-            child: isSaving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.purpleAccent))
-                : const Text('저장',
-                    style: TextStyle(
-                        color: Colors.purpleAccent,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          TextField(
-            controller: titleController,
-            maxLength: 50,
-            style: const TextStyle(color: Colors.white),
-            decoration: _decoration('제목'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: contentController,
-            minLines: 12,
-            maxLines: null,
-            style: const TextStyle(color: Colors.white, height: 1.6),
-            decoration: _decoration('내용'),
-          ),
-        ],
       ),
     );
   }

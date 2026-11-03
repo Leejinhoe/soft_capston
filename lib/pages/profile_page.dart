@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/custom_bottom_nav.dart';
 import 'my_items_page.dart';
+import 'scrap_list_page.dart';
 
 const _bg = Color(0xFF070018);
 const _card = Color(0xFF140028);
@@ -913,6 +914,15 @@ class _ProfilePageState extends State<ProfilePage> {
                   title: '내가 올린 게시글',
                   value: '$postCount개',
                   onTap: () => _openMyItems(const MyItemsPage.posts()),
+                ),
+                infoCard(
+                  icon: Icons.bookmark,
+                  title: '스크랩한 글',
+                  value: '모아 보기',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ScrapListPage()),
+                  ),
                 ),
                 infoCard(
                   icon: Icons.favorite,
