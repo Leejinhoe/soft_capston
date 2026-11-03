@@ -60,3 +60,6 @@ venv/
 __pycache__/
 **/__pycache__/
 backend/static/profile_images/
+
+# Team members' reference code (read-only, kept locally)
+team_code/

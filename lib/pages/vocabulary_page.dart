@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../widgets/custom_bottom_nav.dart';
+import 'quiz_page.dart';
 
 class VocabularyPage extends StatefulWidget {
   final String displayName;
@@ -45,12 +46,71 @@ class _VocabularyPageState extends State<VocabularyPage> {
     }
   }
 
+  // 🧩 퀴즈 화면으로 이동 (돌아오면 외운 단어 표시를 새로 불러옴)
+  Future<void> openQuiz() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const QuizPage()),
+    );
+    if (mounted) fetchMyVocabularies();
+  }
+
+  // 🗑️ 내 단어 삭제 (한 번 더 물어본 뒤 삭제)
+  Future<void> deleteVocabulary(String id, String word) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1A0B3A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('단어를 지울까요?', style: TextStyle(color: Colors.white)),
+        content: Text(
+          '"$word" 단어를 단어장에서 지워요.',
+          style: const TextStyle(color: Colors.white70, fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('그냥 둘래요', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('지울래요', style: TextStyle(color: Color(0xFFEF4444))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final response = await ApiClient.delete('/api/vocabularies/$id');
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        setState(() => myVocabList.removeWhere((v) => v['id'] == id));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"$word" 단어를 지웠어요.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ApiClient.errorMessage(response, '단어를 지우지 못했어요.'))),
+        );
+      }
+    } catch (e) {
+      debugPrint('단어 삭제 오류: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('단어를 지우지 못했어요. 잠시 후 다시 해 주세요.')),
+      );
+    }
+  }
+
   // 📖 단어 카드 위젯 ('쉬운 뜻' 영역 삭제 및 레이아웃 정리)
   Widget vocabCard({
     required String word,
     required String definition,
     required String storyTitle,
     required Color color,
+    required bool isMastered,
+    required VoidCallback onDelete,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -59,7 +119,7 @@ class _VocabularyPageState extends State<VocabularyPage> {
         color: const Color(0xFF140028),
         borderRadius: BorderRadius.circular(26),
         border: Border.all(
-          color: Colors.white10,
+          color: isMastered ? const Color(0xFFF59E0B).withOpacity(0.6) : Colors.white10,
         ),
       ),
       child: Row(
@@ -84,28 +144,56 @@ class _VocabularyPageState extends State<VocabularyPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      word,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                    Flexible(
+                      child: Text(
+                        word,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
+                    if (isMastered) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          '⭐ 외웠어요',
+                          style: TextStyle(
+                            color: Color(0xFFF59E0B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                      child: Text(
-                        storyTitle,
-                        style: const TextStyle(color: Colors.purpleAccent, fontSize: 11),
-                      ),
+                    ],
+                    const Spacer(),
+                    IconButton(
+                      onPressed: onDelete,
+                      tooltip: '단어 지우기',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.white38),
                     ),
                   ],
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    storyTitle,
+                    style: const TextStyle(color: Colors.purpleAccent, fontSize: 11),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 Text(
@@ -167,6 +255,35 @@ class _VocabularyPageState extends State<VocabularyPage> {
                     fontSize: 15,
                   ),
                 ),
+                const SizedBox(height: 24),
+
+                // 🧩 퀴즈 풀기 버튼
+                Container(
+                  width: double.infinity,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                    ),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: openQuiz,
+                    icon: const Icon(Icons.extension_rounded, size: 28),
+                    label: const Text(
+                      '퀴즈 풀기',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 30),
 
                 if (isLoading)
@@ -202,6 +319,11 @@ class _VocabularyPageState extends State<VocabularyPage> {
                       definition: vocab['definition'] ?? '',
                       storyTitle: vocab['source_story_title'] ?? '동화',
                       color: colors[index % colors.length],
+                      isMastered: vocab['is_mastered'] == true,
+                      onDelete: () => deleteVocabulary(
+                        vocab['id']?.toString() ?? '',
+                        vocab['word'] ?? '',
+                      ),
                     );
                   }).toList(),
 

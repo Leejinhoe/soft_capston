@@ -35,6 +35,7 @@ from database import (
     notifications_collection,
     vocabularies_collection,
 )
+from quiz import build_questions, card_definition
 from security import (
     ROLE_ADMIN,
     ROLE_USER,
@@ -240,6 +241,30 @@ class ContextSearchRequest(BaseModel):
     sentence: str
     age: Optional[str] = "5-7세"
 
+class DeleteVocabularyResponse(BaseModel):
+    success: bool
+    id: str
+
+class QuizQuestion(BaseModel):
+    vocab_id: str
+    definition: str          # 다정한 뜻풀이 (정답 단어는 ○○로 가림)
+    choices: list[str]       # 보기 4개
+    answer: str              # 정답 단어 (아이에게 바로 맞음/틀림을 보여주기 위해 함께 보냄)
+    is_mastered: bool
+
+class QuizResponse(BaseModel):
+    questions: list[QuizQuestion]
+    total_words: int
+    message: str = ""        # 문제가 없을 때 안내 문구
+
+class QuizResultRequest(BaseModel):
+    correct_vocab_ids: list[str] = []
+    wrong_vocab_ids: list[str] = []
+
+class QuizResultResponse(BaseModel):
+    success: bool
+    mastered_count: int
+
 
 # ----------------------------------------
 # 💡 Gemini 단어 원형(기본형) 정제 함수
@@ -393,12 +418,79 @@ async def get_my_vocabularies(current_user: dict = Depends(get_current_user)):
             "id": str(item["_id"]),
             "word": item.get("word", ""),
             "easy": item.get("easy_meaning") or item.get("meaning", ""),
-            "definition": item.get("official_definition") or item.get("meaning", ""),
+            # 사전 뜻을 먼저 보여주고, 비어 있거나 실패 문구면 다정한 뜻풀이로 대신합니다.
+            "definition": card_definition(item),
             "source_story_title": item.get("origin_story_title", "동화"),
-            "saved_at": item.get("saved_at").isoformat() if item.get("saved_at") else ""
+            "saved_at": item.get("saved_at").isoformat() if item.get("saved_at") else "",
+            "is_mastered": bool(item.get("is_mastered")),
         })
 
     return vocab_list
+
+
+# ----------------------------------------
+# 내 단어 삭제
+# ----------------------------------------
+@app.delete("/api/vocabularies/{vocab_id}", response_model=DeleteVocabularyResponse)
+async def delete_my_vocabulary(vocab_id: str, current_user: dict = Depends(get_current_user)):
+    if not ObjectId.is_valid(vocab_id):
+        raise HTTPException(status_code=400, detail="단어 정보가 올바르지 않아요.")
+
+    # 내 단어만 지울 수 있도록 user_id 조건을 함께 겁니다.
+    result = await vocabularies_collection.delete_one(
+        {"_id": ObjectId(vocab_id), "user_id": current_user["user_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="단어를 찾지 못했어요.")
+    return DeleteVocabularyResponse(success=True, id=vocab_id)
+
+
+# ----------------------------------------
+# 단어장 퀴즈: 다정한 뜻풀이를 보고 맞는 단어 고르기 (4지선다, 최대 5문제)
+# ----------------------------------------
+@app.get("/api/quiz", response_model=QuizResponse)
+async def get_quiz(current_user: dict = Depends(get_current_user)):
+    vocabs = await vocabularies_collection.find(
+        {"user_id": current_user["user_id"]}
+    ).to_list(length=1000)
+
+    questions = build_questions(vocabs)
+    if not questions:
+        return QuizResponse(questions=[], total_words=len(vocabs), message="단어를 먼저 저장해 보세요")
+    return QuizResponse(
+        questions=[QuizQuestion(**q) for q in questions],
+        total_words=len(vocabs),
+    )
+
+
+@app.post("/api/quiz/result", response_model=QuizResultResponse)
+async def submit_quiz_result(body: QuizResultRequest, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    now = datetime.utcnow()
+
+    def to_object_ids(ids: list[str]) -> list[ObjectId]:
+        return [ObjectId(i) for i in dict.fromkeys(ids) if ObjectId.is_valid(i)]
+
+    correct_ids = to_object_ids(body.correct_vocab_ids)
+    wrong_ids = [i for i in to_object_ids(body.wrong_vocab_ids) if i not in correct_ids]
+
+    mastered_count = 0
+    if correct_ids:
+        result = await vocabularies_collection.update_many(
+            {"_id": {"$in": correct_ids}, "user_id": user_id},
+            {
+                "$set": {"is_mastered": True, "review_stage": "mastered", "last_reviewed_at": now},
+                "$inc": {"review_count": 1},
+            },
+        )
+        mastered_count = result.modified_count
+    if wrong_ids:
+        await vocabularies_collection.update_many(
+            {"_id": {"$in": wrong_ids}, "user_id": user_id},
+            {"$set": {"last_reviewed_at": now}, "$inc": {"review_count": 1}},
+        )
+
+    return QuizResultResponse(success=True, mastered_count=mastered_count)
 
 
 # ----------------------------------------
