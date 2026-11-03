@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:percent_indicator/percent_indicator.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
@@ -48,6 +47,8 @@ class StoryPage extends StatefulWidget {
 }
 
 class _StoryPageState extends State<StoryPage> {
+  bool _assemblingStoryVideo = false;
+  String? _assemblyStatus;
   bool _showVocab = false;
   final _scrollCtrl = ScrollController();
   final AudioPlayer _narrationPlayer = AudioPlayer();
@@ -396,6 +397,19 @@ class _StoryPageState extends State<StoryPage> {
                         sliver: SliverList(
                           delegate: SliverChildListDelegate([
                             _buildChapterInfo(story),
+                            if (state.storySyncError != null &&
+                                widget.preloadedStory == null) ...[
+                              const SizedBox(height: 10),
+                              MaterialBanner(
+                                content: Text(state.storySyncError!),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => state.retryStorySync(story),
+                                    child: const Text('저장 재시도'),
+                                  ),
+                                ],
+                              ),
+                            ],
                             if (story.effectiveStoryCast.isNotEmpty) ...[
                               const SizedBox(height: 10),
                               StoryCastWidget(
@@ -409,8 +423,6 @@ class _StoryPageState extends State<StoryPage> {
                               _buildDifficultWordGuide(story),
                               const SizedBox(height: 16),
                             ],
-                            _buildStoryEmotionGraph(story),
-                            const SizedBox(height: 16),
                           ]),
                         ),
                       ),
@@ -433,6 +445,10 @@ class _StoryPageState extends State<StoryPage> {
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                         sliver: SliverList(
                           delegate: SliverChildListDelegate([
+                            if (story.hasReachedEnding) ...[
+                              const SizedBox(height: 20),
+                              _buildJourneyVideo(state, story),
+                            ],
                             if (state.isLoading) _buildLoadingCard(),
                             if (!state.isLoading &&
                                 widget.preloadedStory == null) ...[
@@ -608,12 +624,6 @@ class _StoryPageState extends State<StoryPage> {
             AppColors.teal.withValues(alpha: 0.15),
             AppColors.teal,
           ),
-          if (story.chapters.last.storyEmotion != null)
-            _buildMetaBadge(
-              '현재 감정 ${story.chapters.last.storyEmotion!.primaryEmotionDisplay}',
-              AppColors.pink.withValues(alpha: 0.15),
-              AppColors.pink2,
-            ),
         ],
       ),
     );
@@ -919,161 +929,6 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
-  Widget _buildStoryEmotionGraph(StorySession story) {
-    final emotions = _aggregateStoryEmotions(story);
-    if (emotions.isEmpty) return const SizedBox.shrink();
-
-    const colors = [
-      AppColors.p500,
-      AppColors.pink,
-      AppColors.teal,
-      Color(0xFFF59E0B),
-      Color(0xFF10B981),
-    ];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF140028),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.insights_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '감정 그래프',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      '지금까지 이야기와 선택에서 감지된 감정이에요',
-                      style: TextStyle(color: Colors.white70, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...emotions.asMap().entries.map((entry) {
-            final color = colors[entry.key % colors.length];
-            final item = entry.value;
-            final label = item.labelDisplay.isNotEmpty
-                ? item.labelDisplay
-                : item.label;
-            final percent = item.score.clamp(0.0, 1.0);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        label,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '${(percent * 100).toStringAsFixed(0)}%',
-                        style: TextStyle(
-                          color: color,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  LinearPercentIndicator(
-                    percent: percent,
-                    lineHeight: 8,
-                    barRadius: const Radius.circular(4),
-                    backgroundColor: color.withValues(alpha: 0.15),
-                    progressColor: color,
-                    padding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  List<EmotionScoreItem> _aggregateStoryEmotions(StorySession story) {
-    final totals = <String, double>{};
-    final counts = <String, int>{};
-    final indexes = <String, int>{};
-    final displays = <String, String>{};
-
-    void collect(EmotionAnalysis? analysis) {
-      if (analysis == null) return;
-      for (final item in analysis.topEmotions.take(5)) {
-        final key = item.labelDisplay.isNotEmpty
-            ? item.labelDisplay
-            : item.label;
-        totals[key] = (totals[key] ?? 0) + item.score;
-        counts[key] = (counts[key] ?? 0) + 1;
-        indexes[key] = item.labelIndex;
-        displays[key] = key;
-      }
-    }
-
-    for (final chapter in story.chapters) {
-      collect(chapter.storyEmotion);
-      collect(chapter.selectedChoiceEmotion);
-    }
-    for (final option in story.choiceOptions) {
-      collect(option.emotion);
-    }
-
-    final result = totals.entries.map((entry) {
-      final count = counts[entry.key] ?? 1;
-      final score = (entry.value / count).clamp(0.0, 1.0);
-      return EmotionScoreItem(
-        labelIndex: indexes[entry.key] ?? -1,
-        label: entry.key,
-        labelDisplay: displays[entry.key] ?? entry.key,
-        score: double.parse(score.toStringAsFixed(3)),
-      );
-    }).toList()..sort((a, b) => b.score.compareTo(a.score));
-
-    return result.take(5).toList();
-  }
 
   Widget _buildInteractiveStoryText({
     required BuildContext context,
@@ -1435,26 +1290,6 @@ class _StoryPageState extends State<StoryPage> {
                 story: story,
                 text: chapter.text,
               ),
-              if (chapter.selectedChoiceEmotion != null) ...[
-                const SizedBox(height: 18),
-                _buildEmotionPanel(
-                  title: '선택한 감정',
-                  subtitle: chapter.choiceMade ?? '',
-                  analysis: chapter.selectedChoiceEmotion!,
-                  accent: AppColors.pink,
-                  emoji: '🎯',
-                ),
-              ],
-              if (chapter.storyEmotion != null) ...[
-                const SizedBox(height: 18),
-                _buildEmotionPanel(
-                  title: '이야기 감정',
-                  subtitle: '이 장면의 분위기',
-                  analysis: chapter.storyEmotion!,
-                  accent: AppColors.teal,
-                  emoji: '📈',
-                ),
-              ],
             ],
           ),
         ),
@@ -1896,10 +1731,11 @@ class _StoryPageState extends State<StoryPage> {
             ),
           ),
           IconButton(
-            tooltip: chapter.mediaStatus == 'partial' ? '영상 다시 생성' : '삽화 다시 생성',
+            tooltip: chapter.mediaRetryVideo || chapter.mediaStatus == 'partial'
+                ? '영상 다시 생성' : '삽화 다시 생성',
             onPressed: chapter.mediaStatus == 'running'
                 ? null
-                : () => chapter.mediaStatus == 'partial'
+                : () => chapter.mediaRetryVideo || chapter.mediaStatus == 'partial'
                       ? state.generateVideoForChapter(story, chapter)
                       : state.retryMediaForChapter(story, chapter),
             icon: const Icon(Icons.refresh_rounded),
@@ -1985,124 +1821,6 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
-  Widget _buildEmotionPanel({
-    required String title,
-    required String subtitle,
-    required EmotionAnalysis analysis,
-    required Color accent,
-    required String emoji,
-  }) {
-    final top = analysis.topEmotions.take(5).toList();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.card2,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(emoji, style: const TextStyle(fontSize: 16)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.gray,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  analysis.primaryEmotionDisplay,
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          ...top.map((item) => _buildEmotionBar(item, accent)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmotionBar(EmotionScoreItem item, Color accent) {
-    final percent = item.score.clamp(0.0, 1.0);
-    final label = item.labelDisplay.isNotEmpty ? item.labelDisplay : item.label;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                '${(percent * 100).toStringAsFixed(0)}%',
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              minHeight: 8,
-              value: percent,
-              backgroundColor: accent.withValues(alpha: 0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(accent),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildLoadingCard() {
     return Column(
@@ -2163,7 +1881,6 @@ class _StoryPageState extends State<StoryPage> {
           final colors = [AppColors.p600, AppColors.pink, AppColors.teal];
           final emojis = ['🌟', '💫', '✨'];
           final accent = colors[i % colors.length];
-          final preview = option.emotion?.topEmotions.take(3).toList() ?? [];
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -2211,33 +1928,6 @@ class _StoryPageState extends State<StoryPage> {
                           ),
                         ],
                       ),
-                      if (preview.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: preview.map((emotion) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.06),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                '${emotion.labelDisplay} ${(emotion.score * 100).toStringAsFixed(0)}%',
-                                style: TextStyle(
-                                  color: accent,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -2353,8 +2043,56 @@ class _StoryPageState extends State<StoryPage> {
   }
 
   void _finishStory(BuildContext context, AppState state) {
-    state.finishCurrentStory();
+    state.finishCurrentStory(markCompleted: true);
     Navigator.pop(context);
+  }
+
+  Future<void> _makeJourneyVideo(AppState state, StorySession story) async {
+    final storyId = story.dbStoryId;
+    if (storyId == null || storyId.isEmpty) {
+      setState(() => _assemblyStatus = '먼저 동화를 저장해 주세요.');
+      return;
+    }
+    setState(() { _assemblingStoryVideo = true; _assemblyStatus = null; });
+    try {
+      for (final chapter in story.chapters) {
+        if (!_isRemoteMediaUrl(chapter.videoUrl)) {
+          if (!mounted) return;
+          setState(() => _assemblyStatus = '${chapter.chapter}번째 장면을 영상으로 만들고 있어요.');
+          await state.generateVideoForChapter(story, chapter);
+          if (!_isRemoteMediaUrl(chapter.videoUrl)) {
+            throw Exception('${chapter.chapter}번째 장면 영상 생성에 실패했어요.');
+          }
+        }
+      }
+      if (!mounted) return;
+      setState(() => _assemblyStatus = '장면을 연결하고 있어요.');
+      final url = await DbService.assembleStoryVideo(storyId);
+      if (mounted) setState(() { story.assembledVideoUrl = url; _assemblyStatus = null; });
+    } catch (error) {
+      if (mounted) setState(() => _assemblyStatus = '완성하지 못했어요. 잠시 후 다시 시도해 주세요. ($error)');
+    } finally {
+      if (mounted) setState(() => _assemblingStoryVideo = false);
+    }
+  }
+
+  Widget _buildJourneyVideo(AppState state, StorySession story) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('동화 여정 영상', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      if (story.assembledVideoUrl != null)
+        StoryVideoPlayer.network(
+          videoUrl: story.assembledVideoUrl!,
+          title: '완성된 동화 영상',
+          description: '동화의 장면들을 순서대로 이어 만든 영상입니다.',
+          httpHeaders: DbService.mediaHeaders,
+        ),
+      if (_assemblyStatus != null) Text(_assemblyStatus!, style: const TextStyle(color: AppColors.gray)),
+      TextButton.icon(
+        onPressed: _assemblingStoryVideo ? null : () => _makeJourneyVideo(state, story),
+        icon: _assemblingStoryVideo ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.movie_creation_outlined),
+        label: Text(_assemblingStoryVideo ? '영상 만드는 중' : story.assembledVideoUrl == null ? '동화 영상 만들기' : '동화 영상 다시 만들기'),
+      ),
+    ]);
   }
 
   Widget _buildStoryCompleteCard(BuildContext context, AppState state) {

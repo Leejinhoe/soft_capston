@@ -122,6 +122,8 @@ class EmotionAnalysis {
   factory EmotionAnalysis.fromJson(Map<String, dynamic> json) {
     final source = json['emotion_label_source']?.toString() ?? '';
     if (json['emotion_scoring_enabled'] == false ||
+        json['abstained'] == true ||
+        json['requires_review'] == true ||
         source.startsWith('qwen_contextual') ||
         json['score_kind'] == 'uncalibrated_model_estimate') {
       // Older saved LLM scores remain on disk but are not used by the app.
@@ -390,6 +392,7 @@ class StoryChapter {
   String? mediaJobId;
   String? mediaStatus;
   String? mediaError;
+  bool mediaRetryVideo;
   Map<String, dynamic>? sceneContract;
   final DateTime? createdAt;
   Uint8List? imageBytes;
@@ -405,6 +408,7 @@ class StoryChapter {
     this.mediaJobId,
     this.mediaStatus,
     this.mediaError,
+    this.mediaRetryVideo = false,
     this.sceneContract,
     this.createdAt,
     this.imageBytes,
@@ -468,6 +472,7 @@ class StoryCastMember {
 class StorySession {
   String storyId;
   String? dbStoryId;
+  String? assembledVideoUrl;
 
   /// AI 서버가 재시작된 뒤에도 이어 쓰기에 사용하는 직렬화된 게임 상태입니다.
   String? runtimeState;
@@ -493,6 +498,7 @@ class StorySession {
   StorySession({
     required this.storyId,
     this.dbStoryId,
+    this.assembledVideoUrl,
     this.runtimeState,
     required this.genre,
     required this.age,
@@ -630,6 +636,7 @@ class StorySession {
             mediaJobId: scene['media_job_id']?.toString(),
             mediaStatus: scene['media_status']?.toString(),
             mediaError: scene['media_error']?.toString(),
+            mediaRetryVideo: scene['media_requested_video'] == true,
             sceneContract: scene['scene_contract'] is Map
                 ? Map<String, dynamic>.from(scene['scene_contract'] as Map)
                 : null,
@@ -712,6 +719,7 @@ class StorySession {
           ? 'db_${DateTime.now().microsecondsSinceEpoch}'
           : 'db_$dbStoryId',
       dbStoryId: dbStoryId,
+      assembledVideoUrl: json['assembled_video_url']?.toString(),
       runtimeState: json['runtime_state']?.toString(),
       genre: json['genre']?.toString() ?? '동화',
       age: json['age']?.toString() ?? json['target_age']?.toString() ?? '',

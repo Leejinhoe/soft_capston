@@ -16,7 +16,7 @@ from PIL import Image, ImageFilter, ImageOps
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "DB연결 테스트"))
+sys.path.insert(0, str(ROOT / "backend"))
 
 from motion_policy import SOLO_TRAINING_POSES  # noqa: E402
 

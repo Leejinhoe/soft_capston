@@ -195,6 +195,20 @@ class DbService {
   static String? resolveMediaUrl(String? pathOrUrl) =>
       _absoluteMediaUrl(pathOrUrl);
 
+  static Future<String> assembleStoryVideo(String storyId) async {
+    final response = await http.post(
+      _apiUri('/api/stories/$storyId/video/assemble'),
+      headers: _jsonHeaders,
+    ).timeout(const Duration(minutes: 3));
+    if (response.statusCode != 200) {
+      throw Exception('완성 영상을 만들지 못했습니다 (${response.statusCode}).');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final url = _absoluteMediaUrl(data['video_url'] as String?);
+    if (url == null) throw Exception('완성 영상 주소가 없습니다.');
+    return url;
+  }
+
   static SceneMediaResult _withAbsoluteMediaUrls(SceneMediaResult result) {
     return SceneMediaResult(
       imageUrl: _absoluteMediaUrl(result.imageUrl),
@@ -212,6 +226,7 @@ class DbService {
   }
 
   static StorySession _withAbsoluteStoryMedia(StorySession story) {
+    story.assembledVideoUrl = _absoluteMediaUrl(story.assembledVideoUrl);
     for (final chapter in story.chapters) {
       chapter.imageUrl = _absoluteMediaUrl(chapter.imageUrl);
       chapter.videoUrl = _absoluteMediaUrl(chapter.videoUrl);

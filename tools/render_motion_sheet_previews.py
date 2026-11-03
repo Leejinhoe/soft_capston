@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKEND_DIR = ROOT / "DB연결 테스트"
+BACKEND_DIR = ROOT / "backend"
 ASSET_DIR = ROOT / "assets"
 OUTPUT_DIR = ROOT / "output" / "video_previews"
 

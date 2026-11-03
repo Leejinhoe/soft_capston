@@ -8,7 +8,7 @@ import imageio.v2 as imageio
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'DB연결 테스트'))
+sys.path.insert(0, str(ROOT / 'backend'))
 from story_background_pack import PACK
 from background_assets import BACKGROUND_ASSETS
 from hf_video_provider import generate_hf_fairytale_video

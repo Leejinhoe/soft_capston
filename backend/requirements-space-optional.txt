@@ -1,0 +1,6 @@
+# Optional private Space integration; install in a separate tested environment.
+gradio_client==1.13.3
+huggingface_hub==1.11.0
+# CPU-only visual review also needs a CPU PyTorch build.
+transformers>=5.5,<6
+scipy>=1.15,<2
