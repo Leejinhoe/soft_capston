@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from community import Author, author_map
-from database import messages_collection
+from database import messages_collection, safe_create_index
 from reports import reported_target_ids
 from security import find_user_by_public_id, get_current_user
 
@@ -74,9 +74,9 @@ def _oid(value: str) -> ObjectId:
 
 
 async def ensure_indexes() -> None:
-    await messages_collection.create_index([("receiver_id", 1), ("deleted_by_receiver", 1), ("created_at", -1)])
-    await messages_collection.create_index([("sender_id", 1), ("deleted_by_sender", 1), ("created_at", -1)])
-    await messages_collection.create_index([("receiver_id", 1), ("is_read", 1)])
+    await safe_create_index(messages_collection, [("receiver_id", 1), ("deleted_by_receiver", 1), ("created_at", -1)])
+    await safe_create_index(messages_collection, [("sender_id", 1), ("deleted_by_sender", 1), ("created_at", -1)])
+    await safe_create_index(messages_collection, [("receiver_id", 1), ("is_read", 1)])
 
 
 def _box_query(user_id: str, box: str) -> dict:

@@ -24,6 +24,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from database import (
+    safe_create_index,
     comments_collection,
     messages_collection,
     posts_collection,
@@ -193,14 +194,16 @@ async def reported_target_ids(reporter_id: str, target_type: str, target_ids: li
 
 async def ensure_indexes() -> None:
     # 예전 /report 구조의 문서에는 target_id가 없으므로 고유 인덱스에서 제외합니다.
-    await reports_collection.create_index(
+    await safe_create_index(
+        reports_collection,
         [("reporter_id", 1), ("target_type", 1), ("target_id", 1)],
         unique=True,
         partialFilterExpression={"target_id": {"$exists": True}},
         name="unique_reporter_target",
     )
-    await reports_collection.create_index([("status", 1), ("created_at", -1)])
-    await reports_collection.create_index([("target_type", 1), ("target_id", 1)])
+    # 실제 DB에 이미 이 이름으로 있는 인덱스와 이름을 맞춥니다.
+    await safe_create_index(reports_collection, [("status", 1), ("created_at", -1)], name="reports_status_created_idx")
+    await safe_create_index(reports_collection, [("target_type", 1), ("target_id", 1)])
     # 예전 상태값 정리: waiting → pending
     await reports_collection.update_many({"status": "waiting"}, {"$set": {"status": "pending"}})
 

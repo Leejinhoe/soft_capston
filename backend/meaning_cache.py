@@ -10,7 +10,7 @@
 import re
 from datetime import datetime
 
-from database import word_meaning_cache_collection as cache
+from database import safe_create_index, word_meaning_cache_collection as cache
 from word_meaning import SOURCE_FALLBACK, clean_word, explain_word, explain_words
 
 MODE_CLICK = "click"
@@ -36,7 +36,7 @@ def _cacheable(result: dict) -> bool:
 
 
 async def ensure_indexes() -> None:
-    await cache.create_index([("mode", 1), ("word", 1), ("sentence", 1), ("age", 1)], unique=True)
+    await safe_create_index(cache, [("mode", 1), ("word", 1), ("sentence", 1), ("age", 1)], unique=True)
 
 
 async def _get(key: dict):

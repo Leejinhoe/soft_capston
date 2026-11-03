@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
 from database import (
+    safe_create_index,
     comments_collection,
     post_likes_collection,
     post_scraps_collection,
@@ -211,12 +212,12 @@ async def remove_post_relations(post_ids: list[str]) -> None:
 
 
 async def ensure_indexes() -> None:
-    await post_likes_collection.create_index([("post_id", 1), ("user_id", 1)], unique=True)
-    await post_scraps_collection.create_index([("post_id", 1), ("user_id", 1)], unique=True)
-    await post_scraps_collection.create_index([("user_id", 1), ("created_at", -1)])
-    await comments_collection.create_index([("post_id", 1), ("created_at", 1)])
-    await posts_collection.create_index([("created_at", -1)])
-    await posts_collection.create_index([("user_id", 1), ("story_id", 1)])
+    await safe_create_index(post_likes_collection, [("post_id", 1), ("user_id", 1)], unique=True)
+    await safe_create_index(post_scraps_collection, [("post_id", 1), ("user_id", 1)], unique=True)
+    await safe_create_index(post_scraps_collection, [("user_id", 1), ("created_at", -1)])
+    await safe_create_index(comments_collection, [("post_id", 1), ("created_at", 1)])
+    await safe_create_index(posts_collection, [("created_at", -1)])
+    await safe_create_index(posts_collection, [("user_id", 1), ("story_id", 1)])
 
 
 # ----------------------------------------
