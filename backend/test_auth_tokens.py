@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from bson import ObjectId
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 import main
 from models import UserSchema
@@ -62,6 +63,55 @@ class AuthTokenTests(unittest.TestCase):
             main.route_access_policy('/api/community/reports', 'POST'),
             'authenticated',
         )
+
+    def test_route_access_policy_protects_vocabulary_and_community_writes(self):
+        protected_routes = [
+            ('/api/auth/session', 'GET'),
+            ('/api/vocabularies/add', 'POST'),
+            ('/api/vocabularies/507f1f77bcf86cd799439011', 'DELETE'),
+            ('/api/community/posts', 'POST'),
+            ('/api/community/posts/507f1f77bcf86cd799439011/like', 'POST'),
+            ('/api/community/posts/507f1f77bcf86cd799439011/comments', 'POST'),
+            ('/api/community/posts/507f1f77bcf86cd799439011', 'DELETE'),
+            (
+                '/api/community/posts/507f1f77bcf86cd799439011/comments/'
+                '507f1f77bcf86cd799439012',
+                'DELETE',
+            ),
+        ]
+        for path, method in protected_routes:
+            with self.subTest(path=path, method=method):
+                self.assertEqual(main.route_access_policy(path, method), 'authenticated')
+
+        self.assertEqual(
+            main.route_access_policy('/api/community/posts', 'GET'),
+            'public',
+        )
+
+    def test_protected_writes_reject_requests_without_bearer_token(self):
+        requests = [
+            ('GET', '/api/auth/session'),
+            ('POST', '/api/vocabularies/add'),
+            ('DELETE', '/api/vocabularies/507f1f77bcf86cd799439011'),
+            ('POST', '/api/community/posts'),
+            ('POST', '/api/community/posts/507f1f77bcf86cd799439011/like'),
+            (
+                'POST',
+                '/api/community/posts/507f1f77bcf86cd799439011/comments',
+            ),
+            ('DELETE', '/api/community/posts/507f1f77bcf86cd799439011'),
+            (
+                'DELETE',
+                '/api/community/posts/507f1f77bcf86cd799439011/comments/'
+                '507f1f77bcf86cd799439012',
+            ),
+        ]
+        client = TestClient(main.app)
+        for method, path in requests:
+            with self.subTest(method=method, path=path):
+                response = client.request(method, path, json={})
+                self.assertEqual(response.status_code, 401)
+        client.close()
 
     def test_route_access_policy_limits_user_data_to_owner(self):
         self.assertEqual(
