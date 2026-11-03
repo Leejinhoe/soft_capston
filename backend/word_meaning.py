@@ -3,8 +3,12 @@
 흐름
 1. lemma_candidates: 클릭한 말의 기본형 후보를 파이썬으로 만듭니다. (노란 → 노란, 노라다, 노랗다)
 2. fetch_senses: 후보마다 search.do로 동음이의어를 찾고, view.do로 각 표제어의 모든 뜻을 가져옵니다.
-3. pick_definitions: Gemini 한 번으로 문맥에 맞는 기본형과 뜻을 고르고, 국어사전 형식의 한 문장으로 다듬습니다.
-   사전에 맞는 뜻이 없으면 Gemini가 문맥에 맞게 직접 씁니다.
+3. decide_without_gemini: Gemini 없이 정할 수 있으면 바로 사전 뜻 (Gemini 호출 줄이기)
+   - 사전 뜻 후보가 모두 합쳐 1개 → 그 뜻 ("사전 1개")
+   - 클릭한 말의 형태로 품사 거르기: 조사가 붙은 말(토끼를) → 명사 뜻만, 관형형·활용형(노란, 반짝이는) → 동사·형용사 뜻만.
+     걸러서 1개만 남으면 그 뜻 ("품사로 결정")
+4. pick_definitions: 여러 개 남을 때만 Gemini 한 번으로 문맥에 맞는 기본형과 뜻을 고르고, 국어사전 형식의 한 문장으로 다듬습니다.
+   사전에 맞는 뜻이 없으면 Gemini가 문맥에 맞게 직접 씁니다. ("Gemini 선택")
    (무료 할당량이 작아서 원형 정제와 뜻 고르기를 한 번의 호출로 묶었습니다)
 
 뜻풀이 형식(팝업·단어장·추천 단어 공통): 국어사전처럼 간결한 한 문장, 마침표로 끝.
@@ -29,6 +33,11 @@ MAX_SENSES_TOTAL = 30     # 기본형 하나당 Gemini에 넘기는 뜻 최대 �
 SOURCE_DICT = "dictionary"   # 사전 뜻을 골라 다듬음
 SOURCE_AI = "ai"             # 사전에 맞는 뜻이 없어 Gemini가 직접 씀
 SOURCE_FALLBACK = "fallback" # Gemini 실패 → 사전 첫 뜻 그대로
+
+# 어떻게 정했는지 (서버 로그·캐시용, result["decided"])
+DECIDED_SINGLE = "single"    # 사전 뜻 후보가 1개뿐
+DECIDED_POS = "pos"          # 클릭한 말의 형태로 품사를 걸러 1개
+DECIDED_GEMINI = "gemini"    # 여러 개라 Gemini가 문맥으로 고름
 
 STYLE_RULES = """[뜻풀이 형식 규칙]
 - 국어사전처럼 간결하게 '한 문장'으로 쓴다. 마침표(.)로 끝낸다.
@@ -120,6 +129,85 @@ def lemma_candidates(word: str) -> list[str]:
             seen.add(c)
             out.append(c)
     return out
+
+
+_NOUN_POS = ("명사", "대명사", "의존 명사", "의존명사", "수사")
+_PREDICATE_POS = ("동사", "형용사", "보조 동사", "보조 형용사")
+
+
+def lemma_forms(word: str) -> dict:
+    """기본형 후보를 형태별로: {"self": 클릭한 말 그대로, "noun": 조사를 뗀 말(조사가 붙었을 때만),
+    "predicate": 관형형·활용형에서 만든 '~다' 기본형들}"""
+    w = clean_word(word)
+    stripped = re.sub(_PARTICLES, "", w)
+    lemmas = lemma_candidates(w)
+    return {
+        "self": w,
+        "noun": stripped if stripped and stripped != w else "",
+        "predicate": [l for l in lemmas if l.endswith("다") and l not in (w, stripped)],
+    }
+
+
+def _pos_ok(pos: str, allowed: tuple) -> bool:
+    return any(a in (pos or "") for a in allowed)
+
+
+def filter_by_form(word: str, candidates: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """클릭한 말의 형태로 품사 거르기.
+    - 조사를 뗀 말의 뜻 → 명사 뜻만 (토끼를 → 토끼[명사])
+    - 관형형·활용형으로 만든 '~다' 기본형의 뜻 → 동사·형용사 뜻만 (노란 → 노랗다[형용사])
+    - 클릭한 말 그대로가 사전에 있으면 그대로 둠
+    조사 / 관형형 둘 다 될 수 있는 말(토끼는: 토끼+는 / 토끼다+는)은 둘 다 남아서 Gemini가 문맥으로 고름"""
+    forms = lemma_forms(word)
+    w = forms["self"]
+    # 노란/하얀/예쁜처럼 형용사 관형형으로 읽히면, 같은 글자의 명사(노란 虜亂)는 뺌.
+    # 동사로만 읽히는 경우(기린 → 기리다, 산 → 사다)는 명사일 때가 많아서 둘 다 남김
+    adjective_form = bool(w) and _jong(w[-1]) == _JONG_N and any(
+        _pos_ok(x.get("pos"), ("형용사",)) for l in forms["predicate"] for x in candidates.get(l, [])
+    )
+    out: dict[str, list[dict]] = {}
+    for lemma, senses in candidates.items():
+        if lemma == w:
+            kept = [x for x in senses if _pos_ok(x.get("pos"), _PREDICATE_POS + ("관형사",))] if adjective_form else senses
+        elif lemma == forms["noun"]:
+            kept = [x for x in senses if _pos_ok(x.get("pos"), _NOUN_POS)]
+        elif lemma in forms["predicate"]:
+            kept = [x for x in senses if _pos_ok(x.get("pos"), _PREDICATE_POS)]
+        else:
+            kept = senses
+        out[lemma] = kept
+    return out
+
+
+def _count(candidates: dict[str, list[dict]]) -> int:
+    return sum(len(v) for v in candidates.values())
+
+
+def dictionary_result(lemma: str, sense: dict, decided: str) -> dict:
+    """Gemini 없이 사전 뜻 그대로"""
+    return {
+        "hard": lemma,
+        "definition": to_dictionary_style(sense["definition"]),
+        "dict_definition": sense["definition"],
+        "source": SOURCE_DICT,
+        "ambiguous": False,
+        "decided": decided,
+    }
+
+
+def decide_without_gemini(word: str, candidates: dict[str, list[dict]], use_form: bool = True):
+    """(결과, 거른 후보). 결과가 None이면 Gemini가 고를 차례"""
+    if _count(candidates) == 1:
+        lemma, senses = next((l, v) for l, v in candidates.items() if v)
+        return dictionary_result(lemma, senses[0], DECIDED_SINGLE), candidates
+    if not use_form:
+        return None, candidates
+    filtered = filter_by_form(word, candidates)
+    if _count(filtered) == 1:
+        lemma, senses = next((l, v) for l, v in filtered.items() if v)
+        return dictionary_result(lemma, senses[0], DECIDED_POS), filtered
+    # 거르니 하나도 안 남으면(품사 표기가 다른 경우 등) 거르기 전 후보로 Gemini
+    return None, (filtered if _count(filtered) else candidates)
 
 
 # ----------------------------------------
@@ -261,6 +349,7 @@ JSON 배열로만 답해. 단어 순서대로 하나씩:
                     "dict_definition": chosen,
                     "source": SOURCE_DICT if chosen else SOURCE_AI,
                     "ambiguous": False,
+                    "decided": DECIDED_GEMINI,
                 }
     except Exception as e:
         _log("문맥 뜻 고르기", e)
@@ -325,6 +414,13 @@ async def explain_word(model, word: str, sentence: str, age: str = "5-7세") -> 
     async with httpx.AsyncClient(timeout=6.0) as client:
         sense_lists = await asyncio.gather(*[fetch_senses(l, client) for l in lemmas])
     candidates = dict(zip(lemmas, sense_lists))
+    total = _count(candidates)
+    decided, candidates = decide_without_gemini(word, candidates)
+    if decided:
+        how = "사전 1개" if decided["decided"] == DECIDED_SINGLE else f"품사로 결정 (후보 {total}개 → 1개)"
+        print(f"[뜻풀이] {how}: {clean_word(word)} → {decided['hard']}", flush=True)
+        return decided
+    print(f"[뜻풀이] Gemini 선택: {clean_word(word)} (후보 {total}개 → 거른 뒤 {_count(candidates)}개)", flush=True)
     entry = {"word": clean_word(word), "sentence": sentence, "candidates": candidates,
              "default_lemma": lemmas[1] if len(lemmas) > 1 else lemmas[0]}
     result = (await pick_definitions(model, [entry], age))[0]
@@ -345,12 +441,23 @@ async def explain_words(model, items: list[dict], age: str = "5-7세") -> list[d
     """기본형을 이미 아는 여러 단어(추천 단어): items [{word, sentence}] → 같은 순서의 결과 (Gemini 1번)"""
     async with httpx.AsyncClient(timeout=6.0) as client:
         sense_lists = await asyncio.gather(*[fetch_senses(it["word"], client) for it in items])
-    entries = [
-        {"word": it["word"], "sentence": it["sentence"], "candidates": {it["word"]: senses},
-         "default_lemma": it["word"]}
-        for it, senses in zip(items, sense_lists)
-    ]
-    return await pick_definitions(model, entries, age)
+    results: list = [None] * len(items)
+    entries, positions = [], []
+    for i, (it, senses) in enumerate(zip(items, sense_lists)):
+        candidates = {it["word"]: senses}
+        decided, _ = decide_without_gemini(it["word"], candidates, use_form=False)  # 기본형을 알아서 품사 거르기는 없음
+        if decided:
+            print(f"[뜻풀이] 사전 1개: {it['word']} (추천 단어)", flush=True)
+            results[i] = decided
+            continue
+        entries.append({"word": it["word"], "sentence": it["sentence"], "candidates": candidates,
+                        "default_lemma": it["word"]})
+        positions.append(i)
+    if entries:
+        print(f"[뜻풀이] Gemini 선택: 추천 단어 {[e['word'] for e in entries]}", flush=True)
+        for i, r in zip(positions, await pick_definitions(model, entries, age)):
+            results[i] = r
+    return results
 
 
 def sentence_with(text: str, needles: list[str]) -> str:

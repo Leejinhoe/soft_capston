@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 import colab_client
+from story_choices import COLAB_FALLBACK_CHOICES, acceptable_choices, finalize_choices
 from story_text import clean_story_text, fix_particle_spacing
 
 MAX_SCENES = 8
@@ -34,6 +35,7 @@ class StorySetup:
     genre: str
     age: str
     remote_story_id: str = ""   # Colab이 준 story_id (stories.colab_story_id)
+    previous_choices: list[str] = field(default_factory=list)  # 이 동화에서 이미 보여 준 선택지 (겹치지 않게)
 
 
 @dataclass
@@ -107,13 +109,6 @@ def _clean_scene_text(raw) -> str:
     return text
 
 
-GENERIC_CHOICES = [
-    "친구에게 도와 달라고 말해 본다",
-    "반짝이는 쪽으로 조심조심 걸어가 본다",
-    "잠깐 멈춰서 주위를 살펴본다",
-]
-
-
 # ----------------------------------------
 # 엔진 공통 모양
 # ----------------------------------------
@@ -154,6 +149,14 @@ def _setup_block(setup: StorySetup) -> str:
     return f"주제(주인공): {setup.topic}\n장르: {setup.genre}\n연령대: {setup.age}"
 
 
+def _avoid_block(setup: StorySetup) -> str:
+    """이전 장면 선택지와 겹치지 않게 (Gemini 프롬프트용)"""
+    if not setup.previous_choices:
+        return ""
+    listed = "\n".join(f"- {c}" for c in setup.previous_choices[-9:])
+    return f"\n- 선택지는 이번 장면 내용에 맞게 새로 만들어. 아래 이전 선택지와 같거나 비슷하면 안 돼.\n{listed}\n"
+
+
 def _story_so_far(scenes: list[str]) -> str:
     return "\n\n".join(f"[장면 {i}]\n{text}" for i, text in enumerate(scenes, 1))
 
@@ -164,7 +167,7 @@ def opening_prompt(setup: StorySetup) -> str:
 {_setup_block(setup)}
 
 첫 장면에서는 주인공과 배경을 소개하고, 작은 사건이나 궁금한 일이 생기게 해.
-{_COMMON_RULES.format(age=setup.age)}{_CHOICE_RULES}
+{_COMMON_RULES.format(age=setup.age)}{_CHOICE_RULES}{_avoid_block(setup)}
 반드시 아래 JSON 형식으로만 답해:
 {{"scene": "첫 장면 본문", "choices": ["선택지1", "선택지2", "선택지3"]}}
 """
@@ -191,7 +194,7 @@ def next_scene_prompt(setup: StorySetup, scenes: list[str], choice: str) -> str:
 
 아이가 고른 선택을 주인공이 실제로 하는 것으로 장면을 시작하고, 앞 이야기와 자연스럽게 이어지게 써.
 {pacing}
-{_COMMON_RULES.format(age=setup.age)}{_CHOICE_RULES}
+{_COMMON_RULES.format(age=setup.age)}{_CHOICE_RULES}{_avoid_block(setup)}
 반드시 아래 JSON 형식으로만 답해:
 {{"scene": "다음 장면 본문", "choices": ["선택지1", "선택지2", "선택지3"]}}
 """
@@ -231,11 +234,11 @@ class GeminiStoryEngine(StoryEngine):
 
     async def opening(self, setup: StorySetup) -> SceneResult:
         data = await self._ask(opening_prompt(setup))
-        return SceneResult(_clean_scene_text(data.get("scene")), clean_choices(data.get("choices"), GENERIC_CHOICES))
+        return SceneResult(_clean_scene_text(data.get("scene")), clean_choices(data.get("choices"), []))
 
     async def next_scene(self, setup: StorySetup, scenes: list[str], choice: str) -> SceneResult:
         data = await self._ask(next_scene_prompt(setup, scenes, choice))
-        return SceneResult(_clean_scene_text(data.get("scene")), clean_choices(data.get("choices"), GENERIC_CHOICES))
+        return SceneResult(_clean_scene_text(data.get("scene")), clean_choices(data.get("choices"), []))
 
     async def ending(self, setup: StorySetup, scenes: list[str], choice: Optional[str] = None) -> SceneResult:
         data = await self._ask(ending_prompt(setup, scenes, choice))
@@ -245,8 +248,6 @@ class GeminiStoryEngine(StoryEngine):
 # ----------------------------------------
 # 팀원 Colab 서버 (동화 생성의 주인공)
 # ----------------------------------------
-# Colab 서버가 선택지 JSON을 못 읽었을 때 돌려주는 기본 선택지 (서버 normalize_choices의 fallback)
-COLAB_FALLBACK_CHOICES = ["계속 나아간다", "도움을 요청한다", "잠깐 생각해본다"]
 # Colab에는 마무리 기능이 없어서, 결말이 필요할 때 이 선택지를 보내 결말 장면을 받습니다. (돌아온 선택지는 버림)
 ENDING_CHOICE = "모두 함께 행복하게 이야기를 마무리한다"
 TITLE_TIMEOUT_SEC = 20
@@ -306,36 +307,6 @@ def stream_preview_text(raw: str) -> str:
     return text
 
 
-def is_colab_default_choices(raw) -> bool:
-    """Colab이 선택지를 못 만들고 기본값을 돌려줬는지 (3개 중 2개 이상이 기본값)"""
-    items = [str(c).strip() for c in raw] if isinstance(raw, list) else []
-    return sum(1 for c in items if c in COLAB_FALLBACK_CHOICES) >= 2
-
-
-_CHOICE_JUNK = re.compile(r"[\"{}\[\]<>:;`/\\=]")
-
-
-def is_usable_choice(choice) -> bool:
-    """아이에게 보여 줄 만한 선택지인지: 한글이 있고, JSON·코드 찌꺼기(따옴표, 콜론, 괄호, //)가 없고, 길이가 알맞음
-    (실제 Colab에서 'javascript', 'description": "…' 같은 선택지가 온 적이 있음)"""
-    if not isinstance(choice, str):
-        return False
-    text = choice.strip()
-    hangul = len(re.findall(r"[가-힣]", text))
-    latin = len(re.findall(r"[A-Za-z]", text))
-    return 4 <= len(text) <= 60 and hangul >= 3 and latin <= 2 and not _CHOICE_JUNK.search(text)
-
-
-def _usable(raw) -> list[str]:
-    return [c for c in raw if is_usable_choice(c)] if isinstance(raw, list) else []
-
-
-def needs_new_choices(raw) -> bool:
-    """Colab 기본값이거나, 쓸 만한 선택지가 3개가 안 되면 다시 만들기"""
-    if is_colab_default_choices(raw):
-        return True
-    items = raw if isinstance(raw, list) else []
-    return sum(1 for c in items if is_usable_choice(c)) < CHOICE_COUNT
 
 
 def title_prompt(setup: StorySetup, full_text: str) -> str:
@@ -358,7 +329,7 @@ def choices_prompt(setup: StorySetup, story_text: str) -> str:
 
 [지금까지의 이야기]
 {story_text[-1500:]}
-{_CHOICE_RULES}
+{_CHOICE_RULES}{_avoid_block(setup)}
 반드시 아래 JSON 형식으로만 답해:
 {{"choices": ["선택지1", "선택지2", "선택지3"]}}
 """
@@ -433,10 +404,14 @@ class RemoteStoryEngine(StoryEngine):
             return default_title(setup.topic)
 
     async def _good_choices(self, setup: StorySetup, story_text: str, raw, emit: Emit) -> list[str]:
-        """Colab 선택지가 기본값이거나 찌꺼기면: Colab /story/choices로 다시 → 그래도 안 되면 Gemini
-        → 다 안 되면 쓸 만한 것 + 예비 선택지 (찌꺼기는 절대 보여 주지 않음)"""
-        if not needs_new_choices(raw):
-            return clean_choices(raw, GENERIC_CHOICES)
+        """Colab 선택지 중 쓸 만한 것(기본값·찌꺼기·이전 선택지와 겹침 제외)이 3개가 안 되면:
+        Colab /story/choices로 다시 → 그래도 모자라면 Gemini. 그래도 모자란 만큼은 ChainStoryEngine이 템플릿으로 채움"""
+        previous = setup.previous_choices
+        good = acceptable_choices(raw, previous)
+        if len(good) >= CHOICE_COUNT:
+            print("[선택지] colab 첫 선택지 그대로", flush=True)
+            return good[:CHOICE_COUNT]
+        print(f"[선택지] colab 첫 선택지 쓸 만한 것 {len(good)}개 (받은 것: {raw}) → /story/choices로 다시", flush=True)
         _emit(emit, {"type": "status", "message": "🤖 선택지를 다시 골라 보고 있어요"})
         try:
             data = await colab_client.post_json(
@@ -444,21 +419,22 @@ class RemoteStoryEngine(StoryEngine):
                 {"story_so_far": story_text, "genre": setup.genre, "age": setup.age},
                 colab_client.CHOICES_TIMEOUT_SEC,
             )
-            if not needs_new_choices(data.get("choices")):
-                print("[동화 엔진] colab 선택지: /story/choices로 다시 만듦", flush=True)
-                return clean_choices(_usable(data.get("choices")), GENERIC_CHOICES)
-            print("[동화 엔진] colab 선택지: 다시 만들어도 기본값/찌꺼기 → Gemini로 선택지만", flush=True)
+            good += acceptable_choices(data.get("choices"), previous + good)
+            if len(good) >= CHOICE_COUNT:
+                print("[선택지] colab /story/choices로 다시 만듦", flush=True)
+                return good[:CHOICE_COUNT]
+            print(f"[선택지] /story/choices도 모자람 (받은 것: {data.get('choices')}) → Gemini", flush=True)
         except Exception as e:
-            print(f"[동화 엔진] colab /story/choices 실패 → Gemini로 선택지만 ({e})", flush=True)
+            print(f"[선택지] colab /story/choices 실패 → Gemini ({e})", flush=True)
         try:
             data = await self._gemini_json(choices_prompt(setup, story_text), CHOICES_GEMINI_TIMEOUT_SEC)
-            choices = clean_choices(_usable(data.get("choices")), [])
-            if len(choices) == CHOICE_COUNT:
-                return choices
+            good += acceptable_choices(clean_choices(data.get("choices"), []), previous + good)
+            if len(good) >= CHOICE_COUNT:
+                print("[선택지] Gemini로 만듦", flush=True)
+                return good[:CHOICE_COUNT]
         except Exception as e:
-            print(f"[동화 엔진] 선택지 Gemini 실패 → Colab 선택지 중 쓸 만한 것 + 예비 선택지 ({type(e).__name__}: {str(e)[:120]})", flush=True)
-        # 마지막: Colab 선택지 중 쓸 만한 것(기본값 포함) + 예비 선택지로 3개 (찌꺼기는 버림)
-        return clean_choices(_usable(raw), COLAB_FALLBACK_CHOICES)
+            print(f"[선택지] Gemini 실패 ({type(e).__name__}: {str(e)[:120]})", flush=True)
+        return good  # 모자란 만큼은 장면 본문 낱말로 템플릿 (ChainStoryEngine)
 
     async def opening(self, setup: StorySetup, emit: Emit = None) -> SceneResult:
         data = await self._scene(
@@ -514,14 +490,14 @@ class TemplateStoryEngine(StoryEngine):
             f"어느 맑은 아침, {topic}{_josa(topic, '은', '는')} {setup.genre} 이야기처럼 신기한 일이 생길 것 같은 "
             "예감이 들었어요. 저 멀리서 반짝이는 빛이 손짓하고 있었답니다."
         )
-        return SceneResult(text, list(GENERIC_CHOICES))
+        return SceneResult(text, [])
 
     async def next_scene(self, setup: StorySetup, scenes: list[str], choice: str) -> SceneResult:
         text = (
             f"주인공은 \"{choice}\" 하기로 마음먹었어요.\n\n"
             "용기를 내어 한 걸음 내딛자 새로운 친구가 반갑게 인사해 주었어요. 둘은 함께 웃으며 다음 길을 찾아보기로 했답니다."
         )
-        return SceneResult(text, list(GENERIC_CHOICES))
+        return SceneResult(text, [])
 
     async def ending(self, setup: StorySetup, scenes: list[str], choice: Optional[str] = None) -> SceneResult:
         first = f"주인공은 \"{choice}\" 하기로 했어요.\n\n" if choice else ""
@@ -535,6 +511,17 @@ class TemplateStoryEngine(StoryEngine):
 # ----------------------------------------
 # 순서대로 시도
 # ----------------------------------------
+def _finish_choices(result: SceneResult, setup: StorySetup, number: int) -> None:
+    """어느 엔진이든: 이번 장면에 맞고 이전 선택지와 안 겹치는 3개. 모자라면 본문의 인물·장소 낱말로 템플릿"""
+    choices, filled = finalize_choices(
+        result.choices, result.text, setup.topic, setup.previous_choices,
+        seed=f"{setup.remote_story_id}|{number}", wrap_up=number >= WRAP_UP_FROM,
+    )
+    if filled:
+        print(f"[선택지] {result.engine} 장면 {number}: {filled}개를 본문 낱말 템플릿으로 채움 → {choices}", flush=True)
+    result.choices = choices
+
+
 class ChainStoryEngine(StoryEngine):
     """Colab → Gemini → 예비 장면. emit이 있으면 엔진을 바꿀 때마다 화면에 알려 줌 (engine / reset 이벤트)."""
 
@@ -553,6 +540,8 @@ class ChainStoryEngine(StoryEngine):
                 else:
                     result = await getattr(engine, method)(*args)
                 result.engine = engine.name
+                if method != "ending":
+                    _finish_choices(result, args[0], len(args[1]) + 1 if len(args) > 1 else 1)
                 return result
             except Exception as e:
                 print(f"[동화 엔진] {engine.name}.{method} 실패 → 다음 엔진 ({type(e).__name__}: {e})", flush=True)

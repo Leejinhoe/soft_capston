@@ -48,7 +48,7 @@ router = APIRouter(tags=["분기형 동화"])
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_COMPLETED = "completed"
 STORY_NOT_FOUND = "동화를 찾지 못했어요."
-ENGINE_FAILED = "이야기 요정이 잠깐 쉬고 있어요. 조금 뒤에 다시 눌러 주세요."
+ENGINE_FAILED = "이야기를 다 만들지 못했어요. 조금 뒤에 다시 눌러 주세요."
 ALREADY_MOVED = "이야기가 벌써 다음으로 넘어갔어요. 화면을 새로 불러올게요."
 
 _engine: Optional[StoryEngine] = None
@@ -135,6 +135,7 @@ def _setup(doc: dict) -> StorySetup:
         genre=doc.get("genre") or "",
         age=doc.get("age") or "5-7세",
         remote_story_id=doc.get("colab_story_id") or "",
+        previous_choices=[c for sc in (doc.get("scenes") or []) for c in (sc.get("choices") or []) if isinstance(c, str)],
     )
 
 

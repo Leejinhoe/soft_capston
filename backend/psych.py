@@ -43,7 +43,7 @@ NOTICE = (
 )
 EMPTY_MESSAGE = "동화를 끝까지 만들면 분석해 줄게요!"
 NOT_ANALYZABLE = "선택지를 골라 가며 끝까지 만든 동화만 볼 수 있어요."
-ENGINE_FAILED = "분석 요정이 잠깐 쉬고 있어요. 조금 뒤에 다시 열어 주세요."
+ENGINE_FAILED = "아직 이야기 속 마음을 다 살펴보지 못했어요. 조금 뒤에 다시 열어 주세요."
 
 _engine: Optional[PsychEngine] = None
 _on_error = None

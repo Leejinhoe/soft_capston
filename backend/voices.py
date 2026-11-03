@@ -60,7 +60,7 @@ SAMPLE_SENTENCE = (
 )
 PRIVACY_NOTICE = "녹음한 목소리는 동화 읽어주기에만 쓰이고, 언제든 지울 수 있어요."
 NO_FAMILY_VOICE_HINT = "가족 목소리를 등록하면 그 목소리로 들을 수 있어요."
-FALLBACK_MESSAGE = "지금은 가족 목소리 요정이 쉬고 있어서 기본 목소리로 읽어 줄게요."
+FALLBACK_MESSAGE = "이번에는 기본 목소리로 읽어 줄게요 🎧"
 TOO_SHORT_MESSAGE = f"목소리가 {MIN_SECONDS:.0f}초보다 짧아요. 예시 문장을 끝까지 천천히 읽으며 다시 녹음해 주세요."
 
 
@@ -305,7 +305,7 @@ async def _default_tts(story_id: str, scene_number: int, text: str) -> tuple[Pat
         audio = await asyncio.to_thread(_gtts_sync, text)
     except Exception as e:
         print(f"[동화 듣기] 기본 목소리(gTTS) 실패: {type(e).__name__}: {e}", flush=True)
-        raise HTTPException(status_code=503, detail="목소리 요정이 잠깐 쉬고 있어요. 조금 뒤에 다시 눌러 주세요.")
+        raise HTTPException(status_code=503, detail="목소리를 준비하지 못했어요. 조금 뒤에 다시 눌러 주세요.")
     _write_atomic(path, audio)
     return path, False
 

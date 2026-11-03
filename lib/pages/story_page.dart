@@ -8,11 +8,10 @@ import 'package:just_audio/just_audio.dart';
 import '../widgets/custom_bottom_nav.dart';
 import 'family_voice_page.dart';
 
-/// 장면을 만든 엔진 → 화면에 작게 표시
+/// 장면을 만든 엔진 → 화면에 작게 표시. 우리 팀 AI(Colab) 장면에만 보여 주고,
+/// 다른 엔진으로 넘어간 건 아이 화면에 드러내지 않음 (서버 로그에만)
 const Map<String, String> _engineLabels = {
   'colab': '🤖 우리 팀 AI',
-  'gemini': '✨ Gemini',
-  'template': '📘 기본 이야기',
 };
 
 /// 분기형 동화: 첫 장면 → 선택지 고르기 → … → 결말 (백엔드 branching.py)
@@ -38,20 +37,39 @@ const _choiceColors = [
 ];
 const _choiceEmojis = ['🌸', '🌊', '🍀'];
 
-const _sceneLoadingMessages = [
-  '🤖 우리 팀 AI가 동화를 쓰고 있어요 ✍️',
-  '이야기 요정이 다음 장면을 쓰고 있어요 ✏️',
-  '별님이 반짝반짝 생각 중이에요 ✨',
-  '책장을 사르륵 넘기는 중이에요 📖',
-  '두근두근, 무슨 일이 생길까요? 💓',
+// 로딩 문구 (돌아가며 보여 줌). 우리 팀 AI가 쓸 때와 아닐 때 느낌만 다르게,
+// 어느 쪽이든 엔진 이름이나 "대신", "쉬어서" 같은 말은 쓰지 않음
+const _ourAiSceneMessages = [
+  '✍️ 이야기 요정이 한 글자 한 글자 동화를 적고 있어요',
+  '🤖 우리 팀 AI가 다음 장면을 쓰고 있어요',
+  '📝 연필이 사각사각, 새 장면이 태어나는 중이에요',
+  '🌱 이야기 씨앗이 쑥쑥 자라고 있어요',
+  '💭 주인공이 다음에 무엇을 할지 곰곰이 생각 중이에요',
 ];
-const _endingLoadingMessages = [
-  '🤖 우리 팀 AI가 결말을 쓰고 있어요 ✍️',
-  '따뜻한 결말을 준비하고 있어요 🌙',
-  '이야기에 어울리는 제목을 짓고 있어요 🏷️',
-  '배울 단어를 골라 담고 있어요 🧺',
-  '포근한 이불을 덮어 주는 중이에요 🛏️',
+const _ourAiEndingMessages = [
+  '✍️ 이야기 요정이 마지막 장면을 정성껏 적고 있어요',
+  '🤖 우리 팀 AI가 따뜻한 결말을 쓰고 있어요',
+  '🌙 이야기가 포근하게 끝나도록 마무리하고 있어요',
+  '🏷️ 이야기에 어울리는 제목을 짓고 있어요',
+  '🧺 배울 단어를 골라 담고 있어요',
 ];
+const _gentleSceneMessages = [
+  '🌟 곧 동화가 완성돼요, 조금만 기다려 주세요',
+  '📖 책장을 사르륵 넘기는 중이에요',
+  '✨ 별님이 반짝반짝 다음 이야기를 떠올리고 있어요',
+  '💓 두근두근, 무슨 일이 생길까요?',
+  '🎈 신나는 장면을 준비하고 있어요',
+];
+const _gentleEndingMessages = [
+  '🌟 곧 동화가 완성돼요, 조금만 기다려 주세요',
+  '🌙 따뜻한 결말을 준비하고 있어요',
+  '🏷️ 이야기에 어울리는 제목을 짓고 있어요',
+  '🧺 배울 단어를 골라 담고 있어요',
+  '🛏️ 포근한 이불을 덮어 주는 중이에요',
+];
+// 엔진을 알기 전(요청 직후)
+const _sceneLoadingMessages = _gentleSceneMessages;
+const _endingLoadingMessages = _gentleEndingMessages;
 
 class _StoryPageState extends State<StoryPage> {
   final TextEditingController promptController = TextEditingController();
@@ -332,7 +350,10 @@ class _StoryPageState extends State<StoryPage> {
         if (!mounted) return true;
         switch (event['type']) {
           case 'engine':
-            setState(() => _streamEngine = (event['engine'] ?? '').toString());
+            setState(() {
+              _streamEngine = (event['engine'] ?? '').toString();
+              _streamStatus = ''; // 앞 엔진의 안내는 지움 (엔진이 바뀐 건 화면에 말하지 않음)
+            });
           case 'text':
             setState(() {
               _streamTarget = (event['text'] ?? '').toString();
@@ -1194,23 +1215,19 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
-  /// 생성 중: 글이 오기 시작했으면 쓰는 중인 장면 카드, 아니면 엔진별 로딩 문구
+  /// 생성 중: 글이 오기 시작했으면 쓰는 중인 장면 카드, 아니면 엔진별 로딩 문구(돌아가며)
   Widget _loadingCard() {
     if (_streamTarget.isNotEmpty) return _writingCard();
-    final String message;
+    final ending = identical(_loadingMessages, _endingLoadingMessages);
+    final List<String> messages;
     if (_streamEngine == 'colab') {
-      message = '🤖 우리 팀 AI가 동화를 쓰고 있어요 ✍️';
-    } else if (_streamEngine == 'gemini') {
-      message = '✨ 우리 팀 AI가 잠깐 쉬어서 Gemini가 대신 쓰고 있어요';
-    } else if (_streamEngine == 'template') {
-      message = '📘 기본 이야기로 이어 갈게요';
+      messages = ending ? _ourAiEndingMessages : _ourAiSceneMessages;
+    } else if (_streamEngine.isNotEmpty) {
+      messages = ending ? _gentleEndingMessages : _gentleSceneMessages;
     } else {
-      message = _loadingMessages[_loadingIndex % _loadingMessages.length];
+      messages = _loadingMessages;
     }
-    return _loadingBox(message,
-        sub: _streamStatus.isNotEmpty
-            ? _streamStatus
-            : (_streamEngine == 'colab' ? '우리 팀이 직접 학습시킨 동화 모델이에요. 조금만 기다려 주세요!' : ''));
+    return _loadingBox(messages[_loadingIndex % messages.length], sub: _streamStatus);
   }
 
   /// 우리 팀 AI가 쓰는 글이 한 글자씩 나타나는 카드
@@ -1243,8 +1260,9 @@ class _StoryPageState extends State<StoryPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(_engineLabels[_streamEngine] ?? '',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+              if (_engineLabels[_streamEngine] != null)
+                Text(_engineLabels[_streamEngine]!,
+                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 14),
@@ -1266,7 +1284,7 @@ class _StoryPageState extends State<StoryPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _streamStatus.isNotEmpty ? _streamStatus : '🤖 다음 이야기를 준비하고 있어요',
+                    _streamStatus.isNotEmpty ? _streamStatus : '🌟 다음 이야기를 준비하고 있어요',
                     style: const TextStyle(color: Colors.white60, fontSize: 14),
                   ),
                 ),

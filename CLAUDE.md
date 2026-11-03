@@ -34,6 +34,7 @@ backend/                 # FastAPI (uvicorn main:app), .env도 여기
   branching.py           # 분기형 동화 API (/api/stories/branching/start, /{id}/choose, /{id}/finish, /{id}/branching)
   colab_client.py        # 팀원 Colab 서버(STORY_SERVER_URL) 호출 공통: 타임아웃, 꺼졌을 때 60초 건너뛰기, KOTE 감정 요약
   story_engine.py        # 장면 생성 엔진: Colab(우리 팀 모델, 스트리밍) → Gemini(Colab 실패 때만) → 예비 장면
+  story_choices.py       # 선택지 마무리: 이번 장면에 맞게·이전 선택지와 안 겹치게, 모자라면 본문 낱말 템플릿
   story_images.py        # 장면 그림: Colab /story/image → JPEG static/story_images, stories.scene_images
   voices.py              # 우리 가족 목소리(voice_data/, family_voices) + 동화 듣기 /api/tts (gTTS 기본, Colab XTTS)
   story_vocab.py         # 동화 본문 기반 추천 단어 (예전 generate-story와 분기형 완료 때 공통)
