@@ -19,7 +19,10 @@ class _UserDetailPageState extends State<UserDetailPage> {
   bool busy = false;
   bool changed = false;
 
-  String get userId => widget.user['id'].toString();
+  String get userId => widget.user['id'].toString(); // 공개 id (API 주소용)
+  String get loginId =>
+      (detail?['login_id'] ?? widget.user['login_id'] ?? userId).toString(); // 화면에 보일 아이디
+  String get email => (detail?['email'] ?? '').toString().trim();
   String get _path => '/api/admin/users/${Uri.encodeComponent(userId)}';
 
   @override
@@ -97,25 +100,131 @@ class _UserDetailPageState extends State<UserDetailPage> {
     });
   }
 
+  // ---------- 안내 메일 ----------
+  /// 정지·탈퇴 팝업 안에 보여 줄 메일 안내
+  Widget _mailNotice() {
+    final bool has = email.isNotEmpty;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: (has ? AdminColors.blue : AdminColors.red).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(has ? Icons.mail_outline : Icons.mail_lock,
+              size: 18, color: has ? AdminColors.blue : AdminColors.red),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              has
+                  ? '$email 로 조치 종류·사유·날짜가 담긴 안내 메일을 보내요.'
+                  : '이메일이 없어 안내 메일을 보낼 수 없어요.',
+              style: TextStyle(
+                  color: has ? Colors.white70 : AdminColors.red, fontSize: 12, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 서버 응답의 mail 값 → 토스트 뒤에 붙일 문구
+  String _mailResult(dynamic mail) {
+    switch (mail) {
+      case 'queued':
+        return ' 안내 메일을 보냈어요.';
+      case 'no_email':
+        return ' (이메일이 없어 안내 메일은 보내지 못했어요)';
+      case 'not_configured':
+        return ' (메일 설정이 없어 안내 메일은 보내지 못했어요)';
+      default:
+        return '';
+    }
+  }
+
+  /// 사유 입력 팝업 (정지). 취소하면 null
+  Future<String?> _askBanReason() async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AdminColors.card,
+        title: const Text('이용 정지',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("'${detail?['nickname']}'님을 정지할까요?\n바로 로그아웃되고 로그인할 수 없어요.",
+                  style: const TextStyle(color: Colors.white70, height: 1.5)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 200,
+                maxLines: 3,
+                style: const TextStyle(color: Colors.white),
+                decoration: adminInputDecoration('정지 사유 (안내 메일에 들어가요)'),
+              ),
+              _mailNotice(),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AdminColors.red, foregroundColor: Colors.white),
+            child: const Text('정지하기'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return reason;
+  }
+
   // ---------- 정지 / 해제 ----------
   Future<void> toggleBan() async {
     final banned = detail?['status'] == 'banned';
-    final ok = await adminConfirm(
-      context,
-      title: banned ? '정지 해제' : '이용 정지',
-      message: banned
-          ? "'${detail?['nickname']}'님의 정지를 풀까요?\n다시 로그인해서 이용할 수 있어요."
-          : "'${detail?['nickname']}'님을 정지할까요?\n바로 로그아웃되고 로그인할 수 없어요.",
-      okText: banned ? '해제하기' : '정지하기',
-      okColor: banned ? AdminColors.green : AdminColors.red,
-    );
-    if (!ok) return;
+    String reason = '';
+    if (banned) {
+      final ok = await adminConfirm(
+        context,
+        title: '정지 해제',
+        message: "'${detail?['nickname']}'님의 정지를 풀까요?\n다시 로그인해서 이용할 수 있어요.",
+        okText: '해제하기',
+        okColor: AdminColors.green,
+      );
+      if (!ok) return;
+    } else {
+      final input = await _askBanReason();
+      if (input == null) return;
+      if (input.isEmpty) {
+        if (mounted) adminToast(context, '정지 사유를 입력해 주세요.');
+        return;
+      }
+      reason = input;
+    }
     await _run(() async {
       final response = await ApiClient.patch('$_path/status',
-          body: {'status': banned ? 'active' : 'banned'});
+          body: {'status': banned ? 'active' : 'banned', if (!banned) 'reason': reason});
       if (!mounted || !adminOk(context, response)) return;
       changed = true;
-      adminToast(context, banned ? '정지를 해제했어요.' : '이용을 정지했어요.');
+      adminToast(
+          context,
+          banned
+              ? '정지를 해제했어요.'
+              : '이용을 정지했어요.${_mailResult(ApiClient.decode(response)['mail'])}');
       await loadDetail();
     });
   }
@@ -124,6 +233,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
   Future<void> forceDelete() async {
     final storyCount = detail?['story_count'] ?? 0;
     bool deleteStories = false;
+    final reasonController = TextEditingController();
 
     final step1 = await showDialog<bool>(
       context: context,
@@ -142,7 +252,8 @@ class _UserDetailPageState extends State<UserDetailPage> {
             backgroundColor: AdminColors.card,
             title: const Text('강제 탈퇴 (1/2)',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            content: Column(
+            content: SingleChildScrollView(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -156,7 +267,17 @@ class _UserDetailPageState extends State<UserDetailPage> {
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 option(false, '동화는 남기기', '작성자는 "탈퇴한 회원"으로 보여요'),
                 option(true, '동화도 같이 삭제', '되돌릴 수 없어요'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonController,
+                  maxLength: 200,
+                  maxLines: 3,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: adminInputDecoration('탈퇴 사유 (안내 메일에 들어가요)'),
+                ),
+                _mailNotice(),
               ],
+            ),
             ),
             actions: [
               TextButton(
@@ -174,14 +295,22 @@ class _UserDetailPageState extends State<UserDetailPage> {
         },
       ),
     );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
     if (step1 != true || !mounted) return;
+    if (reason.isEmpty) {
+      adminToast(context, '탈퇴 사유를 입력해 주세요.');
+      return;
+    }
 
     final step2 = await adminConfirm(
       context,
       title: '강제 탈퇴 (2/2) 최종 확인',
-      message: "정말 '${detail?['nickname']}'(@$userId)님을 탈퇴시킬까요?\n\n"
+      message: "정말 '${detail?['nickname']}'(@$loginId)님을 탈퇴시킬까요?\n\n"
           "· 게시글 · 댓글 삭제\n"
-          "· 동화 $storyCount개 ${deleteStories ? '삭제' : '남김'}\n\n"
+          "· 동화 $storyCount개 ${deleteStories ? '삭제' : '남김'}\n"
+          "· 사유: $reason\n"
+          "· 안내 메일: ${email.isEmpty ? '이메일이 없어 보낼 수 없어요' : email}\n\n"
           "되돌릴 수 없어요.",
       okText: '탈퇴시키기',
       okColor: AdminColors.red,
@@ -189,9 +318,10 @@ class _UserDetailPageState extends State<UserDetailPage> {
     if (!step2) return;
 
     await _run(() async {
-      final response = await ApiClient.delete('$_path?delete_stories=$deleteStories');
+      final response = await ApiClient.delete('$_path?delete_stories=$deleteStories'
+          '&reason=${Uri.encodeQueryComponent(reason)}');
       if (!mounted || !adminOk(context, response)) return;
-      adminToast(context, '탈퇴 처리했어요.');
+      adminToast(context, '탈퇴 처리했어요.${_mailResult(ApiClient.decode(response)['mail'])}');
       Navigator.pop(context, true);
     });
   }
@@ -321,7 +451,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
                 style: const TextStyle(
                     color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('@${d['id']}', style: const TextStyle(color: Colors.white54)),
+            Text('@$loginId', style: const TextStyle(color: Colors.white54)),
             const SizedBox(height: 10),
             Wrap(spacing: 6, children: [
               adminTag(banned ? '정지' : '활동', banned ? AdminColors.red : AdminColors.green),

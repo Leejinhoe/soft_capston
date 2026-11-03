@@ -6,6 +6,7 @@ import '../core/password_rules.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/custom_bottom_nav.dart';
+import 'inbox_page.dart';
 import 'message_box_page.dart';
 import 'my_items_page.dart';
 import 'scrap_list_page.dart';
@@ -43,9 +44,10 @@ class _ProfilePageState extends State<ProfilePage> {
   int likeCount = 0;
   int unreadMessages = 0; // 안 읽은 쪽지 수
 
-  // 공지사항 / 받은 경고
-  List<Map<String, dynamic>> notices = [];
-  List<Map<String, dynamic>> warnings = [];
+  // 알림함 미리보기 (최근 3개, 안 읽은 경고가 먼저)
+  static const _inboxPreviewCount = 3;
+  List<Map<String, dynamic>> inboxItems = [];
+  int unreadWarnings = 0;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -104,17 +106,17 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // [GET] 3. 공지사항 + 내가 받은 경고
+  // [GET] 3. 알림함 미리보기 (공지사항 + 내가 받은 경고)
   Future<void> _fetchInbox() async {
     try {
-      final response = await ApiClient.get('/api/users/me/inbox');
+      final response =
+          await ApiClient.get('/api/users/me/inbox?limit=$_inboxPreviewCount');
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = ApiClient.decode(response);
         setState(() {
-          notices = (data['notices'] as List? ?? []).cast<Map<String, dynamic>>();
-          warnings =
-              (data['warnings'] as List? ?? []).cast<Map<String, dynamic>>();
+          inboxItems = (data['items'] as List? ?? []).cast<Map<String, dynamic>>();
+          unreadWarnings = data['unread_warning_count'] ?? 0;
         });
       }
     } catch (e) {
@@ -728,61 +730,10 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  String _date(dynamic iso) {
-    final d = DateTime.tryParse((iso ?? '').toString());
-    if (d == null) return '';
-    return '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
-  }
-
-  Widget _inboxTile({
-    required IconData icon,
-    required Color color,
-    required String title,
-    required String body,
-    required String date,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.35)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(title,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold)),
-                    ),
-                    Text(date,
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
-                  ],
-                ),
-                if (body.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(body,
-                      style:
-                          const TextStyle(color: Colors.white70, height: 1.5)),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+  Future<void> _openInbox() async {
+    await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const InboxPage()));
+    _fetchInbox(); // 읽음 표시 반영
   }
 
   Widget _sectionTitle(String text) => Padding(
@@ -799,25 +750,27 @@ class _ProfilePageState extends State<ProfilePage> {
 
   List<Widget> _buildInbox() {
     return [
-      _sectionTitle('알림함'),
-      // 경고가 있을 때만 경고 내역을 보여 주고, 없으면 공지사항만 보여 줍니다.
-      for (final w in warnings)
-        _inboxTile(
-          icon: Icons.warning_amber_rounded,
-          color: Colors.orangeAccent,
-          title: '받은 경고',
-          body: (w['reason'] ?? '').toString(),
-          date: _date(w['created_at']),
-        ),
-      for (final n in notices)
-        _inboxTile(
-          icon: Icons.campaign,
-          color: Colors.purpleAccent,
-          title: (n['title'] ?? '공지사항').toString(),
-          body: (n['content'] ?? '').toString(),
-          date: _date(n['created_at']),
-        ),
-      if (warnings.isEmpty && notices.isEmpty)
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: _sectionTitle('알림함')),
+          if (unreadWarnings > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, right: 4),
+              child: Text('안 읽은 경고 $unreadWarnings',
+                  style: const TextStyle(
+                      color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+            ),
+          TextButton(
+            onPressed: _openInbox,
+            child: const Text('전체 보기 >',
+                style: TextStyle(color: Colors.purpleAccent)),
+          ),
+        ],
+      ),
+      for (final item in inboxItems)
+        InboxTile(item: item, compact: true, onTap: _openInbox),
+      if (inboxItems.isEmpty)
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(20),

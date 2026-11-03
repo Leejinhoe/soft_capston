@@ -2,14 +2,16 @@
 
 - 모든 API는 /api/admin/... + require_admin
 - 신고 관리는 reports.py에 있습니다. (신고 상세 화면이 쓰는 PUT /admin/warning/{user_id}도 여기서 계속 지원)
-- 회원 id는 공개 id(일반: id, 카카오: kakao_id, 네이버/구글: social_id)를 씁니다.
+- 회원 id는 공개 id(일반: id, 카카오: kakao_id, 네이버/구글: social_id, 초창기 회원: str(_id))를 씁니다.
+  화면에 보이는 아이디는 login_id (초창기 회원은 account_id)
+- 정지·강제 탈퇴 시 그 회원 이메일로 안내 메일을 보냅니다. (실패해도 조치는 진행, 서버 로그만)
 """
 import re
 from datetime import datetime, timedelta
 from typing import Literal, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from community import remove_post_relations
@@ -26,12 +28,16 @@ from database import (
     users_collection,
     vocabularies_collection,
 )
+from mailer import mail_configured, send_admin_action_mail
 from security import (
+    ID_PROJECTION,
     ROLE_ADMIN,
     ROLE_USER,
     STATUS_ACTIVE,
     STATUS_BANNED,
     find_user_by_public_id,
+    login_id,
+    public_id_query,
     public_user_id,
     require_admin,
 )
@@ -44,6 +50,8 @@ NOTICE_NOT_FOUND = "공지사항을 찾지 못했어요."
 KST = timedelta(hours=9)  # DB의 created_at은 UTC. "오늘"은 한국 시간 기준으로 셉니다.
 
 UserStatus = Literal["active", "banned"]
+# 안내 메일 상태: queued = 보내는 중(결과는 서버 로그), no_email = 회원 이메일 없음, not_configured = SMTP 설정 없음
+MailStatus = Literal["", "queued", "no_email", "not_configured"]
 NoticeTarget = Literal["all", "users"]
 
 
@@ -57,7 +65,8 @@ class AdminSummary(BaseModel):
 
 
 class AdminUserItem(BaseModel):
-    id: str
+    id: str                      # 공개 id (API 주소에 씀)
+    login_id: str = ""           # 화면에 보일 아이디
     nickname: str
     name: str
     email: str = ""
@@ -109,6 +118,11 @@ class WarningResponse(BaseModel):
 
 class UserStatusRequest(BaseModel):
     status: UserStatus
+    reason: str = ""             # 정지할 때 필수 (안내 메일에 들어감)
+
+
+class UserStatusResult(AdminUserItem):
+    mail: MailStatus = ""
 
 
 class SimpleResult(BaseModel):
@@ -117,6 +131,7 @@ class SimpleResult(BaseModel):
 
 
 class DeleteUserResult(SimpleResult):
+    mail: MailStatus = ""
     deleted_posts: int = 0
     deleted_comments: int = 0
     deleted_stories: int = 0
@@ -197,10 +212,6 @@ def _clean(value: str, label: str, max_len: int) -> str:
     return text
 
 
-def _id_query(ids: list[str]) -> dict:
-    return {"$or": [{"id": {"$in": ids}}, {"social_id": {"$in": ids}}, {"kakao_id": {"$in": ids}}]}
-
-
 def _contains(text: str) -> dict:
     return {"$regex": re.escape(text), "$options": "i"}
 
@@ -212,15 +223,17 @@ def _today_start_utc() -> datetime:
 
 def _user_item(user: dict) -> AdminUserItem:
     uid = public_user_id(user)
+    provider = user.get("provider") or ""
     return AdminUserItem(
         id=uid,
-        nickname=user.get("nickname") or user.get("name") or uid,
+        login_id=login_id(user),
+        nickname=user.get("nickname") or user.get("name") or login_id(user),
         name=user.get("name") or "",
         email=user.get("email") or "",
         role=user.get("role") or ROLE_USER,
         status=user.get("status") or STATUS_ACTIVE,
         warning_count=int(user.get("warning_count") or 0),
-        provider=user.get("provider") or "",
+        provider="" if provider == "local" else provider,  # 초창기 회원의 local = 일반 가입
         created_at=_iso(user.get("created_at")),
     )
 
@@ -241,9 +254,7 @@ async def _nickname_map(user_ids: list[str]) -> dict[str, str]:
     ids = list({uid for uid in user_ids if uid})
     found: dict[str, str] = {}
     if ids:
-        cursor = users_collection.find(
-            _id_query(ids), {"id": 1, "social_id": 1, "kakao_id": 1, "nickname": 1, "name": 1}
-        )
+        cursor = users_collection.find(public_id_query(ids), {**ID_PROJECTION, "nickname": 1, "name": 1})
         async for user in cursor:
             uid = public_user_id(user)
             found[uid] = user.get("nickname") or user.get("name") or uid
@@ -300,7 +311,9 @@ async def admin_list_users(
     keyword = q.strip()
     if keyword:
         pattern = _contains(keyword)
-        query["$or"] = [{field: pattern} for field in ("id", "social_id", "kakao_id", "nickname", "name", "email")]
+        query["$or"] = [
+            {field: pattern} for field in ("id", "account_id", "social_id", "kakao_id", "nickname", "name", "email")
+        ]
     if status == STATUS_BANNED:
         query["status"] = STATUS_BANNED
     elif status == STATUS_ACTIVE:
@@ -351,16 +364,38 @@ async def admin_warn_user(user_id: str, body: WarningCreateRequest, admin: dict 
     return WarningResponse(success=True, warning_count=count)
 
 
-@router.patch("/api/admin/users/{user_id}/status", response_model=AdminUserItem)
-async def admin_set_user_status(user_id: str, body: UserStatusRequest, admin: dict = Depends(require_admin)):
+def _queue_action_mail(background_tasks: BackgroundTasks, user: dict, action: str, reason: str, when: datetime) -> str:
+    """안내 메일을 응답 뒤에 보냅니다. 메일 상태(MailStatus)를 돌려줍니다."""
+    email = (user.get("email") or "").strip()
+    if not email:
+        return "no_email"
+    if not mail_configured():
+        return "not_configured"
+    nickname = user.get("nickname") or user.get("name") or login_id(user)
+    background_tasks.add_task(send_admin_action_mail, email, nickname, action, reason, when)
+    return "queued"
+
+
+@router.patch("/api/admin/users/{user_id}/status", response_model=UserStatusResult)
+async def admin_set_user_status(
+    user_id: str, body: UserStatusRequest, background_tasks: BackgroundTasks, admin: dict = Depends(require_admin)
+):
     user = await _get_user_or_404(user_id)
+    now = datetime.utcnow()
+    fields: dict = {"status": body.status}
     if body.status == STATUS_BANNED:
         _protect_admin(user, "정지")
-    fields = {"status": body.status}
-    fields["banned_at" if body.status == STATUS_BANNED else "unbanned_at"] = datetime.utcnow()
+        fields.update(banned_at=now, ban_reason=_clean(body.reason, "정지 사유", 200), banned_by=admin["user_id"])
+    else:
+        fields["unbanned_at"] = now
     await users_collection.update_one({"_id": user["_id"]}, {"$set": fields})
+
+    mail = ""
+    # 이미 정지된 회원을 다시 정지하면 메일은 또 보내지 않습니다.
+    if body.status == STATUS_BANNED and user.get("status") != STATUS_BANNED:
+        mail = _queue_action_mail(background_tasks, user, "이용 정지", fields["ban_reason"], now)
     user.update(fields)
-    return _user_item(user)
+    return UserStatusResult(**_user_item(user).model_dump(), mail=mail)
 
 
 async def _delete_user_comments(uid: str) -> int:
@@ -405,12 +440,15 @@ async def _delete_posts(query: dict) -> int:
 @router.delete("/api/admin/users/{user_id}", response_model=DeleteUserResult)
 async def admin_delete_user(
     user_id: str,
+    background_tasks: BackgroundTasks,
     delete_stories: bool = Query(False, description="True면 이 회원의 동화도 함께 삭제 (False면 동화는 남김)"),
+    reason: str = Query("", description="탈퇴 사유 (필수, 안내 메일에 들어감)"),
     admin: dict = Depends(require_admin),
 ):
     """강제 탈퇴: 게시글·댓글·좋아요·스크랩·단어장은 지우고, 동화는 선택에 따라 남기거나 지웁니다."""
     user = await _get_user_or_404(user_id)
     _protect_admin(user, "탈퇴")
+    reason = _clean(reason, "탈퇴 사유", 200)
     uid = public_user_id(user)
 
     deleted_comments = await _delete_user_comments(uid)
@@ -427,9 +465,11 @@ async def admin_delete_user(
         deleted_stories = (await stories_collection.delete_many({"user_id": uid})).deleted_count
 
     await users_collection.delete_one({"_id": user["_id"]})
+    mail = _queue_action_mail(background_tasks, user, "강제 탈퇴", reason, datetime.utcnow())
     return DeleteUserResult(
         success=True,
         message="회원을 탈퇴 처리했어요.",
+        mail=mail,
         deleted_posts=deleted_posts,
         deleted_comments=deleted_comments,
         deleted_stories=deleted_stories,
@@ -484,8 +524,8 @@ async def admin_list_stories(
     if keyword:
         pattern = _contains(keyword)
         cursor = users_collection.find(
-            {"$or": [{f: pattern} for f in ("id", "social_id", "kakao_id", "nickname", "name")]},
-            {"id": 1, "social_id": 1, "kakao_id": 1},
+            {"$or": [{f: pattern} for f in ("id", "account_id", "social_id", "kakao_id", "nickname", "name")]},
+            ID_PROJECTION,
         )
         author_ids = [public_user_id(u) async for u in cursor]
         query["$or"] = [{"title": pattern}, {"user_id": {"$in": author_ids}}]
@@ -566,7 +606,7 @@ async def _notice_fields(body: NoticeWriteRequest) -> dict:
         ids = list(dict.fromkeys(i.strip() for i in body.user_ids if i and i.strip()))
         if not ids:
             raise HTTPException(status_code=400, detail="공지를 받을 회원 아이디를 한 명 이상 넣어 주세요.")
-        found = {public_user_id(u) async for u in users_collection.find(_id_query(ids), {"id": 1, "social_id": 1, "kakao_id": 1})}
+        found = {public_user_id(u) async for u in users_collection.find(public_id_query(ids), ID_PROJECTION)}
         missing = [i for i in ids if i not in found]
         if missing:
             raise HTTPException(status_code=400, detail=f"없는 아이디예요: {', '.join(missing)}")

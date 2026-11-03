@@ -43,6 +43,7 @@ from community import (
 from messages import ensure_indexes as ensure_message_indexes, router as messages_router
 from reports import ensure_indexes as ensure_report_indexes, router as reports_router
 from admin import notice_visible_query, router as admin_router
+from password_reset import ensure_indexes as ensure_password_reset_indexes, router as password_reset_router
 from quiz import build_questions, card_definition
 from story_text import clean_story_text
 from gemini_client import FallbackModel, parse_model_list
@@ -53,6 +54,7 @@ from security import (
     ROLE_USER,
     STATUS_ACTIVE,
     BANNED_MESSAGE,
+    CONTACT_EMAIL,
     PASSWORD_RULE_MESSAGE,
     banned_exception,
     create_access_token,
@@ -70,6 +72,7 @@ app.include_router(community_router)
 app.include_router(reports_router)
 app.include_router(messages_router)
 app.include_router(admin_router)
+app.include_router(password_reset_router)
 
 
 @app.on_event("startup")
@@ -78,6 +81,7 @@ async def create_community_indexes():
     await ensure_meaning_cache_indexes()
     await ensure_report_indexes()
     await ensure_message_indexes()
+    await ensure_password_reset_indexes()
 
 
 # ----------------------------------------
@@ -178,6 +182,8 @@ class AuthResponse(BaseModel):
     access_token: Optional[str] = None
     token_type: str = "bearer"
     user: Optional[UserSummary] = None
+    code: str = ""             # banned = 정지된 계정
+    contact_email: str = ""    # 정지 안내에 보여 줄 문의 메일 주소
 
 class SignUpRequest(BaseModel):
     id: str
@@ -244,10 +250,22 @@ class NoticeItem(BaseModel):
 class WarningItem(BaseModel):
     reason: str
     created_at: str = ""
+    is_unread: bool = False
+
+class InboxItem(BaseModel):
+    type: str                 # warning / notice
+    id: str = ""              # 공지면 공지 id
+    title: str
+    body: str = ""
+    created_at: str = ""
+    is_unread: bool = False   # 안 읽은 경고
 
 class MyInboxResponse(BaseModel):
     notices: list[NoticeItem]
     warnings: list[WarningItem]
+    # 알림함 화면용: 안 읽은 경고가 먼저, 나머지(읽은 경고 + 공지)는 최신순
+    items: list[InboxItem] = []
+    unread_warning_count: int = 0
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
@@ -981,18 +999,65 @@ def _to_notice(doc: dict) -> NoticeItem:
     )
 
 
+def _warning_unread(warning: dict, seen_at) -> bool:
+    """warnings_seen_at(알림함 전체 보기를 연 시각)보다 뒤에 받은 경고는 안 읽은 경고"""
+    created = warning.get("created_at")
+    if not isinstance(created, datetime):
+        return seen_at is None
+    return seen_at is None or created > seen_at
+
+
 @app.get("/api/users/me/inbox", response_model=MyInboxResponse)
-async def get_my_inbox(current_user: dict = Depends(get_current_user)):
+async def get_my_inbox(
+    limit: int = 0,  # 0이면 전체, 마이페이지 미리보기는 3
+    current_user: dict = Depends(get_current_user),
+):
     # 전체 공지 + 나를 대상으로 한 공지만 (특정 회원 공지는 그 회원에게만 보임)
-    cursor = notices_collection.find(notice_visible_query(current_user["user_id"])).sort("created_at", -1).limit(50)
-    notices = [_to_notice(doc) async for doc in cursor]
+    cursor = notices_collection.find(notice_visible_query(current_user["user_id"])).sort("created_at", -1).limit(100)
+    notice_docs = [doc async for doc in cursor]
+    notices = [_to_notice(doc) for doc in notice_docs]
+
     # 어떤 관리자가 줬는지는 빼고, 사유와 날짜만 최신순으로 내려줍니다.
+    seen_at = current_user.get("warnings_seen_at")
+    raw_warnings = [w for w in reversed(current_user.get("warnings") or []) if isinstance(w, dict)]
     warnings = [
-        WarningItem(reason=w.get("reason") or "이용 수칙 위반", created_at=iso(w.get("created_at")))
-        for w in reversed(current_user.get("warnings") or [])
-        if isinstance(w, dict)
+        WarningItem(
+            reason=w.get("reason") or "이용 수칙 위반",
+            created_at=iso(w.get("created_at")),
+            is_unread=_warning_unread(w, seen_at),
+        )
+        for w in raw_warnings
     ]
-    return MyInboxResponse(notices=notices, warnings=warnings)
+
+    def sort_key(item: tuple) -> tuple:
+        when, inbox_item = item
+        return (inbox_item.is_unread, when if isinstance(when, datetime) else datetime.min)
+
+    rows = [
+        (w.get("created_at"), InboxItem(type="warning", title="받은 경고", body=item.reason,
+                                        created_at=item.created_at, is_unread=item.is_unread))
+        for w, item in zip(raw_warnings, warnings)
+    ] + [
+        (doc.get("created_at"), InboxItem(type="notice", id=n.id, title=n.title, body=n.content, created_at=n.created_at))
+        for doc, n in zip(notice_docs, notices)
+    ]
+    items = [row[1] for row in sorted(rows, key=sort_key, reverse=True)]
+    if limit > 0:
+        items = items[:limit]
+
+    return MyInboxResponse(
+        notices=notices,
+        warnings=warnings,
+        items=items,
+        unread_warning_count=sum(1 for w in warnings if w.is_unread),
+    )
+
+
+@app.post("/api/users/me/inbox/read", response_model=SimpleResponse)
+async def mark_my_inbox_read(current_user: dict = Depends(get_current_user)):
+    """알림함 전체 보기를 열면 받은 경고를 모두 읽은 것으로 표시합니다."""
+    await users_collection.update_one({"_id": current_user["_id"]}, {"$set": {"warnings_seen_at": datetime.utcnow()}})
+    return SimpleResponse(success=True, message="")
 
 
 # ----------------------------------------
@@ -1098,7 +1163,7 @@ async def login(body: LoginRequest):
         return {"success": False, "message": "비밀번호가 올바르지 않습니다."}
 
     if is_banned(user):
-        return {"success": False, "message": BANNED_MESSAGE}
+        return {"success": False, "message": BANNED_MESSAGE, "code": "banned", "contact_email": CONTACT_EMAIL}
 
     await users_collection.update_one({"_id": user["_id"]}, {"$set": {"last_login": datetime.utcnow()}})
     return {
@@ -1119,7 +1184,7 @@ async def admin_login(body: AdminLoginRequest):
     if not user or user.get("role") != ROLE_ADMIN:
         return {"success": False, "message": "관리자 정보가 올바르지 않습니다."}
     if is_banned(user):
-        return {"success": False, "message": BANNED_MESSAGE}
+        return {"success": False, "message": BANNED_MESSAGE, "code": "banned", "contact_email": CONTACT_EMAIL}
 
     await users_collection.update_one({"_id": user["_id"]}, {"$set": {"last_login": datetime.utcnow()}})
     return {

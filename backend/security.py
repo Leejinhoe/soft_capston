@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from bson import ObjectId
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -29,13 +30,46 @@ ROLE_ADMIN = "admin"
 STATUS_ACTIVE = "active"
 STATUS_BANNED = "banned"
 
-BANNED_MESSAGE = "이용이 정지된 계정이에요. 관리자에게 문의해 주세요."
+# 정지 안내에 보여 줄 문의 메일 주소 (메일 보내는 계정과 같은 주소)
+CONTACT_EMAIL = (os.getenv("SMTP_USER") or "").strip()
+BANNED_MESSAGE = (
+    f"이용이 정지된 계정이에요. 궁금한 점은 {CONTACT_EMAIL} 로 메일을 보내 주세요."
+    if CONTACT_EMAIL else "이용이 정지된 계정이에요. 관리자에게 문의해 주세요."
+)
 
 _bearer = HTTPBearer(auto_error=False)
 
 
+# 공개 id로 쓰는 필드. 초창기(팀원 스키마, schema_version) 회원은 이 필드가 없고 account_id만 있는데,
+# 그 회원들의 동화·단어장은 user_id = str(_id)로 연결돼 있어서 공개 id도 str(_id)를 씁니다.
+PUBLIC_ID_FIELDS = ("id", "social_id", "kakao_id")
+# 사용자 문서를 찾을 때 공개 id 계산에 필요한 필드 (projection에 그대로 넣어 쓰기, _id는 기본 포함)
+ID_PROJECTION = {"id": 1, "social_id": 1, "kakao_id": 1, "account_id": 1}
+
+
 def public_user_id(user: dict) -> str:
-    return str(user.get("id") or user.get("social_id") or user.get("kakao_id") or "")
+    for field in PUBLIC_ID_FIELDS:
+        if user.get(field):
+            return str(user[field])
+    return str(user["_id"]) if user.get("_id") else ""
+
+
+def login_id(user: dict) -> str:
+    """화면에 보여 줄 아이디 (초창기 회원은 account_id)."""
+    return str(user.get("id") or user.get("account_id") or user.get("social_id") or user.get("kakao_id") or public_user_id(user))
+
+
+def _no_public_id_fields() -> dict:
+    return {field: None for field in PUBLIC_ID_FIELDS}  # None은 "필드 없음"도 포함
+
+
+def public_id_query(ids: list[str]) -> dict:
+    """공개 id 목록에 해당하는 사용자들을 찾는 쿼리 (초창기 회원의 str(_id)도 포함)."""
+    oids = [ObjectId(i) for i in ids if ObjectId.is_valid(i)]
+    conditions: list[dict] = [{field: {"$in": ids}} for field in PUBLIC_ID_FIELDS]
+    if oids:
+        conditions.append({"_id": {"$in": oids}, **_no_public_id_fields()})
+    return {"$or": conditions}
 
 
 def user_summary(user: dict) -> dict:
@@ -85,9 +119,11 @@ def create_access_token(user_id: str) -> str:
 async def find_user_by_public_id(user_id: str) -> Optional[dict]:
     if not user_id:
         return None
-    return await users_collection.find_one(
-        {"$or": [{"id": user_id}, {"social_id": user_id}, {"kakao_id": user_id}]}
-    )
+    user = await users_collection.find_one({"$or": [{field: user_id} for field in PUBLIC_ID_FIELDS]})
+    if user is None and ObjectId.is_valid(user_id):
+        # 초창기 회원: 공개 필드가 하나도 없는 문서만 _id로 찾습니다. (일반 아이디와 섞이지 않게)
+        user = await users_collection.find_one({"_id": ObjectId(user_id), **_no_public_id_fields()})
+    return user
 
 
 def is_banned(user: dict) -> bool:
@@ -96,7 +132,10 @@ def is_banned(user: dict) -> bool:
 
 def banned_exception() -> HTTPException:
     # 프론트가 정지 상태를 구분할 수 있도록 code를 함께 보냅니다.
-    return HTTPException(status_code=403, detail={"code": "banned", "message": BANNED_MESSAGE})
+    return HTTPException(
+        status_code=403,
+        detail={"code": "banned", "message": BANNED_MESSAGE, "contact_email": CONTACT_EMAIL},
+    )
 
 
 def _unauthorized(message: str) -> HTTPException:

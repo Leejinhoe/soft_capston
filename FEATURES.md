@@ -53,6 +53,9 @@
 - [x] 받은 좋아요 총합 (`GET /api/users/me/stats` 의 `like_count`)
 - [x] 알림함: 공지사항 + 받은 경고(`users.warnings`), 경고가 없으면 공지사항만
   - `GET /api/users/me/inbox`: 전체 공지 + 나를 대상으로 한 공지만 (특정 회원 공지는 그 회원에게만)
+- [x] 알림함 미리보기: 마이페이지에는 최근 3개만, "전체 보기 >"로 전체 목록 화면(`lib/pages/inbox_page.dart`)
+  - 응답 `items`: 안 읽은 경고가 맨 앞, 나머지(읽은 경고 + 공지)는 최신순 / `?limit=3`, `unread_warning_count`
+  - 안 읽은 경고는 NEW 배지 + "안 읽은 경고 n", 전체 보기를 열면 `POST /api/users/me/inbox/read`로 읽음(`users.warnings_seen_at`)
 - [x] 로그아웃 (기존 유지)
 
 ## 커뮤니티 1단계 (community) — `backend/community.py`, `lib/pages/board_page.dart`, `lib/pages/post_detail_page.dart`
@@ -107,11 +110,20 @@
 - [x] 상세 `GET /api/admin/users/{id}`: 기본 정보, 받은 경고 내역(사유·날짜·준 관리자), 만든 동화/게시글/댓글 수, 받은 신고 수
 - [x] 경고 주기(사유 필수) `POST /api/admin/users/{id}/warnings` → `users.warnings` + 알림 (마이페이지 알림함에 표시)
   - 신고 상세 화면이 쓰는 `PUT /admin/warning/{id}`도 같은 처리로 유지 (공개 id로만 찾음)
-- [x] 정지/정지 해제 `PATCH /api/admin/users/{id}/status` `{status}` (정지되면 다음 요청부터 바로 로그아웃)
-- [x] 강제 탈퇴 `DELETE /api/admin/users/{id}?delete_stories=` — 팝업 2번(처리 방법 선택 → 최종 확인)
+- [x] 정지/정지 해제 `PATCH /api/admin/users/{id}/status` `{status, reason}` (정지되면 다음 요청부터 바로 로그아웃)
+  - 정지할 때 사유 필수(`users.ban_reason`, `banned_by`) → 그 회원 이메일로 안내 메일 (아래 "메일")
+- [x] 강제 탈퇴 `DELETE /api/admin/users/{id}?delete_stories=&reason=` — 팝업 2번(처리 방법 + 사유 입력 → 최종 확인)
+  - 사유 필수, 탈퇴 처리 후 안내 메일 (메일 실패해도 탈퇴는 진행)
   - 게시글(+딸린 좋아요/스크랩/댓글)·댓글·좋아요·스크랩·단어장·알림 삭제, 남의 글 댓글/좋아요 수 보정
   - 동화는 남기기(작성자 "탈퇴한 회원") / 같이 삭제 중 선택, 쪽지는 상대방 쪽지함에만 남김
 - [x] 관리자 계정은 정지·탈퇴 불가 (서버 400 + 화면에서 버튼 숨김)
+- [x] 정지·탈퇴 팝업에 메일 안내: 이메일이 있으면 "○○로 안내 메일을 보내요", 없으면 "이메일이 없어 안내 메일을 보낼 수 없어요"
+  - 응답 `mail`: `queued`(보냄, 결과는 서버 로그) / `no_email` / `not_configured` → 처리 후 토스트에 표시
+- [x] 초창기 회원(팀원 스키마 `schema_version`, `account_id`만 있고 `id` 없음)도 상세·경고·정지·탈퇴 가능
+  - 원인: 공개 id가 빈 문자열이라 `DELETE /api/admin/users/` → 405
+  - 이 회원들의 동화·단어장은 `user_id = str(_id)`로 연결돼 있어서 공개 id도 `str(_id)` (`security.public_user_id`)
+  - 화면에는 `login_id`(= `account_id`)를 보여 줌, 검색도 `account_id` 포함, `provider: local`은 일반 가입으로 표시
+  - 사용자 찾기는 `security.find_user_by_public_id` / `public_id_query` 한 곳에서 (community·reports·admin 공통)
 ### 동화 관리 — `story_admin_list_page.dart`, `story_admin_detail_page.dart`
 - [x] 모든 회원의 동화 `GET /api/admin/stories?q=&genre=&page=&size=`: 제목, 작성자, 장르, 생성일, 커뮤니티 공유 여부
   - 검색: 제목 또는 작성자(아이디·닉네임·이름), 장르 탭(`kStoryGenres`)
@@ -122,3 +134,25 @@
 - [x] 대상: 전체 회원(`target: all`) / 특정 회원(`target: users`, `user_ids` 여러 명, 아이디 확인 후 추가, 없는 아이디는 400)
   - 예전 공지(대상 필드 없음)는 전체 공지로 취급
 
+## 메일 — `backend/mailer.py`
+- [x] 공통 발송 모듈: `.env`의 `SMTP_HOST`, `SMTP_PORT`(465면 SSL, 그 외 STARTTLS), `SMTP_USER`, `SMTP_PASSWORD`
+  - 보내는 주소 = 답장 받는 주소(`Reply-To`) = `SMTP_USER`, 제목 앞에 `[AI Fairy Tale]`
+  - 앱 이름이 들어간 HTML 틀(`render_mail`) + 텍스트 본문 같이, 사용자/관리자 입력은 모두 이스케이프
+  - 발송은 `BackgroundTasks`로 응답 뒤에, 실패해도 예외 없이 서버 로그만 (`[mail:종류] 발송 실패 → ab***@...`)
+- [x] 정지·강제 탈퇴 안내 메일: 조치 종류, 사유, 날짜(한국 시간), "이의가 있으면 이 메일에 답장해 주세요"
+- [x] 정지된 계정 로그인 안내에 문의 메일 주소(`SMTP_USER`) 표시
+  - `/login`: `code: banned`, `contact_email` / 소셜 로그인·요청 중 정지: 403 `detail.contact_email`
+  - 로그인 화면은 팝업(`lib/core/banned_notice.dart`)으로 보여 주고 주소를 누르면 복사
+
+## 비밀번호 재설정 — `backend/password_reset.py`, `lib/pages/password_reset_page.dart`
+- [x] 로그인 화면 "비밀번호를 잊으셨나요?" → 아이디 + 가입 이메일 → 6자리 인증번호 → 새 비밀번호(+확인) → 로그인 화면
+  - `POST /api/auth/password-reset/request` `{id, email}` → 항상 같은 안내 문구 (계정 존재 여부가 드러나지 않음)
+  - `POST /api/auth/password-reset/verify` `{id, email, code}` → `reset_token` (10분)
+  - `POST /api/auth/password-reset/confirm` `{reset_token, new_password}` (회원가입과 같은 규칙, 화면에서도 확인 칸 검사)
+- [x] 인증번호 10분 유효, 5번 틀리면 무효(다시 받아야 함), 재발송은 1분 뒤부터 (화면에 남은 시간/재발송 초 표시)
+- [x] 계정이 없거나 이메일이 틀려도 `password_resets` 문서를 똑같이 만들어 확인 단계 응답도 같게 함
+  - 아이디·이메일·인증번호·토큰은 원문 없이 `EMAIL_VERIFICATION_PEPPER` HMAC-SHA256으로만 저장, `expires_at` TTL 인덱스로 자동 삭제
+  - 같은 이메일로는 (아이디를 바꿔도) 1분에 1통만 발송
+- [x] 소셜 계정: 화면에 "카카오/네이버/구글에서 관리해요" 안내 + 그 이메일로 안내 메일(인증번호 없음)
+- [x] 정지 계정: 재설정 불가 (인증번호 대신 문의 주소 안내 메일, 확인·변경 단계에서도 다시 막음)
+- [ ] 초창기 회원(`account_id`)은 지금 로그인 자체가 `id` 기준이라 재설정 대상에서 빠짐 (로그인 지원 시 같이 추가)

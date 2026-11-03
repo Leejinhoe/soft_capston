@@ -175,7 +175,7 @@ class _UserListPageState extends State<UserListPage> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text('@${user['id']}',
+                      Text('@${user['login_id'] ?? user['id']}',
                           style: const TextStyle(
                               color: Colors.white54, fontSize: 13)),
                     ],

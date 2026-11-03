@@ -22,7 +22,7 @@ from database import (
     users_collection,
 )
 from reports import reported_target_ids
-from security import find_user_by_public_id, get_current_user, public_user_id
+from security import ID_PROJECTION, find_user_by_public_id, get_current_user, public_id_query, public_user_id
 
 router = APIRouter(tags=["community"])
 
@@ -141,8 +141,8 @@ async def author_map(user_ids: list[str]) -> dict[str, Author]:
     found: dict[str, Author] = {}
     if ids:
         cursor = users_collection.find(
-            {"$or": [{"id": {"$in": ids}}, {"social_id": {"$in": ids}}, {"kakao_id": {"$in": ids}}]},
-            {"id": 1, "social_id": 1, "kakao_id": 1, "nickname": 1, "name": 1, "profile_image_url": 1},
+            public_id_query(ids),
+            {**ID_PROJECTION, "nickname": 1, "name": 1, "profile_image_url": 1},
         )
         async for user in cursor:
             uid = public_user_id(user)
@@ -276,7 +276,7 @@ async def list_posts(
             async for u in users_collection.find(
                 {"$or": [{"nickname": pattern}, {"nickname": {"$exists": False}, "name": pattern},
                          {"nickname": "", "name": pattern}]},
-                {"id": 1, "social_id": 1, "kakao_id": 1},
+                ID_PROJECTION,
             )
         ]
         query["$or"] = [{"title": pattern}, {"user_id": {"$in": [a for a in author_ids if a]}}]

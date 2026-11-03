@@ -31,7 +31,7 @@ from database import (
     reports_collection,
     users_collection,
 )
-from security import find_user_by_public_id, get_current_user, public_user_id, require_admin
+from security import ID_PROJECTION, find_user_by_public_id, get_current_user, public_id_query, public_user_id, require_admin
 
 router = APIRouter(tags=["reports"])
 
@@ -257,8 +257,8 @@ async def _report_users(user_ids: list[str]) -> dict[str, ReportUser]:
     found: dict[str, ReportUser] = {}
     if ids:
         cursor = users_collection.find(
-            {"$or": [{"id": {"$in": ids}}, {"social_id": {"$in": ids}}, {"kakao_id": {"$in": ids}}]},
-            {"id": 1, "social_id": 1, "kakao_id": 1, "nickname": 1, "name": 1, "warning_count": 1, "status": 1},
+            public_id_query(ids),
+            {**ID_PROJECTION, "nickname": 1, "name": 1, "warning_count": 1, "status": 1},
         )
         async for user in cursor:
             uid = public_user_id(user)

@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/auth_service.dart';
+import '../core/banned_notice.dart';
 import 'admin_login_dialog.dart';
+import 'password_reset_page.dart';
 import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -81,6 +83,10 @@ class _LoginPageState extends State<LoginPage> {
         html.window.history.replaceState(null, '', '/');
         html.window.sessionStorage.remove('login_provider');
         await AuthService.completeLogin(data);
+      } else if (ApiClient.isBanned(response)) {
+        _finishProcessing(null);
+        final detail = data['detail'] as Map;
+        await _showBanned(detail['message'] ?? '', detail['contact_email'] ?? '');
       } else {
         _finishProcessing(ApiClient.errorMessage(response, '로그인에 실패했어요.'));
       }
@@ -88,6 +94,12 @@ class _LoginPageState extends State<LoginPage> {
       debugPrint('소셜 로그인 오류: $e');
       _finishProcessing('서버 연결 실패');
     }
+  }
+
+  Future<void> _showBanned(dynamic message, dynamic contactEmail) async {
+    if (!mounted) return;
+    await showBannedDialog(context,
+        message: message.toString(), contactEmail: contactEmail.toString());
   }
 
   String generateState() {
@@ -113,6 +125,8 @@ class _LoginPageState extends State<LoginPage> {
 
       if (data is Map && data['success'] == true) {
         await AuthService.completeLogin(data);
+      } else if (data is Map && data['code'] == 'banned') {
+        await _showBanned(data['message'] ?? '', data['contact_email'] ?? '');
       } else {
         showMessage(ApiClient.errorMessage(response, '로그인에 실패했습니다.'));
       }
@@ -307,7 +321,18 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 28),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PasswordResetPage()),
+                    ),
+                    child: const Text('비밀번호를 잊으셨나요?',
+                        style: TextStyle(color: Colors.white54, fontSize: 13)),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   height: 60,
