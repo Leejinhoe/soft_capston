@@ -1,9 +1,10 @@
 """분기형 동화 엔진: 장면 하나(본문 + 선택지 3개) / 결말(본문 + 제목)을 만듭니다.
 
 엔진 순서 (build_story_engine)
-    1. RemoteStoryEngine  - .env의 STORY_SERVER_URL(팀원 Colab 서버)이 있을 때만. /story/start, /story/continue
-                            (꺼져 있거나 120초 넘게 걸리거나 실패하면 → 다음으로)
-    2. GeminiStoryEngine  - 장면 하나당 Gemini 1번 (JSON으로 본문 + 선택지, 결말이면 본문 + 제목)
+    1. RemoteStoryEngine  - 우리 팀이 학습시킨 Colab 모델 (.env의 STORY_SERVER_URL). 동화 생성의 주인공
+                            스트리밍으로 글자가 나오는 대로 화면에 전달, 선택지가 기본값이면 다시 만들기,
+                            조사 앞 띄어쓰기 등 후처리
+    2. GeminiStoryEngine  - Colab이 꺼지거나 실패할 때만. 장면 하나당 Gemini 1번 (JSON으로 본문 + 선택지, 결말이면 본문 + 제목)
     3. TemplateStoryEngine - AI 없이 쓰는 예비 장면 (Gemini 한도 초과여도 앱이 멈추지 않게)
 앞 엔진이 실패하면(예외) 다음 엔진으로 넘어갑니다. (ChainStoryEngine)
 
@@ -13,13 +14,12 @@
 """
 import asyncio
 import json
-import os
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 import colab_client
-from story_text import clean_story_text
+from story_text import clean_story_text, fix_particle_spacing
 
 MAX_SCENES = 8
 WRAP_UP_FROM = 6
@@ -243,24 +243,99 @@ class GeminiStoryEngine(StoryEngine):
 
 
 # ----------------------------------------
-# 팀원 Colab 서버
+# 팀원 Colab 서버 (동화 생성의 주인공)
 # ----------------------------------------
 # Colab 서버가 선택지 JSON을 못 읽었을 때 돌려주는 기본 선택지 (서버 normalize_choices의 fallback)
 COLAB_FALLBACK_CHOICES = ["계속 나아간다", "도움을 요청한다", "잠깐 생각해본다"]
 # Colab에는 마무리 기능이 없어서, 결말이 필요할 때 이 선택지를 보내 결말 장면을 받습니다. (돌아온 선택지는 버림)
 ENDING_CHOICE = "모두 함께 행복하게 이야기를 마무리한다"
 TITLE_TIMEOUT_SEC = 20
-_ZERO_WIDTH = re.compile("[\u200b-\u200f\u2060\ufeff]")
+CHOICES_GEMINI_TIMEOUT_SEC = 20
+_ZERO_WIDTH = re.compile("[​-‏⁠﻿]")
+
+# 화면으로 보내는 스트리밍 이벤트 (branching.py가 NDJSON으로 그대로 전달)
+#   {"type": "engine", "engine": "colab"}   이 엔진이 쓰기 시작함
+#   {"type": "text", "text": "지금까지 정리한 본문"}  Colab이 글자를 내보낼 때마다
+#   {"type": "status", "message": "..."}     본문 다음 단계 (선택지·감정 준비 등)
+#   {"type": "reset"}                        쓰던 글이 실패함 → 화면의 글을 지우고 다음 엔진/방법으로
+Emit = Optional[Callable[[dict], None]]
 
 
-def clean_colab_text(raw) -> str:
-    """Colab 본문 정리: 기존 후처리(마크다운·제목 줄) + 보이지 않는 문자, "!???" 같은 겹친 문장부호"""
-    text = _ZERO_WIDTH.sub("", raw if isinstance(raw, str) else "")
+def _emit(emit: Emit, event: dict) -> None:
+    if emit is not None:
+        try:
+            emit(event)
+        except Exception:
+            pass
+
+
+_BR_TAG = re.compile(r"<\s*/?\s*br\s*/?\s*>", re.IGNORECASE)
+_HTML_TAG = re.compile(r"<\s*/?\s*[a-zA-Z][a-zA-Z0-9]*\b[^<>]*>")
+_EMPTY_TAG = re.compile(r"<\s*/?\s*>")
+
+
+def _strip_html(text: str) -> str:
+    """Colab이 가끔 섞는 HTML 찌꺼기: </br> → 줄바꿈, <p> <strong> 등 → 지움, 남은 > 와 [ ] 도 지움"""
+    text = _BR_TAG.sub("\n", text)
+    text = _HTML_TAG.sub("", text)
+    text = _EMPTY_TAG.sub("", text)
+    text = re.sub(r"(?<=[가-힣.!?~”’\"'])>+", "", text)
+    return text.replace("[", "").replace("]", "")
+
+
+def _light_clean(raw: str) -> str:
+    """Colab 글 공통 정리: HTML 찌꺼기, 보이지 않는 문자, "!???" 같은 겹친 문장부호, 조사 앞 띄어쓰기"""
+    text = _strip_html(_ZERO_WIDTH.sub("", raw or ""))
     text = re.sub(r"([?!])[?!]+", r"\1", text)
     text = re.sub(r"\.([?!])", r"\1", text)
     text = re.sub(r"~{2,}", "~", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
-    return _clean_scene_text(text)
+    return fix_particle_spacing(text)
+
+
+def clean_colab_text(raw) -> str:
+    """Colab 본문 최종 정리: _light_clean + 기존 후처리(마크다운·제목 줄, Gemini 결과와 똑같이)"""
+    return _clean_scene_text(_light_clean(raw if isinstance(raw, str) else ""))
+
+
+def stream_preview_text(raw: str) -> str:
+    """스트리밍 중 화면에 보일 글 (제목 줄 빼기는 글이 다 나와야 알 수 있어서 마크다운 기호만 정리)"""
+    text = _light_clean(re.sub(r"<[^<>]*$", "", raw or "")).lstrip()  # 아직 덜 온 태그("</ str")는 숨김
+    text = re.sub(r"(\*\*|__)", "", text)
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
+    return text
+
+
+def is_colab_default_choices(raw) -> bool:
+    """Colab이 선택지를 못 만들고 기본값을 돌려줬는지 (3개 중 2개 이상이 기본값)"""
+    items = [str(c).strip() for c in raw] if isinstance(raw, list) else []
+    return sum(1 for c in items if c in COLAB_FALLBACK_CHOICES) >= 2
+
+
+_CHOICE_JUNK = re.compile(r"[\"{}\[\]<>:;`/\\=]")
+
+
+def is_usable_choice(choice) -> bool:
+    """아이에게 보여 줄 만한 선택지인지: 한글이 있고, JSON·코드 찌꺼기(따옴표, 콜론, 괄호, //)가 없고, 길이가 알맞음
+    (실제 Colab에서 'javascript', 'description": "…' 같은 선택지가 온 적이 있음)"""
+    if not isinstance(choice, str):
+        return False
+    text = choice.strip()
+    hangul = len(re.findall(r"[가-힣]", text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    return 4 <= len(text) <= 60 and hangul >= 3 and latin <= 2 and not _CHOICE_JUNK.search(text)
+
+
+def _usable(raw) -> list[str]:
+    return [c for c in raw if is_usable_choice(c)] if isinstance(raw, list) else []
+
+
+def needs_new_choices(raw) -> bool:
+    """Colab 기본값이거나, 쓸 만한 선택지가 3개가 안 되면 다시 만들기"""
+    if is_colab_default_choices(raw):
+        return True
+    items = raw if isinstance(raw, list) else []
+    return sum(1 for c in items if is_usable_choice(c)) < CHOICE_COUNT
 
 
 def title_prompt(setup: StorySetup, full_text: str) -> str:
@@ -276,74 +351,140 @@ def title_prompt(setup: StorySetup, full_text: str) -> str:
 """
 
 
-class RemoteStoryEngine(StoryEngine):
-    """STORY_SERVER_URL의 팀원 Colab 서버 (EXAONE). 실패하면 예외 → ChainStoryEngine이 Gemini로 넘어감.
+def choices_prompt(setup: StorySetup, story_text: str) -> str:
+    return f"""너는 아이들을 위한 다정한 동화 작가야. 아래 동화의 다음에 주인공이 할 행동 선택지 3개만 만들어 줘.
 
-    - 첫 장면: POST /story/start {genre, age, prompt} → {story_id, story_text, choices}
-    - 다음 장면: POST /story/continue {story_id, story_so_far, choice, genre, age}
+{_setup_block(setup)}
+
+[지금까지의 이야기]
+{story_text[-1500:]}
+{_CHOICE_RULES}
+반드시 아래 JSON 형식으로만 답해:
+{{"choices": ["선택지1", "선택지2", "선택지3"]}}
+"""
+
+
+class RemoteStoryEngine(StoryEngine):
+    """STORY_SERVER_URL의 팀원 Colab 서버 (우리 팀이 학습시킨 EXAONE). 실패하면 예외 → ChainStoryEngine이 Gemini로.
+
+    - 첫 장면: /story/start/stream (안 되면 /story/start) {genre, age, prompt} → {story_id, story_text, choices}
+    - 다음 장면: /story/continue/stream (안 되면 /story/continue) {story_id, story_so_far, choice, genre, age}
         → {new_text, choices, selected_choice_emotion}
-    - 결말: /story/continue에 ENDING_CHOICE(마지막 선택이 있으면 함께)를 보내고 선택지는 버림.
-      제목은 Gemini가 되면 Gemini로, 안 되면 주제로 (default_title)
+      스트리밍은 화면이 글을 받을 때(emit이 있을 때)만. 스트리밍이 실패하면 같은 Colab 일반 호출로 한 번 더.
+    - 선택지가 Colab 기본값이면: Colab /story/choices로 다시 → 그래도 기본값이면 그때만 Gemini로 선택지만
+    - 결말: ENDING_CHOICE(마지막 선택이 있으면 함께)를 보내고 선택지는 버림. 제목은 Gemini가 되면 Gemini로, 안 되면 주제로
     """
 
     name = "colab"
+    streams = True  # ChainStoryEngine이 emit을 넘겨 줌
 
     def __init__(self, base_url: str = "", title_model=None):
         self.base_url = base_url.rstrip("/")
-        self.title_model = title_model
+        self.title_model = title_model  # 제목·선택지 보완용 Gemini (없어도 됨)
 
-    async def _continue(self, setup: StorySetup, scenes: list[str], choice: str) -> dict:
-        return await colab_client.post_json(
-            "/story/continue",
-            {
-                "story_id": setup.remote_story_id or "story_local",
-                "story_so_far": "\n\n".join(scenes),
-                "choice": choice,
-                "genre": setup.genre,
-                "age": setup.age,
-            },
-            colab_client.STORY_TIMEOUT_SEC,
+    async def _scene(self, path: str, body: dict, text_key: str, emit: Emit) -> dict:
+        """Colab 장면 하나: 스트리밍 → 안 되면 일반 호출. 받은 그대로(dict) 돌려줌."""
+        if emit is not None:
+            chunks: list[str] = []
+
+            def on_event(event: dict) -> None:
+                kind = event.get("type")
+                if kind == "delta" and isinstance(event.get("text"), str):
+                    chunks.append(event["text"])
+                    _emit(emit, {"type": "text", "text": stream_preview_text("".join(chunks))})
+                elif kind == "status" and event.get("message"):
+                    _emit(emit, {"type": "status", "message": "🤖 " + str(event["message"])})
+
+            try:
+                return await colab_client.post_ndjson(f"{path}/stream", body, on_event)
+            except colab_client.ColabError as e:
+                print(f"[동화 엔진] colab 스트리밍 실패 → 일반 호출로 ({e})", flush=True)
+                _emit(emit, {"type": "reset"})
+                _emit(emit, {"type": "status", "message": "🤖 우리 팀 AI가 다시 쓰고 있어요"})
+        data = await colab_client.post_json(path, body, colab_client.STORY_TIMEOUT_SEC)
+        if emit is not None and isinstance(data.get(text_key), str):
+            _emit(emit, {"type": "text", "text": stream_preview_text(data[text_key])})
+        return data
+
+    def _continue_body(self, setup: StorySetup, scenes: list[str], choice: str) -> dict:
+        return {
+            "story_id": setup.remote_story_id or "story_local",
+            "story_so_far": "\n\n".join(scenes),
+            "choice": choice,
+            "genre": setup.genre,
+            "age": setup.age,
+        }
+
+    async def _gemini_json(self, prompt: str, timeout: float) -> dict:
+        if self.title_model is None:
+            raise StoryEngineError("Gemini 모델 없음")
+        response = await asyncio.wait_for(
+            self.title_model.generate_content_async(prompt, generation_config={"response_mime_type": "application/json"}),
+            timeout,
         )
+        return _parse_json(response.text)
 
     async def _title(self, setup: StorySetup, full_text: str) -> str:
-        if self.title_model is None:
-            return default_title(setup.topic)
         try:
-            response = await asyncio.wait_for(
-                self.title_model.generate_content_async(
-                    title_prompt(setup, full_text), generation_config={"response_mime_type": "application/json"}
-                ),
-                TITLE_TIMEOUT_SEC,
-            )
-            return clean_title(_parse_json(response.text).get("title"), setup.topic)
+            data = await self._gemini_json(title_prompt(setup, full_text), TITLE_TIMEOUT_SEC)
+            return clean_title(data.get("title"), setup.topic)
         except Exception as e:
             print(f"[동화 엔진] colab 결말 제목: Gemini 실패 → 주제로 제목 ({type(e).__name__}: {str(e)[:120]})", flush=True)
             return default_title(setup.topic)
 
-    async def opening(self, setup: StorySetup) -> SceneResult:
-        data = await colab_client.post_json(
-            "/story/start",
-            {"genre": setup.genre, "age": setup.age, "prompt": setup.topic},
-            colab_client.STORY_TIMEOUT_SEC,
+    async def _good_choices(self, setup: StorySetup, story_text: str, raw, emit: Emit) -> list[str]:
+        """Colab 선택지가 기본값이거나 찌꺼기면: Colab /story/choices로 다시 → 그래도 안 되면 Gemini
+        → 다 안 되면 쓸 만한 것 + 예비 선택지 (찌꺼기는 절대 보여 주지 않음)"""
+        if not needs_new_choices(raw):
+            return clean_choices(raw, GENERIC_CHOICES)
+        _emit(emit, {"type": "status", "message": "🤖 선택지를 다시 골라 보고 있어요"})
+        try:
+            data = await colab_client.post_json(
+                "/story/choices",
+                {"story_so_far": story_text, "genre": setup.genre, "age": setup.age},
+                colab_client.CHOICES_TIMEOUT_SEC,
+            )
+            if not needs_new_choices(data.get("choices")):
+                print("[동화 엔진] colab 선택지: /story/choices로 다시 만듦", flush=True)
+                return clean_choices(_usable(data.get("choices")), GENERIC_CHOICES)
+            print("[동화 엔진] colab 선택지: 다시 만들어도 기본값/찌꺼기 → Gemini로 선택지만", flush=True)
+        except Exception as e:
+            print(f"[동화 엔진] colab /story/choices 실패 → Gemini로 선택지만 ({e})", flush=True)
+        try:
+            data = await self._gemini_json(choices_prompt(setup, story_text), CHOICES_GEMINI_TIMEOUT_SEC)
+            choices = clean_choices(_usable(data.get("choices")), [])
+            if len(choices) == CHOICE_COUNT:
+                return choices
+        except Exception as e:
+            print(f"[동화 엔진] 선택지 Gemini 실패 → Colab 선택지 중 쓸 만한 것 + 예비 선택지 ({type(e).__name__}: {str(e)[:120]})", flush=True)
+        # 마지막: Colab 선택지 중 쓸 만한 것(기본값 포함) + 예비 선택지로 3개 (찌꺼기는 버림)
+        return clean_choices(_usable(raw), COLAB_FALLBACK_CHOICES)
+
+    async def opening(self, setup: StorySetup, emit: Emit = None) -> SceneResult:
+        data = await self._scene(
+            "/story/start", {"genre": setup.genre, "age": setup.age, "prompt": setup.topic}, "story_text", emit
         )
+        text = clean_colab_text(data.get("story_text"))
         return SceneResult(
-            clean_colab_text(data.get("story_text")),
-            clean_choices(data.get("choices"), GENERIC_CHOICES),
+            text,
+            await self._good_choices(setup, text, data.get("choices"), emit),
             remote_story_id=str(data.get("story_id") or ""),
         )
 
-    async def next_scene(self, setup: StorySetup, scenes: list[str], choice: str) -> SceneResult:
-        data = await self._continue(setup, scenes, choice)
+    async def next_scene(self, setup: StorySetup, scenes: list[str], choice: str, emit: Emit = None) -> SceneResult:
+        data = await self._scene("/story/continue", self._continue_body(setup, scenes, choice), "new_text", emit)
+        text = clean_colab_text(data.get("new_text"))
         return SceneResult(
-            clean_colab_text(data.get("new_text")),
-            clean_choices(data.get("choices"), GENERIC_CHOICES),
+            text,
+            await self._good_choices(setup, "\n\n".join(scenes + [text]), data.get("choices"), emit),
             choice_emotion=colab_client.compact_emotion(data.get("selected_choice_emotion")),
         )
 
-    async def ending(self, setup: StorySetup, scenes: list[str], choice: Optional[str] = None) -> SceneResult:
+    async def ending(self, setup: StorySetup, scenes: list[str], choice: Optional[str] = None, emit: Emit = None) -> SceneResult:
         ending_choice = f"{choice} 그리고 {ENDING_CHOICE}" if choice else ENDING_CHOICE
-        data = await self._continue(setup, scenes, ending_choice)
+        data = await self._scene("/story/continue", self._continue_body(setup, scenes, ending_choice), "new_text", emit)
         text = clean_colab_text(data.get("new_text"))
+        _emit(emit, {"type": "status", "message": "🏷️ 이야기에 어울리는 제목을 짓고 있어요"})
         title = await self._title(setup, "\n\n".join(scenes + [text]))
         return SceneResult(
             text,
@@ -395,31 +536,38 @@ class TemplateStoryEngine(StoryEngine):
 # 순서대로 시도
 # ----------------------------------------
 class ChainStoryEngine(StoryEngine):
+    """Colab → Gemini → 예비 장면. emit이 있으면 엔진을 바꿀 때마다 화면에 알려 줌 (engine / reset 이벤트)."""
+
     name = "chain"
 
     def __init__(self, engines: list[StoryEngine]):
         self.engines = engines
 
-    async def _run(self, method: str, *args) -> SceneResult:
+    async def _run(self, method: str, *args, emit: Emit = None) -> SceneResult:
         last_error: Optional[Exception] = None
         for engine in self.engines:
+            _emit(emit, {"type": "engine", "engine": engine.name})
             try:
-                result = await getattr(engine, method)(*args)
+                if getattr(engine, "streams", False):
+                    result = await getattr(engine, method)(*args, emit=emit)
+                else:
+                    result = await getattr(engine, method)(*args)
                 result.engine = engine.name
                 return result
             except Exception as e:
                 print(f"[동화 엔진] {engine.name}.{method} 실패 → 다음 엔진 ({type(e).__name__}: {e})", flush=True)
+                _emit(emit, {"type": "reset"})
                 last_error = e
         raise StoryEngineError("모든 동화 엔진이 실패했어요.") from last_error
 
-    async def opening(self, setup: StorySetup) -> SceneResult:
-        return await self._run("opening", setup)
+    async def opening(self, setup: StorySetup, emit: Emit = None) -> SceneResult:
+        return await self._run("opening", setup, emit=emit)
 
-    async def next_scene(self, setup: StorySetup, scenes: list[str], choice: str) -> SceneResult:
-        return await self._run("next_scene", setup, scenes, choice)
+    async def next_scene(self, setup: StorySetup, scenes: list[str], choice: str, emit: Emit = None) -> SceneResult:
+        return await self._run("next_scene", setup, scenes, choice, emit=emit)
 
-    async def ending(self, setup: StorySetup, scenes: list[str], choice: Optional[str] = None) -> SceneResult:
-        return await self._run("ending", setup, scenes, choice)
+    async def ending(self, setup: StorySetup, scenes: list[str], choice: Optional[str] = None, emit: Emit = None) -> SceneResult:
+        return await self._run("ending", setup, scenes, choice, emit=emit)
 
 
 def build_story_engine(model) -> ChainStoryEngine:

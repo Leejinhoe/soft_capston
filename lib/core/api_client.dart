@@ -4,6 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'stream_client.dart';
+
+/// postNdjson 결과: 200이면 events, 아니면 error(보통 응답)
+class NdjsonResponse {
+  final int statusCode;
+  final Stream<Map<String, dynamic>>? events;
+  final http.Response? error;
+
+  const NdjsonResponse(this.statusCode, this.events, this.error);
+}
+
 /// 백엔드 주소 (한 곳에서만 관리)
 const String kApiBaseUrl = 'http://127.0.0.1:8000';
 
@@ -91,6 +102,44 @@ class ApiClient {
         .add(http.MultipartFile.fromBytes(field, bytes, filename: filename));
     final streamed = await request.send();
     return _check(await http.Response.fromStream(streamed));
+  }
+
+  /// NDJSON 스트리밍 POST (동화 장면을 쓰는 대로 받기, backend/branching.py `/stream`)
+  /// 200이면 events로 한 줄씩 JSON 이벤트, 아니면 error에 보통 응답 (errorMessage로 안내 문구)
+  static Future<NdjsonResponse> postNdjson(String path, {Object? body}) async {
+    final client = createStreamingClient();
+    final request = http.Request('POST', uri(path))
+      ..headers.addAll(await _headers())
+      ..body = _encode(body) ?? '';
+    final streamed = await client.send(request);
+    if (streamed.statusCode != 200) {
+      final response = await _check(await http.Response.fromStream(streamed));
+      client.close();
+      return NdjsonResponse(streamed.statusCode, null, response);
+    }
+    final events = streamed.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .where((line) => line.trim().isNotEmpty)
+        .map((line) {
+          try {
+            final data = jsonDecode(line);
+            return data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+          } catch (_) {
+            return <String, dynamic>{};
+          }
+        })
+        .where((event) => event.isNotEmpty);
+    return NdjsonResponse(200, _closeWhenDone(events, client), null);
+  }
+
+  static Stream<Map<String, dynamic>> _closeWhenDone(
+      Stream<Map<String, dynamic>> events, http.Client client) async* {
+    try {
+      yield* events;
+    } finally {
+      client.close();
+    }
   }
 
   /// 한글이 깨지지 않게 UTF-8로 JSON을 읽습니다.

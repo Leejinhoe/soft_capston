@@ -7,6 +7,8 @@
 - 연결이 안 되거나(꺼짐) 시간이 넘으면(느림) ColabError → 부르는 쪽이 Gemini / 예비 동작으로 넘어갑니다.
 - 연결 자체가 안 되면 잠깐(OFFLINE_COOLDOWN_SEC) Colab을 건너뛰어서, 꺼진 동안 요청마다 오래 기다리지 않게 합니다.
 """
+import asyncio
+import json
 import os
 import time
 from typing import Optional
@@ -14,6 +16,9 @@ from typing import Optional
 import httpx
 
 STORY_TIMEOUT_SEC = 120     # 장면 하나 (실측 55~60초)
+STREAM_IDLE_TIMEOUT_SEC = 120   # 스트리밍: 다음 줄이 올 때까지 (선택지·감정 준비 동안은 한동안 조용함)
+STREAM_TOTAL_TIMEOUT_SEC = 240  # 스트리밍: 장면 하나 전체
+CHOICES_TIMEOUT_SEC = 90    # 선택지만 다시 만들기 (/story/choices)
 IMAGE_TIMEOUT_SEC = 120     # 그림 하나 (실측 약 20초)
 PSYCH_TIMEOUT_SEC = 150     # 심리분석 (실측 75~100초)
 TTS_TIMEOUT_SEC = 180       # 장면 하나 낭독 (XTTS, 문장 수에 비례)
@@ -82,6 +87,51 @@ async def post_json(path: str, body: dict, timeout: float) -> dict:
     if not isinstance(data, dict):
         raise ColabError(f"Colab {path} 응답이 객체가 아님")
     return data
+
+
+async def post_ndjson(path: str, body: dict, on_event, timeout: float = STREAM_IDLE_TIMEOUT_SEC) -> dict:
+    """Colab 스트리밍(NDJSON: meta / delta / status / complete / error) → complete 이벤트 내용.
+
+    on_event(event)는 complete 전 이벤트마다 불립니다. timeout은 "다음 줄이 올 때까지" 기다리는 시간,
+    전체 시간은 STREAM_TOTAL_TIMEOUT_SEC까지. error 이벤트나 complete 없이 끝나면 ColabError.
+    """
+    base = _check_ready()
+    limits = httpx.Timeout(timeout, connect=CONNECT_TIMEOUT_SEC)
+
+    async def run() -> dict:
+        async with httpx.AsyncClient(timeout=limits) as client:
+            async with client.stream("POST", f"{base}{path}", json=body) as response:
+                if response.status_code in (502, 530):
+                    _mark_offline(RuntimeError(f"HTTP {response.status_code}"))
+                if response.status_code != 200:
+                    raise ColabError(f"Colab {path} 응답 {response.status_code}")
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    kind = event.get("type") if isinstance(event, dict) else None
+                    if kind == "complete":
+                        return event
+                    if kind == "error":
+                        raise ColabError(f"Colab {path} 스트림 오류: {str(event.get('message'))[:200]}")
+                    on_event(event)
+        raise ColabError(f"Colab {path} 스트림이 complete 없이 끝남")
+
+    try:
+        return await asyncio.wait_for(run(), STREAM_TOTAL_TIMEOUT_SEC)
+    except ColabError:
+        raise
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        _mark_offline(e)
+        raise ColabError(f"Colab 연결 실패: {e}") from e
+    except (httpx.TimeoutException, asyncio.TimeoutError) as e:
+        raise ColabError(f"Colab {path} 스트림 시간 초과") from e
+    except httpx.HTTPError as e:
+        raise ColabError(f"Colab {path} 스트림 오류: {type(e).__name__}: {e}") from e
 
 
 async def post_tts(text: str, speaker_wav: bytes, timeout: float = TTS_TIMEOUT_SEC) -> bytes:

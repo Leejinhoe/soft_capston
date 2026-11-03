@@ -15,7 +15,7 @@ Flutter 프로젝트가 저장소 루트에 있고(`lib/`, `web/`, `android/`, `
 ```
 lib/                     # Flutter 앱 (http 패키지, shared_preferences)
   main.dart
-  core/                  # 공통: api_client(백엔드 주소·토큰·에러 문구), auth_service(로그인/자동 로그인/로그아웃),
+  core/                  # 공통: api_client(백엔드 주소·토큰·에러 문구·NDJSON 스트리밍), stream_client(웹은 fetch_client), auth_service(로그인/자동 로그인/로그아웃),
                          #       admin_ui(관리자 화면 공통 위젯), password_rules, story_genres, linked_items, banned_notice, psych_traits
   pages/                 # 화면 한 개 = 파일 한 개 (family_voice, login, signup, password_reset, home, story, vocabulary, quiz,
                          #       board, post_detail, profile, inbox, my_items, scrap_list, message_box, mind, mind_detail,
@@ -33,7 +33,7 @@ backend/                 # FastAPI (uvicorn main:app), .env도 여기
   gemini_client.py word_meaning.py meaning_cache.py story_text.py   # Gemini·사전·뜻풀이 캐시·본문 정리
   branching.py           # 분기형 동화 API (/api/stories/branching/start, /{id}/choose, /{id}/finish, /{id}/branching)
   colab_client.py        # 팀원 Colab 서버(STORY_SERVER_URL) 호출 공통: 타임아웃, 꺼졌을 때 60초 건너뛰기, KOTE 감정 요약
-  story_engine.py        # 장면 생성 엔진: Colab(/story/start, /story/continue) → Gemini → 예비 장면
+  story_engine.py        # 장면 생성 엔진: Colab(우리 팀 모델, 스트리밍) → Gemini(Colab 실패 때만) → 예비 장면
   story_images.py        # 장면 그림: Colab /story/image → JPEG static/story_images, stories.scene_images
   voices.py              # 우리 가족 목소리(voice_data/, family_voices) + 동화 듣기 /api/tts (gTTS 기본, Colab XTTS)
   story_vocab.py         # 동화 본문 기반 추천 단어 (예전 generate-story와 분기형 완료 때 공통)

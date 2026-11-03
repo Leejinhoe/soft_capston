@@ -39,12 +39,14 @@ const _choiceColors = [
 const _choiceEmojis = ['🌸', '🌊', '🍀'];
 
 const _sceneLoadingMessages = [
+  '🤖 우리 팀 AI가 동화를 쓰고 있어요 ✍️',
   '이야기 요정이 다음 장면을 쓰고 있어요 ✏️',
   '별님이 반짝반짝 생각 중이에요 ✨',
   '책장을 사르륵 넘기는 중이에요 📖',
   '두근두근, 무슨 일이 생길까요? 💓',
 ];
 const _endingLoadingMessages = [
+  '🤖 우리 팀 AI가 결말을 쓰고 있어요 ✍️',
   '따뜻한 결말을 준비하고 있어요 🌙',
   '이야기에 어울리는 제목을 짓고 있어요 🏷️',
   '배울 단어를 골라 담고 있어요 🧺',
@@ -93,6 +95,13 @@ class _StoryPageState extends State<StoryPage> {
   int _loadingIndex = 0;
   Timer? _loadingTimer;
 
+  // ✍️ 스트리밍: 우리 팀 AI(Colab)가 쓰는 글을 받는 대로 한 글자씩 보여 주기 (backend/branching.py /stream)
+  String _streamEngine = ''; // 지금 쓰고 있는 엔진 (colab / gemini / template)
+  String _streamTarget = ''; // 서버가 보낸 지금까지의 본문
+  int _streamShown = 0; // 화면에 보인 글자 수 (타자기 효과)
+  String _streamStatus = ''; // "선택지를 준비하고 있어요" 같은 다음 단계 안내
+  Timer? _typeTimer;
+
   final List<String> genres = kStoryGenres;
 
   final List<String> ages = [
@@ -122,6 +131,7 @@ class _StoryPageState extends State<StoryPage> {
   @override
   void dispose() {
     _loadingTimer?.cancel();
+    _typeTimer?.cancel();
     _audioPlayer.dispose();
     promptController.dispose();
     _scrollController.dispose();
@@ -255,11 +265,131 @@ class _StoryPageState extends State<StoryPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// 장면 만들기 API 공통: 성공하면 화면 갱신, 409(이미 넘어감)면 서버 상태로 다시 맞춤
+  /// 장면 만들기 공통: 스트리밍(`path/stream`)을 먼저 쓰고, 스트리밍 연결이 안 되면 일반 API로
   Future<void> _runStep(String path, Map<String, dynamic> body,
       {required List<String> messages}) async {
     if (isBusy) return;
     _startLoading(messages);
+    _resetStream();
+    try {
+      final handled = await _tryStream('$path/stream', body);
+      if (!handled && mounted) {
+        _resetStream();
+        await _runPlain(path, body);
+      }
+    } finally {
+      _typeTimer?.cancel();
+      _typeTimer = null;
+      _stopLoading();
+      _scrollToBottom();
+    }
+  }
+
+  void _resetStream() {
+    _typeTimer?.cancel();
+    _typeTimer = null;
+    if (!mounted) return;
+    setState(() {
+      _streamEngine = '';
+      _streamTarget = '';
+      _streamShown = 0;
+      _streamStatus = '';
+    });
+  }
+
+  /// 타자기 효과: 서버가 보낸 글(_streamTarget)을 조금씩 따라가며 보여 줌 (많이 밀리면 빨리)
+  void _startTyping() {
+    _typeTimer ??= Timer.periodic(const Duration(milliseconds: 35), (_) {
+      if (!mounted) return;
+      final remain = _streamTarget.length - _streamShown;
+      if (remain <= 0) return;
+      setState(() => _streamShown += remain > 60 ? (remain / 20).ceil() : 1);
+      if (_streamShown % 40 == 0) _scrollToBottom();
+    });
+  }
+
+  /// true = 스트리밍으로 끝냄(성공이든 안내든), false = 스트리밍을 못 써서 일반 API로 다시
+  Future<bool> _tryStream(String path, Map<String, dynamic> body) async {
+    final NdjsonResponse response;
+    try {
+      response = await ApiClient.postNdjson(path, body: body);
+    } catch (e) {
+      debugPrint('스트리밍 연결 실패 → 일반 호출: $e');
+      return false;
+    }
+    if (!mounted) return true;
+    final error = response.error;
+    if (error != null) {
+      final code = response.statusCode;
+      // 404/405: 예전 서버(스트리밍 없음), 5xx: 서버 문제 → 일반 API로 한 번 더
+      if (code == 404 || code == 405 || code >= 500) return false;
+      _toast(ApiClient.errorMessage(error));
+      if (code == 409 && storyId.isNotEmpty) await _loadStory(storyId, quiet: true);
+      return true;
+    }
+    try {
+      await for (final event in response.events!) {
+        if (!mounted) return true;
+        switch (event['type']) {
+          case 'engine':
+            setState(() => _streamEngine = (event['engine'] ?? '').toString());
+          case 'text':
+            setState(() {
+              _streamTarget = (event['text'] ?? '').toString();
+              if (_streamShown > _streamTarget.length) _streamShown = _streamTarget.length;
+            });
+            _startTyping();
+          case 'reset':
+            _typeTimer?.cancel();
+            _typeTimer = null;
+            setState(() {
+              _streamTarget = '';
+              _streamShown = 0;
+            });
+          case 'status':
+            setState(() => _streamStatus = (event['message'] ?? '').toString());
+          case 'state':
+            _applyState(event['state']);
+            return true;
+          case 'error':
+            _toast((event['message'] ?? '문제가 생겼어요. 잠시 후 다시 눌러 주세요.').toString());
+            if (event['status'] == 409 && storyId.isNotEmpty) await _loadStory(storyId, quiet: true);
+            return true;
+        }
+      }
+    } catch (e) {
+      debugPrint('스트리밍 중 끊김: $e');
+    }
+    // 중간에 끊김: 서버는 끝까지 만들어 저장하니, 일반 API로 또 만들지 않고 저장될 때까지 기다렸다가 불러옴
+    await _waitForSaved();
+    return true;
+  }
+
+  Future<void> _waitForSaved() async {
+    final id = storyId;
+    final before = scenes.length;
+    if (mounted) setState(() => _streamStatus = '연결이 잠깐 끊겼어요. 다 쓰면 불러올게요 📡');
+    for (var i = 0; i < 30 && mounted; i++) {
+      await Future.delayed(const Duration(seconds: 5));
+      if (id.isEmpty) {
+        // 첫 장면이면 동화 id를 몰라서 마이페이지에서 이어하기로 안내
+        _toast('동화가 다 써지면 마이페이지 "내가 만든 동화"에서 이어할 수 있어요 📚');
+        return;
+      }
+      try {
+        final response = await ApiClient.get('/api/stories/$id/branching');
+        final data = ApiClient.decode(response);
+        if (response.statusCode == 200 && data is Map && ((data['scenes'] as List?)?.length ?? 0) > before) {
+          _applyState(data);
+          return;
+        }
+      } catch (_) {}
+    }
+    _toast('이야기를 불러오지 못했어요. 잠시 후 마이페이지에서 이어해 주세요.');
+  }
+
+  /// 일반 API (스트리밍을 못 쓸 때): 성공하면 화면 갱신, 409(이미 넘어감)면 서버 상태로 다시 맞춤
+  Future<void> _runPlain(String path, Map<String, dynamic> body) async {
     try {
       final response = await ApiClient.post(path, body: body);
       if (!mounted) return;
@@ -274,9 +404,6 @@ class _StoryPageState extends State<StoryPage> {
     } catch (e) {
       debugPrint('동화 생성 오류: $e');
       _toast('서버에 연결하지 못했어요. 잠시 후 다시 눌러 주세요.');
-    } finally {
-      _stopLoading();
-      _scrollToBottom();
     }
   }
 
@@ -1067,8 +1194,91 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
+  /// 생성 중: 글이 오기 시작했으면 쓰는 중인 장면 카드, 아니면 엔진별 로딩 문구
   Widget _loadingCard() {
-    final message = _loadingMessages[_loadingIndex % _loadingMessages.length];
+    if (_streamTarget.isNotEmpty) return _writingCard();
+    final String message;
+    if (_streamEngine == 'colab') {
+      message = '🤖 우리 팀 AI가 동화를 쓰고 있어요 ✍️';
+    } else if (_streamEngine == 'gemini') {
+      message = '✨ 우리 팀 AI가 잠깐 쉬어서 Gemini가 대신 쓰고 있어요';
+    } else if (_streamEngine == 'template') {
+      message = '📘 기본 이야기로 이어 갈게요';
+    } else {
+      message = _loadingMessages[_loadingIndex % _loadingMessages.length];
+    }
+    return _loadingBox(message,
+        sub: _streamStatus.isNotEmpty
+            ? _streamStatus
+            : (_streamEngine == 'colab' ? '우리 팀이 직접 학습시킨 동화 모델이에요. 조금만 기다려 주세요!' : ''));
+  }
+
+  /// 우리 팀 AI가 쓰는 글이 한 글자씩 나타나는 카드
+  Widget _writingCard() {
+    final shown = _streamTarget.substring(0, _streamShown.clamp(0, _streamTarget.length));
+    final typing = _streamShown < _streamTarget.length;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF140028),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF8B5CF6), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  '✍️ 장면 ${scenes.length + 1} 쓰는 중',
+                  style: const TextStyle(color: Colors.purpleAccent, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(_engineLabels[_streamEngine] ?? '',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text.rich(
+            TextSpan(children: [
+              TextSpan(text: shown),
+              if (typing) const TextSpan(text: ' ▍', style: TextStyle(color: Colors.purpleAccent)),
+            ]),
+            style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6),
+          ),
+          if (!typing) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.purpleAccent)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _streamStatus.isNotEmpty ? _streamStatus : '🤖 다음 이야기를 준비하고 있어요',
+                    style: const TextStyle(color: Colors.white60, fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _loadingBox(String message, {String sub = ''}) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 18),
@@ -1104,6 +1314,12 @@ class _StoryPageState extends State<StoryPage> {
               ),
             ),
           ),
+          if (sub.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(sub,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4)),
+          ],
         ],
       ),
     );

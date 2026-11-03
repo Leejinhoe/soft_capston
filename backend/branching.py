@@ -1,5 +1,10 @@
 """분기형 동화 API: 첫 장면 → 선택지 고르기 → … → 결말 (장면 생성은 story_engine.py)
 
+API는 두 가지 모양 (내용은 같음)
+    - 일반: POST /api/stories/branching/start, /{id}/choose, /{id}/finish → 최종 상태 JSON
+    - 스트리밍: 같은 주소 + /stream → NDJSON 이벤트 (Colab이 글을 쓰는 대로 화면에 보여 주기, 아래 _stream 설명)
+      화면은 스트리밍을 먼저 쓰고, 스트리밍 연결이 안 되면 일반 API로
+
 stories 문서 (기존 필드 title/content/genre/is_public/created_at은 그대로 유지)
     mode: "branching"
     status: "in_progress" | "completed"   (예전 통짜 동화엔 없음 → completed로 취급)
@@ -13,11 +18,14 @@ stories 문서 (기존 필드 title/content/genre/is_public/created_at은 그대
     content: 모든 장면 본문을 빈 줄로 이은 전체 본문 (커뮤니티·관리자·마이페이지가 그대로 씀)
     vocab_list, completed_at: 완료 때 채움
 """
+import asyncio
+import json
 from datetime import datetime
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from database import stories_collection
@@ -25,6 +33,7 @@ from security import get_current_user
 from story_engine import (
     CHOICE_COUNT,
     MAX_SCENES,
+    Emit,
     SceneResult,
     StoryEngine,
     StoryEngineError,
@@ -183,10 +192,12 @@ def _check_playable(doc: dict, scene_number: int) -> list[dict]:
     return scenes
 
 
-async def _generate(method: str, *args) -> SceneResult:
+async def _generate(method: str, *args, emit: Emit = None) -> SceneResult:
     if _engine is None:
         raise HTTPException(status_code=503, detail=ENGINE_FAILED)
     try:
+        if emit is not None:
+            return await getattr(_engine, method)(*args, emit=emit)
         return await getattr(_engine, method)(*args)
     except StoryEngineError:
         raise HTTPException(status_code=503, detail=ENGINE_FAILED)
@@ -221,24 +232,27 @@ async def _completion_fields(doc: dict, scenes: list[dict], ending: SceneResult)
 
 
 # ----------------------------------------
-# API
+# 만들기 + 저장 (일반 API와 스트리밍 API가 같이 씀)
+#   prepare_*: 요청 확인 (잘못된 요청은 스트리밍 시작 전에 보통 HTTP 오류로)
+#   run_*: 장면 만들기 → DB 저장 → 최종 상태
 # ----------------------------------------
-@router.post("/api/stories/branching/start", response_model=StoryStateResponse)
-async def start_story(body: StartStoryRequest, current_user: dict = Depends(get_current_user)):
+def _prepare_start(body: StartStoryRequest) -> StorySetup:
     topic = body.prompt.strip()
     if not topic:
         raise HTTPException(status_code=400, detail="동화 주제를 입력해 주세요.")
     if len(topic) > 100:
         raise HTTPException(status_code=400, detail="주제는 100자까지 쓸 수 있어요.")
-    setup = StorySetup(topic=topic, genre=body.genre.strip()[:20], age=body.age.strip()[:20] or "5-7세")
+    return StorySetup(topic=topic, genre=body.genre.strip()[:20], age=body.age.strip()[:20] or "5-7세")
 
-    first = await _generate("opening", setup)
+
+async def _run_start(setup: StorySetup, user_id: str, emit: Emit = None) -> StoryStateResponse:
+    first = await _generate("opening", setup, emit=emit)
     scene = _scene_doc(first, is_ending=False)
     now = datetime.utcnow()
     doc = {
-        "user_id": current_user["user_id"],
-        "title": topic[:50],  # 완료되면 AI가 지은 제목으로 바뀜
-        "topic": topic,
+        "user_id": user_id,
+        "title": setup.topic[:50],  # 완료되면 AI가 지은 제목으로 바뀜
+        "topic": setup.topic,
         "genre": setup.genre,
         "age": setup.age,
         "mode": "branching",
@@ -256,6 +270,120 @@ async def start_story(body: StartStoryRequest, current_user: dict = Depends(get_
     return _state(doc)
 
 
+async def _prepare_choose(story_id: str, body: ChooseRequest, user_id: str) -> dict:
+    doc = await _my_story(story_id, user_id)
+    scenes = _check_playable(doc, body.scene_number)
+    last = scenes[-1]
+    if last.get("is_ending") or body.choice_index >= len(last.get("choices") or []):
+        raise HTTPException(status_code=400, detail="고를 수 없는 선택지예요.")
+    choice = last["choices"][body.choice_index]
+    return {
+        "doc": doc,
+        "texts": [s["text"] for s in scenes],
+        "choice": choice,
+        "scenes": scenes[:-1] + [{**last, "chosen_index": body.choice_index, "chosen": choice}],
+        "history": {"scene": len(scenes), "index": body.choice_index, "choice": choice, "at": datetime.utcnow()},
+    }
+
+
+async def _run_choose(ctx: dict, emit: Emit = None) -> StoryStateResponse:
+    doc, scenes, texts, choice, history = ctx["doc"], ctx["scenes"], ctx["texts"], ctx["choice"], ctx["history"]
+    if len(scenes) + 1 >= MAX_SCENES:  # 마지막 자리 → 고른 선택을 반영한 결말로 자동 마무리
+        result = await _generate("ending", _setup(doc), texts, choice, emit=emit)
+        _status(emit, "🧺 배울 단어를 골라 담고 있어요")
+        extra = await _completion_fields(doc, scenes, result)
+        new_scene = _scene_doc(result, is_ending=True)
+    else:
+        result = await _generate("next_scene", _setup(doc), texts, choice, emit=emit)
+        extra = {}
+        new_scene = _scene_doc(result, is_ending=False)
+    if result.choice_emotion:  # Colab이 만든 장면이면 고른 선택지의 감정도 같이 (심리분석용)
+        history["emotion"] = result.choice_emotion
+    saved = await _save_step(doc, scenes, new_scene, extra, history)
+    return _state(saved)
+
+
+async def _prepare_finish(story_id: str, body: FinishRequest, user_id: str) -> dict:
+    doc = await _my_story(story_id, user_id)
+    return {"doc": doc, "scenes": _check_playable(doc, body.scene_number)}
+
+
+async def _run_finish(ctx: dict, emit: Emit = None) -> StoryStateResponse:
+    doc, scenes = ctx["doc"], ctx["scenes"]
+    ending = await _generate("ending", _setup(doc), [s["text"] for s in scenes], None, emit=emit)
+    _status(emit, "🧺 배울 단어를 골라 담고 있어요")
+    extra = await _completion_fields(doc, scenes, ending)
+    saved = await _save_step(doc, scenes, _scene_doc(ending, is_ending=True), extra, None)
+    return _state(saved)
+
+
+def _status(emit: Emit, message: str) -> None:
+    if emit is not None:
+        emit({"type": "status", "message": message})
+
+
+# ----------------------------------------
+# 스트리밍 응답 (NDJSON 한 줄에 이벤트 하나)
+#   {"type": "engine", "engine": "colab" | "gemini" | "template"}  이 엔진이 쓰기 시작
+#   {"type": "text", "text": "지금까지 쓴 본문"}                    Colab이 글자를 내보낼 때마다 (전체 본문)
+#   {"type": "status", "message": "..."}                            선택지·제목·단어 준비 중
+#   {"type": "reset"}                                               쓰던 글 실패 → 화면의 글을 지움
+#   {"type": "state", "state": StoryStateResponse}                  DB 저장까지 끝난 최종 상태 (마지막 줄)
+#   {"type": "error", "status": 409|503|..., "message": "..."}      실패 (마지막 줄)
+# 만들기는 별도 작업으로 돌아서, 화면이 중간에 닫혀도 끝까지 만들고 저장합니다. (다시 열면 이어하기로 보임)
+# ----------------------------------------
+_background: set = set()
+
+
+def _stream(job: Callable[[Emit], Awaitable[StoryStateResponse]]) -> StreamingResponse:
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def runner() -> None:
+        try:
+            state = await job(queue.put_nowait)
+            queue.put_nowait({"type": "state", "state": state.model_dump(mode="json")})
+        except HTTPException as e:
+            queue.put_nowait({"type": "error", "status": e.status_code, "message": e.detail})
+        except Exception as e:
+            print(f"[분기형 동화] 스트리밍 만들기 오류: {type(e).__name__}: {e}", flush=True)
+            queue.put_nowait({"type": "error", "status": 500, "message": ENGINE_FAILED})
+        finally:
+            queue.put_nowait(None)
+
+    task = asyncio.create_task(runner())
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+    async def lines():
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        lines(),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
+# ----------------------------------------
+# API
+# ----------------------------------------
+@router.post("/api/stories/branching/start", response_model=StoryStateResponse)
+async def start_story(body: StartStoryRequest, current_user: dict = Depends(get_current_user)):
+    return await _run_start(_prepare_start(body), current_user["user_id"])
+
+
+@router.post("/api/stories/branching/start/stream")
+async def start_story_stream(body: StartStoryRequest, current_user: dict = Depends(get_current_user)):
+    """첫 장면을 스트리밍으로 (NDJSON 이벤트는 위 설명)"""
+    setup = _prepare_start(body)
+    user_id = current_user["user_id"]
+    return _stream(lambda emit: _run_start(setup, user_id, emit))
+
+
 @router.get("/api/stories/{story_id}/branching", response_model=StoryStateResponse)
 async def get_story_state(story_id: str, current_user: dict = Depends(get_current_user)):
     """이어하기 / 다시 보기 (예전 통짜 동화도 완료된 장면 1개로 보여줌)"""
@@ -264,37 +392,24 @@ async def get_story_state(story_id: str, current_user: dict = Depends(get_curren
 
 @router.post("/api/stories/{story_id}/choose", response_model=StoryStateResponse)
 async def choose(story_id: str, body: ChooseRequest, current_user: dict = Depends(get_current_user)):
-    doc = await _my_story(story_id, current_user["user_id"])
-    scenes = _check_playable(doc, body.scene_number)
-    last = scenes[-1]
-    if last.get("is_ending") or body.choice_index >= len(last.get("choices") or []):
-        raise HTTPException(status_code=400, detail="고를 수 없는 선택지예요.")
-    choice = last["choices"][body.choice_index]
-    texts = [s["text"] for s in scenes]
-    scenes = scenes[:-1] + [{**last, "chosen_index": body.choice_index, "chosen": choice}]
-    history = {"scene": len(scenes), "index": body.choice_index, "choice": choice, "at": datetime.utcnow()}
+    return await _run_choose(await _prepare_choose(story_id, body, current_user["user_id"]))
 
-    if len(scenes) + 1 >= MAX_SCENES:  # 마지막 자리 → 고른 선택을 반영한 결말로 자동 마무리
-        result = await _generate("ending", _setup(doc), texts, choice)
-        extra = await _completion_fields(doc, scenes, result)
-        new_scene = _scene_doc(result, is_ending=True)
-    else:
-        result = await _generate("next_scene", _setup(doc), texts, choice)
-        extra = {}
-        new_scene = _scene_doc(result, is_ending=False)
-    if result.choice_emotion:  # Colab이 만든 장면이면 고른 선택지의 감정도 같이 (심리분석용)
-        history["emotion"] = result.choice_emotion
 
-    saved = await _save_step(doc, scenes, new_scene, extra, history)
-    return _state(saved)
+@router.post("/api/stories/{story_id}/choose/stream")
+async def choose_stream(story_id: str, body: ChooseRequest, current_user: dict = Depends(get_current_user)):
+    """선택 → 다음 장면(또는 8장면째 결말)을 스트리밍으로"""
+    ctx = await _prepare_choose(story_id, body, current_user["user_id"])
+    return _stream(lambda emit: _run_choose(ctx, emit))
 
 
 @router.post("/api/stories/{story_id}/finish", response_model=StoryStateResponse)
 async def finish(story_id: str, body: FinishRequest, current_user: dict = Depends(get_current_user)):
     """'이야기 마무리하기': 지금까지 흐름에 맞는 따뜻한 결말 장면을 붙이고 완료"""
-    doc = await _my_story(story_id, current_user["user_id"])
-    scenes = _check_playable(doc, body.scene_number)
-    ending = await _generate("ending", _setup(doc), [s["text"] for s in scenes], None)
-    extra = await _completion_fields(doc, scenes, ending)
-    saved = await _save_step(doc, scenes, _scene_doc(ending, is_ending=True), extra, None)
-    return _state(saved)
+    return await _run_finish(await _prepare_finish(story_id, body, current_user["user_id"]))
+
+
+@router.post("/api/stories/{story_id}/finish/stream")
+async def finish_stream(story_id: str, body: FinishRequest, current_user: dict = Depends(get_current_user)):
+    """'이야기 마무리하기'를 스트리밍으로"""
+    ctx = await _prepare_finish(story_id, body, current_user["user_id"])
+    return _stream(lambda emit: _run_finish(ctx, emit))

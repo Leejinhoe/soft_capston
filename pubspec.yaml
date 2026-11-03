@@ -46,6 +46,7 @@ dependencies:
   image_cropper: ^12.2.1
   record: ^6.2.1
   file_picker: ^13.3.2
+  fetch_client: ^1.2.1
 
 dev_dependencies:
   flutter_test:

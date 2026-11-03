@@ -37,6 +37,21 @@
   - Colab이 꺼지거나(연결 실패 → 60초 동안 건너뜀) 느리거나 실패하면 Gemini → 예비 장면
   - 주소가 바뀌면 `.env`의 STORY_SERVER_URL만 고치고 백엔드 재시작
 - [x] 장면을 만든 엔진을 장면 카드에 작게 표시 ("🤖 우리 팀 AI" / "✨ Gemini" / "📘 기본 이야기", `SceneOut.engine`)
+- [x] 동화 생성은 우리 팀이 학습시킨 Colab 모델이 주인공 (Gemini는 Colab이 꺼지거나 실패할 때만)
+- [x] 스트리밍: 장면 글이 만들어지는 대로 화면에 한 글자씩 (`POST .../start/stream`, `.../{id}/choose/stream`, `.../{id}/finish/stream`)
+  - Colab `/story/start/stream`, `/story/continue/stream`(NDJSON meta·delta·status·complete·error)을 받아 우리 서버도 NDJSON으로 전달
+    (`engine` / `text`(정리한 지금까지 본문) / `status` / `reset` / `state`(DB 저장 후 최종 상태) / `error`)
+  - Colab 스트리밍이 실패하면 Colab 일반 호출 → Gemini → 예비 장면, 화면은 스트리밍 연결이 안 되면 일반 API로
+  - 만들기는 별도 작업이라 화면이 중간에 끊겨도 끝까지 저장 (화면은 저장될 때까지 기다렸다가 불러옴)
+  - 잘못된 요청(끝난 동화, 빈 주제 등)은 스트리밍 시작 전에 보통 HTTP 오류
+  - 웹은 기본 http가 스트리밍을 못 해서 `fetch_client` (`lib/core/stream_client*.dart`, 조건부 import)
+- [x] 생성 중 문구: "🤖 우리 팀 AI가 동화를 쓰고 있어요 ✍️" (Gemini로 넘어가면 "Gemini가 대신 쓰고 있어요"), 쓰는 중인 장면 카드 + 선택지 준비 안내
+- [x] 선택지가 Colab 기본값("계속 나아간다 / 도움을 요청한다 / 잠깐 생각해본다")이면 Colab `/story/choices`로 다시 → 그래도 기본값이면 그때만 Gemini로 선택지만
+  - JSON·코드 찌꺼기 선택지(실제로 `javascript`, `description": "…` 가 온 적 있음)도 다시 만들기, 끝까지 안 되면 찌꺼기는 버리고 기본 선택지로
+- [x] Colab 본문의 HTML 찌꺼기 정리 (`</br>` → 줄바꿈, `<p>` `<strong>` `[ ]` 지움, 스트리밍 중 덜 온 태그는 숨김)
+- [x] 조사 앞 띄어쓰기 고치기 (`story_text.fix_particle_spacing`, Colab 본문에만): "토끼 는" → "토끼는", "뿔 을" → "뿔을"
+  - 보수적으로: 조사가 떨어진 낱말일 때만, 앞 낱말이 어미·조사로 끝나거나 부사·관형사면 그대로, 받침과 조사가 맞을 때만
+  - 테스트 문장 36개(고칠 것 19 + 그대로 둘 것 17) 확인
 - [x] 장면 그림 (`backend/story_images.py`): 본문이 먼저 나오고 화면이 따로 `POST /api/stories/{id}/scenes/{n}/image` → Colab `/story/image`
   - PNG → JPEG로 줄여 `backend/static/story_images/`에 저장, URL은 `stories.scene_images.{n}` (scenes 배열과 따로라 다음 장면 저장과 안 겹침)
   - 실패하면 `scene_image_failed.{n}` → 그 장면은 그림 없이 진행, 같은 장면 동시 요청은 한 번만 그림
