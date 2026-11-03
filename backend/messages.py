@@ -1,6 +1,6 @@
 """1:1 쪽지 (간단한 일회성 쪽지, 대화방 없음).
 
-messages 컬렉션 문서:
+direct_messages 컬렉션 문서: ("messages" 컬렉션은 팀원 기능용이라 쓰지 않음)
     sender_id, receiver_id   보낸 사람 / 받는 사람 공개 id
     content                  내용 (300자 이하)
     is_read, read_at         읽음 여부
@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from community import Author, author_map
-from database import messages_collection, safe_create_index
+from database import direct_messages_collection, safe_create_index
 from reports import reported_target_ids
 from security import find_user_by_public_id, get_current_user
 
@@ -74,9 +74,10 @@ def _oid(value: str) -> ObjectId:
 
 
 async def ensure_indexes() -> None:
-    await safe_create_index(messages_collection, [("receiver_id", 1), ("deleted_by_receiver", 1), ("created_at", -1)])
-    await safe_create_index(messages_collection, [("sender_id", 1), ("deleted_by_sender", 1), ("created_at", -1)])
-    await safe_create_index(messages_collection, [("receiver_id", 1), ("is_read", 1)])
+    dm = direct_messages_collection
+    await safe_create_index(dm, [("receiver_id", 1), ("deleted_by_receiver", 1), ("created_at", -1)], name="dm_receiver_box_idx")
+    await safe_create_index(dm, [("sender_id", 1), ("deleted_by_sender", 1), ("created_at", -1)], name="dm_sender_box_idx")
+    await safe_create_index(dm, [("receiver_id", 1), ("is_read", 1)], name="dm_receiver_unread_idx")
 
 
 def _box_query(user_id: str, box: str) -> dict:
@@ -86,7 +87,7 @@ def _box_query(user_id: str, box: str) -> dict:
 
 
 async def _unread_count(user_id: str) -> int:
-    return await messages_collection.count_documents(
+    return await direct_messages_collection.count_documents(
         {"receiver_id": user_id, "is_read": False, "deleted_by_receiver": {"$ne": True}}
     )
 
@@ -130,7 +131,7 @@ async def send_message(body: MessageSendRequest, current_user: dict = Depends(ge
     reply_to = (body.reply_to or "").strip()
     if reply_to:
         # 답장은 내가 받은 쪽지에만 할 수 있습니다.
-        original = await messages_collection.find_one(
+        original = await direct_messages_collection.find_one(
             {"_id": _oid(reply_to), "receiver_id": sender_id, "sender_id": receiver_id}
         ) if ObjectId.is_valid(reply_to) else None
         if not original:
@@ -147,7 +148,7 @@ async def send_message(body: MessageSendRequest, current_user: dict = Depends(ge
         "deleted_by_receiver": False,
         "created_at": datetime.utcnow(),
     }
-    result = await messages_collection.insert_one(doc)
+    result = await direct_messages_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
     return (await _items([doc], sender_id))[0]
 
@@ -161,9 +162,9 @@ async def list_messages(
 ):
     user_id = current_user["user_id"]
     query = _box_query(user_id, box)
-    total = await messages_collection.count_documents(query)
+    total = await direct_messages_collection.count_documents(query)
     docs = await (
-        messages_collection.find(query).sort([("created_at", -1), ("_id", -1)])
+        direct_messages_collection.find(query).sort([("created_at", -1), ("_id", -1)])
         .skip((page - 1) * size).limit(size).to_list(length=size)
     )
     return MessageListResponse(
@@ -182,7 +183,7 @@ async def read_message(message_id: str, current_user: dict = Depends(get_current
     """쪽지 하나 보기. 받은 쪽지를 열면 읽음으로 바뀝니다."""
     user_id = current_user["user_id"]
     oid = _oid(message_id)
-    doc = await messages_collection.find_one({
+    doc = await direct_messages_collection.find_one({
         "_id": oid,
         "$or": [
             {"receiver_id": user_id, "deleted_by_receiver": {"$ne": True}},
@@ -193,7 +194,7 @@ async def read_message(message_id: str, current_user: dict = Depends(get_current
         raise HTTPException(status_code=404, detail=NOT_FOUND)
     if doc.get("receiver_id") == user_id and not doc.get("is_read"):
         now = datetime.utcnow()
-        await messages_collection.update_one({"_id": oid}, {"$set": {"is_read": True, "read_at": now}})
+        await direct_messages_collection.update_one({"_id": oid}, {"$set": {"is_read": True, "read_at": now}})
         doc["is_read"] = True
     return (await _items([doc], user_id))[0]
 
@@ -203,7 +204,7 @@ async def delete_message(message_id: str, current_user: dict = Depends(get_curre
     """내 쪽지함에서만 지웁니다. 상대방 쪽지함에는 남아 있어요."""
     user_id = current_user["user_id"]
     oid = _oid(message_id)
-    doc = await messages_collection.find_one({"_id": oid, "$or": [{"receiver_id": user_id}, {"sender_id": user_id}]})
+    doc = await direct_messages_collection.find_one({"_id": oid, "$or": [{"receiver_id": user_id}, {"sender_id": user_id}]})
     if not doc:
         raise HTTPException(status_code=404, detail=NOT_FOUND)
 
@@ -214,7 +215,7 @@ async def delete_message(message_id: str, current_user: dict = Depends(get_curre
         update["deleted_by_sender"] = True
     doc.update(update)
     if doc.get("deleted_by_receiver") and doc.get("deleted_by_sender"):
-        await messages_collection.delete_one({"_id": oid})
+        await direct_messages_collection.delete_one({"_id": oid})
     else:
-        await messages_collection.update_one({"_id": oid}, {"$set": update})
+        await direct_messages_collection.update_one({"_id": oid}, {"$set": update})
     return SimpleResult(success=True, message="쪽지를 지웠어요.")

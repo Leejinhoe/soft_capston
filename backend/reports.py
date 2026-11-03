@@ -26,7 +26,7 @@ from pymongo.errors import DuplicateKeyError
 from database import (
     safe_create_index,
     comments_collection,
-    messages_collection,
+    direct_messages_collection,
     posts_collection,
     reports_collection,
     users_collection,
@@ -171,7 +171,7 @@ async def _resolve_target(target_type: str, target_id: str, reporter_id: str) ->
         }
 
     # message: 내가 받은 쪽지만 신고할 수 있습니다.
-    doc = await messages_collection.find_one({"_id": oid, "receiver_id": reporter_id})
+    doc = await direct_messages_collection.find_one({"_id": oid, "receiver_id": reporter_id})
     if not doc:
         raise not_found
     return {
@@ -289,7 +289,7 @@ async def _admin_items(docs: list[dict]) -> list[AdminReportItem]:
     alive: dict[str, set[str]] = {
         "post": await _existing_ids(posts_collection, by_type.get("post", [])),
         "comment": await _existing_ids(comments_collection, by_type.get("comment", [])),
-        "message": await _existing_ids(messages_collection, by_type.get("message", [])),
+        "message": await _existing_ids(direct_messages_collection, by_type.get("message", [])),
         "user": set(),
     }
     if by_type.get("user"):

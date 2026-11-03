@@ -91,7 +91,7 @@
   - 사진, 닉네임, 한 줄 소개, 공개한 동화 수(커뮤니티 게시글 수), 받은 좋아요 수
 - [x] "쪽지 보내기", "신고하기" 버튼 (내 프로필이면 숨김, `is_me`)
 ### 1:1 쪽지 — `backend/messages.py`, `lib/pages/message_box_page.dart`
-- [x] `messages` 컬렉션: `sender_id, receiver_id, content(300자), is_read, read_at, reply_to, deleted_by_sender, deleted_by_receiver, created_at`
+- [x] `direct_messages` 컬렉션 (`messages`는 팀원 기능용으로 비워 둠, 인덱스 `dm_receiver_box_idx`·`dm_sender_box_idx`·`dm_receiver_unread_idx`): `sender_id, receiver_id, content(300자), is_read, read_at, reply_to, deleted_by_sender, deleted_by_receiver, created_at`
 - [x] `POST /api/messages` 보내기 (자기 자신에게는 불가), `GET /api/messages?box=received|sent`, `GET /api/messages/{id}`(열면 읽음), `GET /api/messages/unread-count`, `DELETE /api/messages/{id}`(내 쪽지함에서만, 양쪽 다 지우면 실제 삭제)
 - [x] 마이페이지 "쪽지함": 받은 쪽지 / 보낸 쪽지 탭, 안 읽은 쪽지 배지(마이페이지 카드 + 탭)
 - [x] 받은 쪽지: 답장 / 삭제 / 신고, 보낸 쪽지: 읽음 여부 표시, 삭제

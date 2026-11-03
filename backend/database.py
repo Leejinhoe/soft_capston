@@ -22,7 +22,8 @@ post_likes_collection = database.get_collection("post_likes")
 post_scraps_collection = database.get_collection("post_scraps")
 comments_collection = database.get_collection("comments")
 word_meaning_cache_collection = database.get_collection("word_meaning_cache")
-messages_collection = database.get_collection("messages")
+# 1:1 쪽지. "messages"는 팀원 기능(캐릭터 대화 등)이 쓸 수 있어 따로 둡니다.
+direct_messages_collection = database.get_collection("direct_messages")
 
 
 # ----------------------------------------
