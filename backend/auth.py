@@ -7,6 +7,8 @@ load_dotenv()
 
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
+# 카카오 콘솔에서 Client Secret을 켰을 때만 .env에 넣기. 없으면 지금처럼 secret 없이 토큰 요청
+KAKAO_CLIENT_SECRET = (os.getenv("KAKAO_CLIENT_SECRET") or "").strip()
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
@@ -17,16 +19,23 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
 
+def kakao_token_request_data(code: str) -> dict:
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": KAKAO_REST_API_KEY,
+        "redirect_uri": KAKAO_REDIRECT_URI,
+        "code": code,
+    }
+    if KAKAO_CLIENT_SECRET:
+        data["client_secret"] = KAKAO_CLIENT_SECRET
+    return data
+
+
 async def get_kakao_access_token(code: str) -> str:
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://kauth.kakao.com/oauth/token",
-            data={
-                "grant_type": "authorization_code",
-                "client_id": KAKAO_REST_API_KEY,
-                "redirect_uri": KAKAO_REDIRECT_URI,
-                "code": code,
-            },
+            data=kakao_token_request_data(code),
         )
     token_data = response.json()
     print("카카오 응답:", token_data)
