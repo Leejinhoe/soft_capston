@@ -43,7 +43,9 @@ from community import (
 )
 from quiz import build_questions, card_definition
 from story_text import clean_story_text
-from word_meaning import explain_word, explain_words, is_ambiguous_text, sentence_with, to_dictionary_style
+from gemini_client import FallbackModel, parse_model_list
+from meaning_cache import cached_explain_word, cached_explain_words, ensure_indexes as ensure_meaning_cache_indexes
+from word_meaning import is_ambiguous_text, sentence_with, to_dictionary_style
 from security import (
     ROLE_ADMIN,
     ROLE_USER,
@@ -69,6 +71,7 @@ app.include_router(community_router)
 @app.on_event("startup")
 async def create_community_indexes():
     await ensure_community_indexes()
+    await ensure_meaning_cache_indexes()
 
 
 # ----------------------------------------
@@ -108,14 +111,16 @@ app.add_middleware(
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 # gemini-1.5-flash는 지원 종료(404). 바꾸고 싶으면 .env에 GEMINI_MODEL=... 지정
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
-llm_model = genai.GenerativeModel(GEMINI_MODEL)
+# 한도 초과(429)면 GEMINI_FALLBACK_MODELS(쉼표로 구분) 모델로 자동 재시도 (gemini_client.py)
+GEMINI_FALLBACK_MODELS = parse_model_list(os.getenv("GEMINI_FALLBACK_MODELS"))
+llm_model = FallbackModel(GEMINI_MODEL, GEMINI_FALLBACK_MODELS)
 
 
 def log_gemini_error(where: str, e: Exception) -> None:
     """Gemini 호출 실패 시 예비 동작으로 넘어가기 전에 서버 터미널에 원인을 남깁니다."""
     print(
         f"[Gemini 오류] {where} 실패 → 예비 동작 사용 "
-        f"(model={GEMINI_MODEL}) {type(e).__name__}: {e}",
+        f"(models={llm_model.model_names}) {type(e).__name__}: {e}",
         flush=True,
     )
 
@@ -325,7 +330,7 @@ async def add_vocabulary(vocab: VocabularySchema, current_user: dict = Depends(g
     official_definition = "" if pending else (vocab.dict_definition or "").strip()
     sentence = (vocab.sentence or "").strip()
     if not final_meaning:
-        found = await explain_word(llm_model, vocab.hard, sentence or vocab.hard)
+        found = await cached_explain_word(llm_model, vocab.hard, sentence or vocab.hard)
         final_meaning = found["definition"]
         official_definition = found["dict_definition"]
         pending = found["ambiguous"]
@@ -394,7 +399,7 @@ async def search_vocabulary_with_context(
     - source: dictionary(사전 뜻) / ai(직접 씀) / fallback(Gemini 실패)
     - Gemini 실패 시 사전 뜻이 1개면 그대로, 여러 개면 "뜻이 여러 가지예요" + 짧은 뜻 2~3개 (ambiguous=true)
     """
-    result = await explain_word(llm_model, body.word, body.sentence.strip(), body.age or "5-7세")
+    result = await cached_explain_word(llm_model, body.word, body.sentence.strip(), body.age or "5-7세")
     hard = result["hard"] or re.sub(r"[^\w가-힣]", "", body.word)
     return {
         "hard": hard,
@@ -439,7 +444,7 @@ async def _resolve_pending_meanings(items: list[dict]) -> None:
     """뜻을 못 고른 채 저장된 단어를 다시 골라 봅니다. (Gemini가 돌아왔으면 확정 뜻으로 바뀜)"""
     pending = [it for it in items if it.get("meaning_pending")][:RESOLVE_PENDING_PER_REQUEST]
     for item in pending:
-        found = await explain_word(llm_model, item.get("word", ""), item.get("context_sentence") or item.get("word", ""))
+        found = await cached_explain_word(llm_model, item.get("word", ""), item.get("context_sentence") or item.get("word", ""))
         if found["ambiguous"] or not found["definition"]:
             continue
         fields = {"meaning": found["definition"], "official_definition": found["dict_definition"],
@@ -617,7 +622,7 @@ async def generate_story(body: GenerateStoryRequest, current_user: dict = Depend
             needles = [(item.get("surface") or "").strip(), hard, hard[:-1] if hard.endswith("다") else ""]
             item["sentence"] = sentence_with(story_text, needles)  # 단어장 저장 때 다시 고를 문맥
             items.append({"word": hard, "sentence": item["sentence"]})
-        for item, found in zip(vocab_list, await explain_words(llm_model, items, body.age)):
+        for item, found in zip(vocab_list, await cached_explain_words(llm_model, items, body.age)):
             item["definition"] = found["definition"] or to_dictionary_style(item.get("definition") or "")
             item["dict_definition"] = found["dict_definition"]
             item["ambiguous"] = found["ambiguous"]
