@@ -11,12 +11,22 @@ stories 문서 (기존 필드 title/content/genre/is_public/created_at은 그대
 """
 from datetime import datetime
 from typing import Optional
+import re
+import asyncio
+import hashlib
+from pathlib import Path
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from gridfs.errors import NoFile
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field
 
-from database import stories_collection
+from database import database, stories_collection, MEDIA_FILES_BUCKET
+import cloudflare_character
+import hf_space_video
+from story_video_assembly import assemble_scene_videos
 from security import get_current_user
 from story_engine import (
     CHOICE_COUNT,
@@ -36,6 +46,10 @@ STATUS_IN_PROGRESS = "in_progress"
 STATUS_COMPLETED = "completed"
 STORY_NOT_FOUND = "동화를 찾지 못했어요."
 ENGINE_FAILED = "이야기 요정이 잠깐 쉬고 있어요. 조금 뒤에 다시 눌러 주세요."
+CHARACTER_NAMES = {
+    **{f"male_{i:02d}": name for i, name in enumerate(("민호", "준", "태산", "도윤", "보리", "레이븐", "이안", "하늘"), 1)},
+    **{f"female_{i:02d}": name for i, name in enumerate(("미나", "하나", "미란", "루나", "서연", "아린", "나라", "솔"), 1)},
+}
 ALREADY_MOVED = "이야기가 벌써 다음으로 넘어갔어요. 화면을 새로 불러올게요."
 
 _engine: Optional[StoryEngine] = None
@@ -58,6 +72,7 @@ class StartStoryRequest(BaseModel):
     prompt: str = Field(..., description="주제/주인공")
     genre: str
     age: str = "5-7세"
+    character_key: Optional[str] = None
 
 
 class ChooseRequest(BaseModel):
@@ -74,6 +89,8 @@ class SceneOut(BaseModel):
     text: str
     choices: list[str] = []
     chosen_index: Optional[int] = None
+    image_url: Optional[str] = None
+    video_url: Optional[str] = None
     is_ending: bool = False
 
 
@@ -83,6 +100,8 @@ class StoryStateResponse(BaseModel):
     topic: str = ""
     genre: str = ""
     age: str = ""
+    character_key: Optional[str] = None
+    assembled_video_url: Optional[str] = None
     status: str
     scenes: list[SceneOut]
     content: str
@@ -118,6 +137,7 @@ def _setup(doc: dict) -> StorySetup:
         topic=doc.get("topic") or doc.get("title") or "",
         genre=doc.get("genre") or "",
         age=doc.get("age") or "5-7세",
+        character_name=CHARACTER_NAMES.get(doc.get("character_key"), ""),
     )
 
 
@@ -131,6 +151,8 @@ def _state(doc: dict) -> StoryStateResponse:
         topic=doc.get("topic") or "",
         genre=doc.get("genre") or "",
         age=doc.get("age") or "",
+        character_key=doc.get("character_key"),
+        assembled_video_url=doc.get("assembled_video_url"),
         status=story_status(doc),
         scenes=[
             SceneOut(
@@ -138,6 +160,8 @@ def _state(doc: dict) -> StoryStateResponse:
                 text=s.get("text") or "",
                 choices=s.get("choices") or [],
                 chosen_index=s.get("chosen_index"),
+                image_url=s.get("image_url"),
+                video_url=s.get("video_url"),
                 is_ending=bool(s.get("is_ending")),
             )
             for i, s in enumerate(scenes, 1)
@@ -187,7 +211,7 @@ async def _save_step(doc: dict, scenes: list[dict], new_scene: dict, extra_set: 
     if history:
         update["$push"] = {"choice_history": history}
     result = await stories_collection.update_one(
-        {"_id": doc["_id"], "user_id": doc["user_id"], "status": STATUS_IN_PROGRESS, "scenes": {"$size": len(scenes)}},
+        {"_id": doc["_id"], "user_id": doc["user_id"], "status": STATUS_IN_PROGRESS, "scenes": doc["scenes"]},
         update,
     )
     if result.matched_count == 0:
@@ -217,7 +241,10 @@ async def start_story(body: StartStoryRequest, current_user: dict = Depends(get_
         raise HTTPException(status_code=400, detail="동화 주제를 입력해 주세요.")
     if len(topic) > 100:
         raise HTTPException(status_code=400, detail="주제는 100자까지 쓸 수 있어요.")
-    setup = StorySetup(topic=topic, genre=body.genre.strip()[:20], age=body.age.strip()[:20] or "5-7세")
+    if body.character_key and not re.fullmatch(r"(?:male|female)_0[1-8]", body.character_key):
+        raise HTTPException(status_code=400, detail="선택할 수 없는 캐릭터예요.")
+    setup = StorySetup(topic=topic, genre=body.genre.strip()[:20], age=body.age.strip()[:20] or "5-7세",
+                       character_name=CHARACTER_NAMES.get(body.character_key, ""))
 
     first = await _generate("opening", setup)
     scene = _scene_doc(first, is_ending=False)
@@ -228,6 +255,7 @@ async def start_story(body: StartStoryRequest, current_user: dict = Depends(get_
         "topic": topic,
         "genre": setup.genre,
         "age": setup.age,
+        "character_key": body.character_key,
         "mode": "branching",
         "status": STATUS_IN_PROGRESS,
         "scenes": [scene],
@@ -245,6 +273,210 @@ async def start_story(body: StartStoryRequest, current_user: dict = Depends(get_
 @router.get("/api/stories/{story_id}/branching", response_model=StoryStateResponse)
 async def get_story_state(story_id: str, current_user: dict = Depends(get_current_user)):
     """이어하기 / 다시 보기 (예전 통짜 동화도 완료된 장면 1개로 보여줌)"""
+    return _state(await _my_story(story_id, current_user["user_id"]))
+
+
+@router.get("/api/stories/{story_id}/scenes/{scene_number}/image")
+async def get_scene_image(story_id: str, scene_number: int, current_user: dict = Depends(get_current_user)):
+    doc = await _my_story(story_id, current_user["user_id"])
+    scenes = doc.get("scenes") or []
+    if scene_number < 1 or scene_number > len(scenes):
+        raise HTTPException(status_code=404, detail="장면을 찾지 못했어요.")
+    scene = scenes[scene_number - 1]
+    file_id = scene.get("image_file_id")
+    if not file_id:
+        url = str(scene.get("image_url") or "")
+        prefix = "/api/media/images/"
+        file_id = url[len(prefix):] if url.startswith(prefix) else ""
+    if not ObjectId.is_valid(str(file_id or "")):
+        raise HTTPException(status_code=404, detail="장면 이미지가 없어요.")
+    bucket = AsyncIOMotorGridFSBucket(database, bucket_name=MEDIA_FILES_BUCKET)
+    try:
+        stream = await bucket.open_download_stream(ObjectId(str(file_id)))
+        if stream.length > 10_000_000:
+            raise HTTPException(status_code=413, detail="이미지가 너무 커요.")
+        data = await stream.read()
+    except NoFile:
+        raise HTTPException(status_code=404, detail="장면 이미지가 없어요.")
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/api/stories/{story_id}/scenes/{scene_number}/video")
+async def get_scene_video(story_id: str, scene_number: int, current_user: dict = Depends(get_current_user)):
+    doc = await _my_story(story_id, current_user["user_id"])
+    scenes = doc.get("scenes") or []
+    if scene_number < 1 or scene_number > len(scenes):
+        raise HTTPException(status_code=404, detail="장면을 찾지 못했어요.")
+    scene = scenes[scene_number - 1]
+    file_id = scene.get("video_file_id")
+    if not file_id:
+        url = str(scene.get("video_url") or "")
+        prefix = "/api/media/videos/"
+        file_id = url[len(prefix):] if url.startswith(prefix) else ""
+    if not ObjectId.is_valid(str(file_id or "")):
+        raise HTTPException(status_code=404, detail="장면 영상이 없어요.")
+    bucket = AsyncIOMotorGridFSBucket(database, bucket_name=MEDIA_FILES_BUCKET)
+    try:
+        stream = await bucket.open_download_stream(ObjectId(str(file_id)))
+        if stream.length > 30_000_000:
+            raise HTTPException(status_code=413, detail="영상이 너무 커요.")
+        data = await stream.read()
+    except NoFile:
+        raise HTTPException(status_code=404, detail="장면 영상이 없어요.")
+    return Response(content=data, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/api/stories/{story_id}/scenes/{scene_number}/video")
+async def create_scene_video(story_id: str, scene_number: int, current_user: dict = Depends(get_current_user)):
+    doc = await _my_story(story_id, current_user["user_id"])
+    scenes = doc.get("scenes") or []
+    if scene_number < 1 or scene_number > len(scenes):
+        raise HTTPException(status_code=404, detail="장면을 찾지 못했어요.")
+    scene = scenes[scene_number - 1]
+    if scene.get("video_url") or scene.get("video_file_id"):
+        return _state(doc)
+    if not hf_space_video.enabled():
+        raise HTTPException(status_code=503, detail="영상 생성 서비스가 설정되지 않았어요.")
+    source = await get_scene_image(story_id, scene_number, current_user)
+    choice = scenes[scene_number - 2].get("chosen") if scene_number > 1 else None
+    action = choice or scene.get("text") or ""
+    try:
+        result = await hf_space_video.generate_scene_video(source.body, action)
+        video = result["video_bytes"]
+    except Exception:
+        raise HTTPException(status_code=503, detail="장면 영상을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.") from None
+    bucket = AsyncIOMotorGridFSBucket(database, bucket_name=MEDIA_FILES_BUCKET)
+    file_id = await bucket.upload_from_stream(
+        f"scene-{story_id}-{scene_number}.mp4", video,
+        metadata={"owner_user_id": current_user["user_id"], "story_id": story_id,
+                  "character_key": doc.get("character_key"), "provider": result.get("provider")},
+    )
+    idx = scene_number - 1
+    update = await stories_collection.update_one(
+        {"_id": doc["_id"], "user_id": current_user["user_id"],
+         f"scenes.{idx}.text": scene.get("text"),
+         f"scenes.{idx}.image_url": scene.get("image_url"),
+         f"scenes.{idx}.image_file_id": scene.get("image_file_id"),
+         f"scenes.{idx}.video_url": {"$in": [None, ""]},
+         f"scenes.{idx}.video_file_id": {"$in": [None, ""]}},
+        {"$set": {f"scenes.{idx}.video_file_id": str(file_id),
+                  f"scenes.{idx}.video_url": f"/api/media/videos/{file_id}"}},
+    )
+    if not update.matched_count:
+        await bucket.delete(file_id)
+    return _state(await _my_story(story_id, current_user["user_id"]))
+
+
+@router.post("/api/stories/{story_id}/journey-video")
+async def create_journey_video(story_id: str, current_user: dict = Depends(get_current_user)):
+    doc = await _my_story(story_id, current_user["user_id"])
+    if story_status(doc) != STATUS_COMPLETED:
+        raise HTTPException(status_code=409, detail="동화를 완성한 후 영상을 만들 수 있어요.")
+    scenes = doc.get("scenes") or []
+    numbers = [i + 1 for i, scene in enumerate(scenes) if scene.get("video_url") or scene.get("video_file_id")]
+    if not numbers:
+        raise HTTPException(status_code=409, detail="이어 붙일 장면 영상이 없어요.")
+    if len(numbers) > 20:
+        raise HTTPException(status_code=400, detail="장면 영상이 너무 많아요.")
+    fingerprint = hashlib.sha256("|".join(
+        str(scenes[n - 1].get("video_file_id") or scenes[n - 1].get("video_url"))
+        for n in numbers
+    ).encode()).hexdigest()
+    if doc.get("assembled_video_url") and doc.get("assembled_video_fingerprint") == fingerprint:
+        return _state(doc)
+    clips = []
+    for number in numbers:
+        response = await get_scene_video(story_id, number, current_user)
+        clips.append(response.body)
+        if sum(map(len, clips)) > 150_000_000:
+            raise HTTPException(status_code=413, detail="장면 영상의 전체 크기가 너무 커요.")
+    try:
+        video = await asyncio.to_thread(assemble_scene_videos, clips)
+    except Exception:
+        raise HTTPException(status_code=503, detail="동화 영상을 이어 붙이지 못했어요.") from None
+    if len(video) > 30_000_000:
+        raise HTTPException(status_code=413, detail="완성 영상이 너무 커요.")
+    bucket = AsyncIOMotorGridFSBucket(database, bucket_name=MEDIA_FILES_BUCKET)
+    file_id = await bucket.upload_from_stream(
+        f"journey-{story_id}.mp4", video,
+        metadata={"owner_user_id": current_user["user_id"], "story_id": story_id, "type": "journey"},
+    )
+    result = await stories_collection.update_one(
+        {"_id": doc["_id"], "user_id": current_user["user_id"], "scenes": scenes,
+         "assembled_video_fingerprint": doc.get("assembled_video_fingerprint")},
+        {"$set": {"assembled_video_file_id": str(file_id),
+                  "assembled_video_url": f"/api/stories/{story_id}/journey-video?v={file_id}",
+                  "assembled_video_fingerprint": fingerprint}},
+    )
+    if not result.matched_count:
+        await bucket.delete(file_id)
+        raise HTTPException(status_code=409, detail="장면이 변경됐어요. 다시 시도해 주세요.")
+    return _state(await _my_story(story_id, current_user["user_id"]))
+
+
+@router.get("/api/stories/{story_id}/journey-video")
+async def get_journey_video(story_id: str, current_user: dict = Depends(get_current_user)):
+    doc = await _my_story(story_id, current_user["user_id"])
+    file_id = doc.get("assembled_video_file_id")
+    if not ObjectId.is_valid(str(file_id or "")):
+        raise HTTPException(status_code=404, detail="완성된 동화 영상이 없어요.")
+    bucket = AsyncIOMotorGridFSBucket(database, bucket_name=MEDIA_FILES_BUCKET)
+    try:
+        stream = await bucket.open_download_stream(ObjectId(str(file_id)))
+        if stream.length > 30_000_000:
+            raise HTTPException(status_code=413, detail="영상이 너무 커요.")
+        video = await stream.read()
+    except NoFile:
+        raise HTTPException(status_code=404, detail="완성된 동화 영상이 없어요.")
+    return Response(content=video, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/api/stories/{story_id}/scenes/{scene_number}/image")
+async def create_scene_image(story_id: str, scene_number: int, current_user: dict = Depends(get_current_user)):
+    doc = await _my_story(story_id, current_user["user_id"])
+    scenes = doc.get("scenes") or []
+    if scene_number < 1 or scene_number > len(scenes):
+        raise HTTPException(status_code=404, detail="장면을 찾지 못했어요.")
+    scene = scenes[scene_number - 1]
+    if scene.get("image_url") or scene.get("image_file_id"):
+        return _state(doc)
+    key = str(doc.get("character_key") or "")
+    if not re.fullmatch(r"(?:male|female)_0[1-8]", key):
+        raise HTTPException(status_code=400, detail="동화에 선택된 캐릭터가 없어요.")
+    if not cloudflare_character.enabled():
+        raise HTTPException(status_code=503, detail="이미지 생성 서비스가 설정되지 않았어요.")
+    reference = Path(__file__).resolve().parent.parent / "assets" / "characters" / f"{key}_reference_v2.png"
+    if not reference.is_file():
+        raise HTTPException(status_code=503, detail="캐릭터 이미지를 찾지 못했어요.")
+    try:
+        scene_text = scene.get("text") or ""
+        choice = scenes[scene_number - 2].get("chosen") if scene_number > 1 else None
+        if choice:
+            scene_text = f"선택한 행동: {choice}\n장면: {scene_text}"
+        direction = cloudflare_character.infer_reference_direction(scene_text)
+        second = cloudflare_character.directional_reference(key, direction)
+        image = await cloudflare_character.generate_scene(
+            reference.read_bytes(), scene_text,
+            direction_reference=second[1] if second else None,
+            direction_view=second[0] if second else None,
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="장면 이미지를 생성하지 못했어요. 잠시 후 다시 시도해 주세요.") from None
+    bucket = AsyncIOMotorGridFSBucket(database, bucket_name=MEDIA_FILES_BUCKET)
+    file_id = await bucket.upload_from_stream(
+        f"scene-{story_id}-{scene_number}.png", image,
+        metadata={"owner_user_id": current_user["user_id"], "story_id": story_id, "character_key": key},
+    )
+    idx = scene_number - 1
+    update = await stories_collection.update_one(
+        {"_id": doc["_id"], "user_id": current_user["user_id"],
+         f"scenes.{idx}.text": scene.get("text"), f"scenes.{idx}.image_url": {"$in": [None, ""]},
+         f"scenes.{idx}.image_file_id": {"$in": [None, ""]}},
+        {"$set": {f"scenes.{idx}.image_file_id": str(file_id),
+                  f"scenes.{idx}.image_url": f"/api/media/images/{file_id}"}},
+    )
+    if not update.matched_count:
+        await bucket.delete(file_id)
     return _state(await _my_story(story_id, current_user["user_id"]))
 
 

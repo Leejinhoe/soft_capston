@@ -5,7 +5,10 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 백엔드 주소 (한 곳에서만 관리)
-const String kApiBaseUrl = 'http://127.0.0.1:8000';
+const String kApiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: 'http://127.0.0.1:8000',
+);
 
 /// 화면 어디서든 로그인 화면으로 보내거나 안내 문구를 띄우기 위한 전역 키
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
