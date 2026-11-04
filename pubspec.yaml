@@ -43,6 +43,9 @@ dependencies:
   # [이동] 차트 패키지 (dev_dependencies에서 dependencies로 이동)
   fl_chart: ^0.68.0
   just_audio: ^0.10.6
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
   image_cropper: ^12.2.1
 
 dev_dependencies:
@@ -59,6 +62,8 @@ flutter:
   # The following line ensures that the Material Icons font is
   # included with your application.
   uses-material-design: true
+  assets:
+    - assets/characters/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

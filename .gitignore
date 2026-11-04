@@ -1,4 +1,5 @@
 # Miscellaneous
+.test_deps/
 *.class
 *.log
 *.pyc

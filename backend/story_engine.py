@@ -30,6 +30,7 @@ class StorySetup:
     topic: str
     genre: str
     age: str
+    character_name: str = ""
 
 
 @dataclass
@@ -145,7 +146,8 @@ _CHOICE_RULES = """
 
 
 def _setup_block(setup: StorySetup) -> str:
-    return f"주제(주인공): {setup.topic}\n장르: {setup.genre}\n연령대: {setup.age}"
+    character = f"\n선택된 주인공 이름: {setup.character_name}. 이야기 끝까지 이 이름을 유지해." if setup.character_name else ""
+    return f"주제(주인공): {setup.topic}\n장르: {setup.genre}\n연령대: {setup.age}{character}"
 
 
 def _story_so_far(scenes: list[str]) -> str:

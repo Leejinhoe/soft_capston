@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kakao_flutter_sdk_common/kakao_flutter_sdk_common.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'core/api_client.dart';
 import 'core/auth_service.dart';
@@ -7,6 +8,7 @@ import 'pages/login_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   // Kakao SDK 초기화
   KakaoSdk.init(
