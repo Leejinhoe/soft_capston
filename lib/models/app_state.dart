@@ -948,6 +948,11 @@ class AppState extends ChangeNotifier {
     if (RegExp(r'^/api/media/images/[0-9a-fA-F]{24}$').hasMatch(savedPath)) {
       imageToSave = savedPath;
     }
+    String? videoToSave = chapter.videoUrl;
+    final savedVideoPath = Uri.tryParse(videoToSave ?? '')?.path ?? '';
+    if (RegExp(r'^/api/media/videos/[0-9a-fA-F]{24}$').hasMatch(savedVideoPath)) {
+      videoToSave = savedVideoPath;
+    }
 
     final pushed = await DbService.pushScene(
       storyId: dbStoryId,
@@ -958,7 +963,7 @@ class AppState extends ChangeNotifier {
       selectedChoiceEmotion: chapter.selectedChoiceEmotion?.toJson(),
       storyEmotion: chapter.storyEmotion?.toJson(),
       imageUrl: imageToSave,
-      videoUrl: chapter.videoUrl,
+      videoUrl: videoToSave,
     );
     if (!pushed) return false;
 
@@ -1154,6 +1159,45 @@ class AppState extends ChangeNotifier {
     }
 
     await _generateMediaForChapter(session, chapter, includeVideo: true);
+  }
+
+  /// Ensures all pending story/scene syncs complete and marks the story
+  /// reading state in MongoDB before assembling the final story video.
+  Future<void> syncCompletedStoryState(StorySession session) async {
+    if (_isTemporaryStory(session)) return;
+    final pendingSync = _storySyncQueue[session];
+    if (pendingSync != null) {
+      try {
+        await pendingSync;
+      } catch (_) {}
+    }
+    await _syncReadingState(session);
+  }
+
+  Future<void> ensureSceneMediaForAssembly(
+    StorySession session,
+    StoryChapter chapter,
+  ) async {
+    if (_isTemporaryStory(session)) return;
+    final pendingSync = _storySyncQueue[session];
+    if (pendingSync != null) {
+      try {
+        await pendingSync;
+      } catch (_) {}
+    }
+    if (!session.syncedChapterNumbers.contains(chapter.chapter)) {
+      await _syncSceneIfNeeded(session, chapter);
+    }
+    while (session.mediaGenerationChapterNumbers.contains(chapter.chapter)) {
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+    final hasVideo = chapter.videoUrl?.trim().isNotEmpty ?? false;
+    final hasImage = chapter.imageUrl?.trim().isNotEmpty ?? false;
+    if (!hasVideo && !hasImage) {
+      await _generateMediaForChapter(session, chapter, includeVideo: false);
+    }
+    session.syncedChapterNumbers.remove(chapter.chapter);
+    await _syncSceneIfNeeded(session, chapter);
   }
 
   bool _isTemporaryStory(StorySession session) {

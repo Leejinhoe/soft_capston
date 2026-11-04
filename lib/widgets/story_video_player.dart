@@ -18,12 +18,14 @@ class StoryVideoPlayer extends StatefulWidget {
   final Map<String, String> httpHeaders;
   final bool autoplay;
   final bool loop;
+  final double aspectRatio;
 
   StoryVideoPlayer({
     super.key,
     required StoryVideoClip this.clip,
     this.autoplay = false,
     this.loop = false,
+    this.aspectRatio = 2.0,
   }) : videoUrl = null,
        title = clip.title,
        description = clip.description,
@@ -37,6 +39,7 @@ class StoryVideoPlayer extends StatefulWidget {
     this.httpHeaders = const <String, String>{},
     this.autoplay = false,
     this.loop = false,
+    this.aspectRatio = 1.0,
   }) : clip = null;
 
   String get source => clip == null ? videoUrl! : 'asset:///${clip!.assetPath}';
@@ -187,7 +190,7 @@ class _StoryVideoPlayerState extends State<StoryVideoPlayer>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: 2,
+            aspectRatio: widget.aspectRatio,
             child: _error == null
                 ? Video(controller: _controller)
                 : Center(

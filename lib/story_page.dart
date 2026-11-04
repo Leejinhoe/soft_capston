@@ -2055,18 +2055,21 @@ class _StoryPageState extends State<StoryPage> {
     }
     setState(() { _assemblingStoryVideo = true; _assemblyStatus = null; });
     try {
+      await state.syncCompletedStoryState(story);
       for (final chapter in story.chapters) {
-        if (!_isRemoteMediaUrl(chapter.videoUrl)) {
+        if (!_isRemoteMediaUrl(chapter.videoUrl) &&
+            !_isRemoteMediaUrl(chapter.imageUrl)) {
           if (!mounted) return;
-          setState(() => _assemblyStatus = '${chapter.chapter}번째 장면을 영상으로 만들고 있어요.');
-          await state.generateVideoForChapter(story, chapter);
-          if (!_isRemoteMediaUrl(chapter.videoUrl)) {
-            throw Exception('${chapter.chapter}번째 장면 영상 생성에 실패했어요.');
-          }
+          setState(() => _assemblyStatus = '${chapter.chapter}번째 장면 미디어를 준비하고 있어요.');
+        }
+        await state.ensureSceneMediaForAssembly(story, chapter);
+        if (!_isRemoteMediaUrl(chapter.videoUrl) &&
+            !_isRemoteMediaUrl(chapter.imageUrl)) {
+          throw Exception('${chapter.chapter}번째 장면의 그림과 영상이 모두 없어요.');
         }
       }
       if (!mounted) return;
-      setState(() => _assemblyStatus = '장면을 연결하고 있어요.');
+      setState(() => _assemblyStatus = '장면을 자연스럽게 연결하고 있어요.');
       final url = await DbService.assembleStoryVideo(storyId);
       if (mounted) setState(() { story.assembledVideoUrl = url; _assemblyStatus = null; });
     } catch (error) {

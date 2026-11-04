@@ -62,3 +62,10 @@ backend/__pycache__/
 /output/
 /tmp/
 /assets/characters/motion_sheets/generated*/
+/artifacts/
+/character_reference_only_20261101.zip
+/character_training_dataset_16.zip
+/tools/next_actions/
+/notebooks/fairytale_character_sdxl_lora_colab.ipynb
+/backend/requirements-render.txt
+/.local_archive/

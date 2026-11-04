@@ -4149,7 +4149,12 @@ async def list_user_stories(user_id: str):
 
 @app.post("/api/stories/{story_id}/video/assemble")
 async def assemble_story_video(story_id: str, request: Request):
-    from story_video_assembly import MAX_SCENES, assemble_scene_videos
+    from story_video_assembly import (
+        HIGH_QUALITY_FPS,
+        MAX_SCENES,
+        assemble_scene_media,
+        detect_story_action,
+    )
 
     story = await require_story_owner(story_id, request)
     if not story.get("completed"):
@@ -4157,21 +4162,36 @@ async def assemble_story_video(story_id: str, request: Request):
     scenes = sorted(story.get("scenes") or [], key=lambda scene: scene.get("step_number", 0))
     if not scenes or len(scenes) > MAX_SCENES:
         raise HTTPException(status_code=400, detail="The story must have 1 to 20 scenes.")
+    hero_key = str((story.get("character_overrides") or {}).get("hero") or "").strip().lower()
+    if not hero_key:
+        for member in story.get("story_cast") or []:
+            if isinstance(member, dict) and member.get("character_key"):
+                hero_key = str(member.get("character_key")).strip().lower()
+                break
     ids = []
+    sources = []
     missing = []
     for scene in scenes:
-        match = re.fullmatch(r"/api/media/videos/([0-9a-fA-F]{24})", str(scene.get("video_url") or ""))
-        if match:
-            ids.append(match.group(1))
+        # Prefer the scene video; fall back to the scene illustration or character action animation.
+        video = re.search(r"/api/media/videos/([0-9a-fA-F]{24})$", str(scene.get("video_url") or ""))
+        image = re.search(r"/api/media/images/([0-9a-fA-F]{24})$", str(scene.get("image_url") or ""))
+        if video:
+            ids.append(video.group(1))
+            sources.append(("video", video.group(1), scene))
+        elif image:
+            ids.append(image.group(1))
+            sources.append(("image", image.group(1), scene))
         else:
             missing.append(scene.get("step_number"))
     if missing:
-        raise HTTPException(status_code=409, detail={"message": "Scene videos are missing.", "missing_scenes": missing})
-    for file_id in ids:
+        raise HTTPException(status_code=409, detail={"message": "Scene media is missing.", "missing_scenes": missing})
+    for kind, file_id, _scene in sources:
         records = await media_files_bucket.find({"_id": ObjectId(file_id)}).to_list(length=1)
         metadata = (records[0].get("metadata") or {}) if records else {}
-        if str(metadata.get("story_id") or "") != story_id or not owner_matches(metadata.get("owner_user_id"), authenticated_user_id(request)):
-            raise HTTPException(status_code=403, detail="Scene video access denied.")
+        if not records or not owner_matches(metadata.get("owner_user_id"), authenticated_user_id(request)):
+            raise HTTPException(status_code=403, detail="Scene media access denied.")
+        if not hero_key and metadata.get("character_key"):
+            hero_key = str(metadata.get("character_key")).strip().lower()
     existing_url = str(story.get("assembled_video_url") or "")
     existing = re.fullmatch(r"/api/media/videos/([0-9a-fA-F]{24})", existing_url)
     if existing and story.get("assembled_video_sources") == ids:
@@ -4180,10 +4200,41 @@ async def assemble_story_video(story_id: str, request: Request):
         if str(metadata.get("story_id") or "") == story_id and owner_matches(metadata.get("owner_user_id"), authenticated_user_id(request)):
             return {"video_url": existing_url, "scene_count": len(scenes), "reused": True}
     try:
-        clips = [await download_gridfs_file(file_id) for file_id in ids]
-        if sum(map(len, clips)) > 120_000_000:
-            raise ValueError("Scene videos are too large")
-        result = await asyncio.to_thread(assemble_scene_videos, clips)
+        items = []
+        total_bytes = 0
+        prev_kind = None
+        prev_file_id = None
+        for idx, (kind, file_id, scene) in enumerate(sources):
+            data = await download_gridfs_file(file_id)
+            total_bytes += len(data)
+            is_last_scene = idx == len(sources) - 1
+            scene_text = str(scene.get("content") or "")
+            detected_action = detect_story_action(scene_text) if hero_key else None
+            use_action_anim = (
+                kind == "image"
+                and not is_last_scene
+                and detected_action is not None
+                and (file_id == prev_file_id)
+            )
+            if use_action_anim:
+                items.append((
+                    "action",
+                    {
+                        "character_key": hero_key,
+                        "story_text": scene_text,
+                        "genre": str(story.get("genre") or "판타지"),
+                        "action": detected_action,
+                        "image_bytes": data,
+                    },
+                ))
+                prev_kind = "action"
+            else:
+                items.append((kind, data))
+                prev_kind = kind
+            prev_file_id = file_id
+        if total_bytes > 120_000_000:
+            raise ValueError("Scene media is too large")
+        result = await asyncio.to_thread(assemble_scene_media, items, fps=HIGH_QUALITY_FPS, width=1024, height=1024)
     except (ValueError, NoFile) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     video = await upload_generated_media_file(

@@ -59,6 +59,17 @@ class VideoSpaceTests(unittest.TestCase):
         self.assertIn("walks forward", prompt)
         self.assertEqual(hf_space_video._normalize_video_action_prompt("wave"), "wave")
 
+    def test_places_and_props_do_not_invent_unrelated_actions(self):
+        prompt = hf_space_video._normalize_video_action_prompt("나침반을 들고 다리를 건넌다")
+        self.assertIn("walks forward", prompt)
+        self.assertNotIn("treasure", prompt)
+        self.assertNotIn("opens", prompt)
+
+    def test_door_opening_is_not_replaced_by_a_celebration(self):
+        prompt = hf_space_video._normalize_video_action_prompt("별빛 정원의 문을 열어 본다")
+        self.assertIn("opens", prompt)
+        self.assertNotIn("waves", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

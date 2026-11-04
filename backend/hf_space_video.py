@@ -20,32 +20,21 @@ def _normalize_video_action_prompt(action: str) -> str:
     cleaned = (action or "").strip()[:500]
     if not cleaned or not re.search(r"[\uac00-\ud7a3]", cleaned):
         return cleaned
-    if "무지갯빛 다리" in cleaned or any(k in cleaned for k in ("나아갔", "걸음을 옮", "걸었", "건너")):
-        return (
-            "Animated watercolor storybook illustration, the young fairytale character walks "
-            "forward with clear stepping motion and swinging arms along a magical path, "
-            "floating glowing particles, smooth camera pan."
-        )
-    if "보물 상자" in cleaned or "나침반" in cleaned or "지도가" in cleaned:
-        return (
-            "Animated watercolor storybook illustration, the young fairytale character leans "
-            "forward excitedly and opens a glowing treasure chest, holding up a shining map "
-            "with expressive hand and body movement."
-        )
-    if "별빛의 정원" in cleaned or "보물을 발견" in cleaned:
-        return (
-            "Animated watercolor storybook illustration, the young fairytale character smiles "
-            "brightly, waves both hands happily and celebrates in a sparkling starlight garden."
-        )
-    if "수정 연못" in cleaned or "문자" in cleaned:
-        return (
-            "Animated watercolor storybook illustration, the young fairytale character gestures "
-            "gently while examining glowing ancient runes beside a shimmering crystal pond with "
-            "rippling water reflections."
-        )
+    movements = (
+        (("달리", "달려", "뛰어가", "뛰어갔"), "runs forward with clear alternating steps"),
+        (("열었", "열어", "연다", "열고", "열며"), "gently opens the object in front of them"),
+        (("건너", "건넌", "걸었", "걸어", "걸음을 옮", "나아갔", "나아가"), "walks forward with clear alternating steps"),
+        (("손을 흔", "손 흔", "인사"), "waves one hand gently"),
+        (("살펴", "들여다", "바라보", "관찰"), "looks around slowly"),
+        (("앉았", "앉아", "앉는", "앉는다"), "slowly sits down"),
+    )
+    movement = next((description for words, description in movements
+                     if any(word in cleaned for word in words)),
+                    "makes a small natural movement")
     return (
-        "Animated watercolor storybook illustration, the young fairytale character moves "
-        "naturally with expressive body and hand gestures in a magical fairytale scene."
+        "Animate the supplied storybook illustration. The same character " + movement +
+        ". Preserve the character's face, clothes, body proportions, and the existing "
+        "background. Stable camera, coherent anatomy, smooth continuous movement."
     )
 
 

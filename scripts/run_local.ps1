@@ -6,13 +6,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$BackendDir = Get-ChildItem -LiteralPath $ProjectRoot -Directory |
-  Where-Object { $_.Name -like "DB*" } |
-  Select-Object -First 1 -ExpandProperty FullName
+$BackendDir = Join-Path $ProjectRoot "backend"
 $EnvPath = Join-Path $ProjectRoot ".env"
 
-if (-not $BackendDir) {
-  throw "Backend directory starting with DB was not found under $ProjectRoot"
+if (-not (Test-Path -LiteralPath $BackendDir -PathType Container)) {
+  throw "Backend directory was not found at $BackendDir"
 }
 
 if (-not (Test-Path -LiteralPath $EnvPath)) {
