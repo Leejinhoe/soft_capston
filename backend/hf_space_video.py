@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from hf_media_common import HfMediaError
+from media_size import fit_video, INPUT_LIMIT
 
 MAX_IMAGE_BYTES = 10_000_000
 MAX_VIDEO_BYTES = 30_000_000
@@ -68,12 +69,12 @@ def _generate(image_bytes, action, seed):
         path = Path(result).resolve()
         if not path.is_relative_to(Path(folder).resolve()) or not path.is_file():
             raise HfMediaError("Video Space returned an unexpected output path")
-        if path.stat().st_size > MAX_VIDEO_BYTES:
+        if path.stat().st_size > INPUT_LIMIT:
             raise HfMediaError("Video Space output is too large")
         data = path.read_bytes()
         if len(data) < 12 or data[4:8] != b"ftyp":
             raise HfMediaError("Video Space output is not an MP4 file")
-        return data
+        return fit_video(data)
 
 
 async def generate_scene_video(image_bytes, action, seed=None):

@@ -1,6 +1,7 @@
 """Combine already generated scene clips without invoking a GPU provider."""
 import math
 import tempfile
+from io import BytesIO
 from pathlib import Path
 
 import imageio.v2 as imageio
@@ -11,6 +12,39 @@ WIDTH, HEIGHT, FPS = 640, 360, 12
 MAX_SCENES = 20
 MAX_FRAMES_PER_SCENE = FPS * 5
 FADE_FRAMES = 6
+
+
+def assemble_scene_images(images):
+    """Turn the chosen story's saved illustrations into one short MP4."""
+    if not images or len(images) > MAX_SCENES:
+        raise ValueError("A story must have between 1 and 20 scene images")
+    side, fps, scene_frames, fade = 1024, 24, 48, 12
+    with tempfile.TemporaryDirectory(prefix="story_images_") as folder:
+        output = Path(folder) / "story.mp4"
+        previous = None
+        with imageio.get_writer(
+            str(output), fps=fps, codec="libx264", macro_block_size=2,
+            ffmpeg_log_level="error", output_params=["-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"],
+        ) as writer:
+            for raw in images:
+                if not raw or len(raw) > 10_000_000:
+                    raise ValueError("Invalid scene image size")
+                with Image.open(BytesIO(raw)) as source:
+                    source.load()
+                    base = ImageOps.fit(source.convert("RGB"), (side, side), method=Image.Resampling.LANCZOS)
+                frames = []
+                for step in range(12):
+                    inset = round(side * 0.04 * step / 11)
+                    crop = base.crop((inset, inset, side - inset, side - inset))
+                    frames.append(np.asarray(crop.resize((side, side), Image.Resampling.BICUBIC), dtype=np.uint8))
+                for index in range(scene_frames):
+                    frame = frames[min(11, index * 12 // scene_frames)]
+                    if previous is not None and index < fade:
+                        alpha = (index + 1) / (fade + 1)
+                        frame = (previous.astype(np.float32) * (1 - alpha) + frame.astype(np.float32) * alpha).astype(np.uint8)
+                    writer.append_data(frame)
+                previous = frames[-1]
+        return output.read_bytes()
 
 
 def _fit(frame):

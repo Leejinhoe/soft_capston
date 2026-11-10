@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "assets": [
+    {
+      "asset_id": "forest",
+      "name": "숲길",
+      "kind": "background",
+      "keywords": [
+        "숲",
+        "forest"
+      ],
+      "style": "watercolor_v1",
+      "status": "approved",
+      "file": "forest-v1.png",
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "castle",
+      "name": "성문",
+      "kind": "background",
+      "keywords": [
+        "성문",
+        "궁전",
+        "castle"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "village",
+      "name": "마을",
+      "kind": "background",
+      "keywords": [
+        "마을",
+        "village"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "bridge",
+      "name": "강과 다리",
+      "kind": "background",
+      "keywords": [
+        "강가",
+        "다리를",
+        "bridge"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "meadow",
+      "name": "꽃밭",
+      "kind": "background",
+      "keywords": [
+        "꽃밭",
+        "초원",
+        "meadow"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "cave",
+      "name": "동굴 입구",
+      "kind": "background",
+      "keywords": [
+        "동굴",
+        "cave"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "cottage",
+      "name": "오두막 내부",
+      "kind": "background",
+      "keywords": [
+        "오두막",
+        "cottage"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "garden",
+      "name": "달빛 정원",
+      "kind": "background",
+      "keywords": [
+        "정원",
+        "garden"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/backgrounds-v1.png"
+    },
+    {
+      "asset_id": "chest",
+      "name": "보물상자",
+      "kind": "prop",
+      "keywords": [
+        "보물상자",
+        "treasure chest"
+      ],
+      "style": "watercolor_v1",
+      "status": "approved",
+      "file": "chest-v1.png",
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "key",
+      "name": "열쇠",
+      "kind": "prop",
+      "keywords": [
+        "열쇠",
+        "key"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "map",
+      "name": "지도",
+      "kind": "prop",
+      "keywords": [
+        "지도",
+        "map"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "lantern",
+      "name": "랜턴",
+      "kind": "prop",
+      "keywords": [
+        "랜턴",
+        "등불",
+        "lantern"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "wand",
+      "name": "마법 지팡이",
+      "kind": "prop",
+      "keywords": [
+        "지팡이",
+        "wand"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "basket",
+      "name": "바구니",
+      "kind": "prop",
+      "keywords": [
+        "바구니",
+        "basket"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "book",
+      "name": "책",
+      "kind": "prop",
+      "keywords": [
+        "책을",
+        "책장",
+        "book"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "telescope",
+      "name": "망원경",
+      "kind": "prop",
+      "keywords": [
+        "망원경",
+        "telescope"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "crown",
+      "name": "왕관",
+      "kind": "prop",
+      "keywords": [
+        "왕관",
+        "crown"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "rope",
+      "name": "밧줄",
+      "kind": "prop",
+      "keywords": [
+        "밧줄",
+        "rope"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "bucket",
+      "name": "양동이",
+      "kind": "prop",
+      "keywords": [
+        "양동이",
+        "bucket"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    },
+    {
+      "asset_id": "potion",
+      "name": "물약",
+      "kind": "prop",
+      "keywords": [
+        "물약",
+        "potion"
+      ],
+      "style": "watercolor_v1",
+      "status": "draft",
+      "file": null,
+      "preview": "previews/props-v1.png"
+    }
+  ]
+}

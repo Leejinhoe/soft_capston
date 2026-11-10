@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/linked_items.dart';
 import 'story_page.dart';
+import '../widgets/scene_video.dart';
 
 const _bg = Color(0xFF070018);
 const _card = Color(0xFF140028);
@@ -49,18 +51,36 @@ class _MyItemsPageState extends State<MyItemsPage> {
   bool isLoading = true;
   String? error;
   bool changed = false; // 수정/삭제가 있었으면 마이페이지 숫자를 새로 불러오도록 알림
+  Timer? _videoPoller;
 
   @override
   void initState() {
     super.initState();
     _load();
+    if (widget.kind == LinkedKind.story) {
+      _videoPoller = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (items.any((item) =>
+            item['assembled_video_status'] == 'pending' ||
+            item['assembled_video_status'] == 'running')) {
+          _load(silent: true);
+        }
+      });
+    }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      isLoading = true;
-      error = null;
-    });
+  @override
+  void dispose() {
+    _videoPoller?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        isLoading = true;
+        error = null;
+      });
+    }
     try {
       final response = await ApiClient.get(widget.listPath);
       if (!mounted) return;
@@ -70,7 +90,7 @@ class _MyItemsPageState extends State<MyItemsPage> {
           items = (data as List).cast<Map<String, dynamic>>();
           isLoading = false;
         });
-      } else {
+      } else if (!silent) {
         setState(() {
           error = ApiClient.errorMessage(response);
           isLoading = false;
@@ -78,11 +98,41 @@ class _MyItemsPageState extends State<MyItemsPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        error = '서버에 연결하지 못했어요.';
-        isLoading = false;
-      });
+      if (!silent) {
+        setState(() {
+          error = '서버에 연결하지 못했어요.';
+          isLoading = false;
+        });
+      }
     }
+  }
+
+  Future<void> _retryVideo(Map<String, dynamic> item) async {
+    final response = await ApiClient.post(
+        '/api/stories/${item['id']}/journey-video/retry');
+    if (!mounted) return;
+    if (response.statusCode != 200) {
+      _toast(ApiClient.errorMessage(response));
+    }
+    await _load(silent: true);
+  }
+
+  void _showVideo(Map<String, dynamic> item) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(item['title']?.toString() ?? '동화 영상'),
+        content: SizedBox(
+          width: 640,
+          child: SceneVideo(storyId: item['id'].toString(),
+              sceneNumber: 0, journey: true),
+        ),
+        actions: [TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('닫기'),
+        )],
+      ),
+    );
   }
 
   void _toast(String message) {
@@ -263,6 +313,25 @@ class _MyItemsPageState extends State<MyItemsPage> {
                         label: const Text('이어하기',
                             style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
+                    ],
+                    if (widget.kind == LinkedKind.story && !_inProgress(item)) ...[
+                      const SizedBox(height: 10),
+                      if ((item['assembled_video_url'] ?? '').toString().isNotEmpty)
+                        TextButton.icon(
+                          onPressed: () => _showVideo(item),
+                          icon: const Icon(Icons.play_circle_outline),
+                          label: const Text('동화 영상 보기'),
+                        )
+                      else if (item['assembled_video_status'] == 'failed')
+                        TextButton.icon(
+                          onPressed: () => _retryVideo(item),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('영상 다시 만들기'),
+                        )
+                      else if (item['assembled_video_status'] == 'pending' ||
+                          item['assembled_video_status'] == 'running')
+                        const Text('영상 준비 중',
+                            style: TextStyle(color: Colors.white60)),
                     ],
                   ],
                 ),

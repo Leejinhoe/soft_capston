@@ -22,6 +22,32 @@ class MediaHttpTests(unittest.TestCase):
 
 
 class SceneImageTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.reference_lookup = patch.object(branching, "load_scene_references", AsyncMock(return_value=[]))
+        self.reference_lookup.start()
+        self.addCleanup(self.reference_lookup.stop)
+
+    async def test_invalid_generated_media_is_not_saved(self):
+        for kind, limit in (("image", 10_000_000), ("video", 30_000_000)):
+            for payload, status in ((b"", 502), (b"x" * (limit + 1), 413)):
+                with self.subTest(kind=kind, status=status):
+                    doc = {"_id": ObjectId(), "user_id": "owner",
+                           "character_key": "female_01", "scenes": [{"text": "scene"}]}
+                    provider = (branching.cloudflare_character if kind == "image"
+                                else branching.hf_space_video)
+                    method = "generate_scene" if kind == "image" else "generate_scene_video"
+                    result = payload if kind == "image" else {"video_bytes": payload}
+                    create = getattr(branching, f"create_scene_{kind}")
+                    with patch.object(branching, "_my_story", AsyncMock(return_value=doc)), \
+                         patch.object(provider, "enabled", return_value=True), \
+                         patch.object(provider, method, AsyncMock(return_value=result)), \
+                         patch.object(branching, "get_scene_image", AsyncMock(return_value=MagicMock(body=b"png"))), \
+                         patch.object(branching, "AsyncIOMotorGridFSBucket") as bucket:
+                        with self.assertRaises(HTTPException) as caught:
+                            await create(str(doc["_id"]), 1, {"user_id": "owner"})
+                        self.assertEqual(caught.exception.status_code, status)
+                        bucket.return_value.upload_from_stream.assert_not_called()
+
     def test_scene_prompts_share_style_without_inventing_direction(self):
         forest = branching.cloudflare_character.build_scene_prompt('숲에서 지도를 살핀다')
         castle = branching.cloudflare_character.build_scene_prompt('성을 향해 걸어간다', 'back')

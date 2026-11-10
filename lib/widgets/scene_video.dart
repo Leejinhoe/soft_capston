@@ -59,6 +59,7 @@ class _SceneVideoState extends State<SceneVideo> {
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) return Text(_error!, style: const TextStyle(color: Colors.white70));
-    return AspectRatio(aspectRatio: 16 / 9, child: Video(controller: _controller));
+    return AspectRatio(aspectRatio: widget.journey ? 1 : 16 / 9,
+        child: Video(controller: _controller));
   }
 }

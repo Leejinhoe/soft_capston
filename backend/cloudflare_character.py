@@ -97,7 +97,7 @@ def build_scene_prompt(scene, direction_view=None):
     return prompt
 
 
-async def generate_scene(reference, story_text, direction_reference=None, direction_view=None):
+async def generate_scene(reference, story_text, direction_reference=None, direction_view=None, scene_references=None):
     account = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
     token = os.getenv("CLOUDFLARE_AI_TOKEN", "").strip()
     if not re.fullmatch(r"[0-9a-fA-F]{32}", account) or not token:
@@ -111,6 +111,19 @@ async def generate_scene(reference, story_text, direction_reference=None, direct
     files = {"input_image_0": ("reference.png", ref_bytes, "image/png")}
     if use_direction:
         files['input_image_1'] = ('direction.png', prepare_reference(direction_reference), 'image/png')
+    for item in (scene_references or [])[:2]:
+        if item['kind'] not in ('background', 'prop'):
+            continue
+        index = len(files)
+        if index >= 4:
+            break
+        files[f'input_image_{index}'] = (f'scene-{index}.png', prepare_reference(item['data']), 'image/png')
+        prompt += (
+            f" Reference image {index + 1} provides only the {item['kind']} design ({item['name']})."
+            " Adapt its perspective and state to the requested action; do not copy a closed object"
+            " when the story asks to open it. Do not change the first reference character."
+            " Output a single coherent scene, never a collage or reference sheet."
+        )
     url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{MODEL}"
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=45, follow_redirects=False) as client:

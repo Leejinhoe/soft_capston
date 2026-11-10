@@ -49,43 +49,6 @@ const _endingLoadingMessages = [
 class _StoryPageState extends State<StoryPage> {
   final Map<String, Future<Uint8List?>> _sceneImages = {};
   final Set<int> _generatingImages = {};
-  final Set<int> _generatingVideos = {};
-
-  Future<void> _assembleJourneyVideo() async {
-    if (storyId.isEmpty || _assemblingVideo) return;
-    setState(() => _assemblingVideo = true);
-    try {
-      final response = await ApiClient.post('/api/stories/$storyId/journey-video');
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        _applyState(ApiClient.decode(response));
-      } else {
-        _toast(ApiClient.errorMessage(response, '동화 영상을 만들지 못했어요.'));
-      }
-    } catch (_) {
-      _toast('서버에 연결하지 못했어요.');
-    } finally {
-      if (mounted) setState(() => _assemblingVideo = false);
-    }
-  }
-
-  Future<void> _generateSceneVideo(int number) async {
-    if (storyId.isEmpty || _generatingVideos.contains(number)) return;
-    setState(() => _generatingVideos.add(number));
-    try {
-      final response = await ApiClient.post('/api/stories/$storyId/scenes/$number/video');
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        _applyState(ApiClient.decode(response));
-      } else {
-        _toast(ApiClient.errorMessage(response, '영상을 생성하지 못했어요.'));
-      }
-    } catch (_) {
-      _toast('서버에 연결하지 못했어요.');
-    } finally {
-      if (mounted) setState(() => _generatingVideos.remove(number));
-    }
-  }
 
   Future<void> _generateSceneImage(int number) async {
     if (storyId.isEmpty || _generatingImages.contains(number)) return;
@@ -124,8 +87,6 @@ class _StoryPageState extends State<StoryPage> {
   // 진행 중인 동화 상태 (서버 응답 그대로)
   String storyId = ''; // 생성 즉시 저장된 동화 id (커뮤니티 공유 시 원본 연결용)
   String storyTitle = '';
-  String assembledVideoUrl = '';
-  bool _assemblingVideo = false;
   String status = ''; // in_progress / completed
   int maxScenes = 8;
   List<Map<String, dynamic>> scenes = [];
@@ -182,7 +143,6 @@ class _StoryPageState extends State<StoryPage> {
     setState(() {
       storyId = (data['story_id'] ?? '').toString();
       storyTitle = (data['title'] ?? '').toString();
-      assembledVideoUrl = (data['assembled_video_url'] ?? '').toString();
       status = (data['status'] ?? '').toString();
       final characterKey = data['character_key'];
       if (characterKey is String && RegExp(r'^(male|female)_0[1-8]$').hasMatch(characterKey)) {
@@ -271,7 +231,6 @@ class _StoryPageState extends State<StoryPage> {
     setState(() {
       isPlayingTTS = false;
       storyId = '';
-      assembledVideoUrl = '';
       scenes = [];
       vocabList = [];
       status = '';
@@ -830,12 +789,6 @@ class _StoryPageState extends State<StoryPage> {
               title: const Text('장면 영상', style: TextStyle(color: Colors.white)),
               children: [SceneVideo(storyId: storyId, sceneNumber: number)],
             ),
-          if (videoUrl.isEmpty && imageUrl.isNotEmpty && storyId.isNotEmpty)
-            TextButton.icon(
-              onPressed: _generatingVideos.contains(number) ? null : () => _generateSceneVideo(number),
-              icon: const Icon(Icons.movie_creation_outlined),
-              label: Text(_generatingVideos.contains(number) ? '영상 생성 중' : '장면 영상 만들기'),
-            ),
           if (chosen.isNotEmpty) ...[
             const SizedBox(height: 14),
             Container(
@@ -1011,13 +964,6 @@ class _StoryPageState extends State<StoryPage> {
           ),
         ),
         const SizedBox(height: 18),
-        if (assembledVideoUrl.isNotEmpty)
-          SceneVideo(key: ValueKey(assembledVideoUrl), storyId: storyId, sceneNumber: 0, journey: true),
-        TextButton.icon(
-          onPressed: _assemblingVideo ? null : _assembleJourneyVideo,
-          icon: const Icon(Icons.movie_outlined),
-          label: Text(_assemblingVideo ? '동화 영상 만드는 중' : '동화 영상 만들기'),
-        ),
         // 🔊 동화 듣기 + 🌐 커뮤니티 공유 버튼 (한 줄에 나란히)
         Row(
           children: [

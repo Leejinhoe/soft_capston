@@ -233,6 +233,8 @@ class MyItem(BaseModel):
     linked_id: str = ""
     # 동화만: in_progress(분기형 동화 만드는 중 → 화면에서 "이어하기") / completed (게시글은 항상 completed)
     status: str = "completed"
+    assembled_video_status: Optional[str] = None
+    assembled_video_url: Optional[str] = None
 
 class ItemUpdateRequest(BaseModel):
     title: Optional[str] = None
@@ -776,6 +778,8 @@ def _to_my_item(doc: dict, linked_id: str = "") -> MyItem:
         updated_at=iso(doc.get("updated_at")),
         linked_id=linked_id,
         status=story_status(doc),
+        assembled_video_status=doc.get("assembled_video_status") or ("completed" if doc.get("assembled_video_url") else None),
+        assembled_video_url=doc.get("assembled_video_url"),
     )
 
 
