@@ -77,6 +77,10 @@
   - 장면 영상 `POST/GET .../scenes/{n}/video` (Hugging Face Space, `hf_space_video.py`), 완성 영상 `POST/GET .../journey-video`
   - 결말 화면: 🔊 동화 듣기 + 목소리 고르기 → 🎬 동화 영상 만들기 → 🌐 커뮤니티 공유
   - [ ] `.env`에 `CLOUDFLARE_CHARACTER_ENABLED`/`CLOUDFLARE_*`, `HF_VIDEO_SPACE_ENABLED`/`HF_*`가 없어서 지금은 503 안내만 (실제 그림·영상은 키 받은 뒤 확인)
+  - [x] `GET /api/media/status` → `{image, video}`: 키가 없으면 화면에서 "장면 이미지 만들기"·"장면 영상 만들기"·"동화 영상 만들기" 버튼을 숨김
+    (부를 때마다 `.env`를 다시 읽어서, 키를 넣으면 서버 재시작 없이 다음 화면부터 보임)
+- [x] 선택지 버튼·"이야기 마무리하기": 진한 그라데이션 대신 은은하게 (색 12% 배경 + 40% 얇은 테두리 + 흰 글자, 팀원 `team/main` 선택지 느낌)
+- [x] 동화 본문 낱말: 마우스를 올리면 진한 밑줄 + 은은한 배경 + 손가락 커서 (`_StoryWord`, 모든 장면), 터치 화면은 연한 밑줄 그대로
   - 외부 호출 시간 제한: Cloudflare 연결 5초·요청 40초·전체 60초, HF Space 연결 15초·전체 200초
   - 백엔드 추가 패키지: `pip install -r backend/requirements-media.txt`
 

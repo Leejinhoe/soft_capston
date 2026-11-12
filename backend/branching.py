@@ -22,11 +22,13 @@ import asyncio
 import json
 from datetime import datetime
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from bson import ObjectId
+from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from gridfs.errors import NoFile
@@ -410,6 +412,27 @@ async def start_story_stream(body: StartStoryRequest, current_user: dict = Depen
     setup = _prepare_start(body)
     user_id = current_user["user_id"]
     return _stream(lambda emit: _run_start(setup, user_id, emit))
+
+
+class MediaStatusResponse(BaseModel):
+    image: bool   # 캐릭터 장면 그림 (Cloudflare Workers AI)
+    video: bool   # 장면 영상·완성 영상 (Hugging Face Space)
+
+
+def _media_status() -> MediaStatusResponse:
+    """.env를 다시 읽어서, 서버를 켠 뒤에 키를 넣어도 재시작 없이 바로 반영 (이미 있는 값은 안 바꿈)"""
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+    env = lambda name: os.getenv(name, "").strip()
+    return MediaStatusResponse(
+        image=cloudflare_character.enabled() and bool(env("CLOUDFLARE_ACCOUNT_ID") and env("CLOUDFLARE_AI_TOKEN")),
+        video=hf_space_video.enabled() and bool(env("HF_VIDEO_SPACE_ID") and env("HF_TOKEN")),
+    )
+
+
+@router.get("/api/media/status", response_model=MediaStatusResponse)
+async def media_status():
+    """팀원 미디어 기능(캐릭터 그림·영상)이 이 서버에 설정돼 있는지 → 화면이 안 되는 버튼은 숨김"""
+    return _media_status()
 
 
 @router.get("/api/stories/{story_id}/branching", response_model=StoryStateResponse)

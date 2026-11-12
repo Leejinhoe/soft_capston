@@ -39,6 +39,10 @@ const _choiceColors = [
   [Color(0xFF34D399), Color(0xFF2DD4BF)], // 초록
 ];
 const _choiceEmojis = ['🌸', '🌊', '🍀'];
+// 선택지 버튼: 진한 그라데이션 대신 은은하게 (팀원 화면처럼 색 12% 배경 + 40% 얇은 테두리 + 흰 글자)
+const _choiceBgAlpha = 0.12;
+const _choiceBorderAlpha = 0.4;
+const _finishColor = Color(0xFFFBBF24); // 이야기 마무리하기 (노랑, 같은 톤)
 
 // 로딩 문구 (돌아가며 보여 줌). 우리 팀 AI가 쓸 때와 아닐 때 느낌만 다르게,
 // 어느 쪽이든 엔진 이름이나 "대신", "쉬어서" 같은 말은 쓰지 않음
@@ -78,6 +82,25 @@ class _StoryPageState extends State<StoryPage> {
   final Map<String, Future<Uint8List?>> _sceneImages = {};
   final Set<int> _generatingImages = {};
   final Set<int> _generatingVideos = {};
+
+  // 🎬 팀원 미디어 기능(캐릭터 그림·영상)이 서버에 설정돼 있을 때만 버튼을 보여 줌 (GET /api/media/status)
+  // 화면을 열 때마다 다시 물어봐서, 서버 .env에 키를 넣으면 다음부터 자동으로 보임
+  bool _mediaImage = false;
+  bool _mediaVideo = false;
+
+  Future<void> _loadMediaStatus() async {
+    try {
+      final response = await ApiClient.get('/api/media/status');
+      final data = ApiClient.decode(response);
+      if (!mounted || response.statusCode != 200 || data is! Map) return;
+      setState(() {
+        _mediaImage = data['image'] == true;
+        _mediaVideo = data['video'] == true;
+      });
+    } catch (_) {
+      // 못 받으면 버튼을 숨긴 채로 둠
+    }
+  }
 
   Future<void> _assembleJourneyVideo() async {
     if (storyId.isEmpty || _assemblingVideo) return;
@@ -211,6 +234,7 @@ class _StoryPageState extends State<StoryPage> {
       }
     });
     _loadVoices();
+    _loadMediaStatus();
     final resumeId = widget.resumeStoryId;
     if (resumeId != null && resumeId.isNotEmpty) _loadStory(resumeId);
   }
@@ -934,21 +958,9 @@ class _StoryPageState extends State<StoryPage> {
           spacing: 6,
           runSpacing: 8,
           children: words.map((word) {
-            return GestureDetector(
+            return _StoryWord(
+              word: word,
               onTap: () => fetchAndShowVocabDialog(word, line),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                child: Text(
-                  word,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    height: 1.5,
-                    decoration: TextDecoration.underline,
-                    decorationColor: Color(0x668B5CF6),
-                  ),
-                ),
-              ),
             );
           }).toList(),
         );
@@ -1142,7 +1154,7 @@ class _StoryPageState extends State<StoryPage> {
               ),
             ),
           ],
-          if (rawImageUrl.isEmpty && storyId.isNotEmpty && !_imageLoading.contains(number)) ...[
+          if (_mediaImage && rawImageUrl.isEmpty && storyId.isNotEmpty && !_imageLoading.contains(number)) ...[
             const SizedBox(height: 12),
             TextButton.icon(
               onPressed: _generatingImages.contains(number) ? null : () => _generateSceneImage(number),
@@ -1155,7 +1167,7 @@ class _StoryPageState extends State<StoryPage> {
               title: const Text('장면 영상', style: TextStyle(color: Colors.white)),
               children: [SceneVideo(storyId: storyId, sceneNumber: number)],
             ),
-          if (videoUrl.isEmpty && imageUrl.isNotEmpty && storyId.isNotEmpty)
+          if (_mediaVideo && videoUrl.isEmpty && imageUrl.isNotEmpty && storyId.isNotEmpty)
             TextButton.icon(
               onPressed: _generatingVideos.contains(number) ? null : () => _generateSceneVideo(number),
               icon: const Icon(Icons.movie_creation_outlined),
@@ -1477,15 +1489,9 @@ class _StoryPageState extends State<StoryPage> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: colors),
+              color: colors.first.withValues(alpha: _choiceBgAlpha),
               borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(
-                  color: colors.first.withOpacity(0.35),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              border: Border.all(color: colors.first.withValues(alpha: _choiceBorderAlpha)),
             ),
             child: Row(
               children: [
@@ -1503,6 +1509,8 @@ class _StoryPageState extends State<StoryPage> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward_ios_rounded, color: colors.first, size: 16),
               ],
             ),
           ),
@@ -1538,8 +1546,9 @@ class _StoryPageState extends State<StoryPage> {
           width: double.infinity,
           child: OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFFBBF24),
-              side: const BorderSide(color: Color(0xFFFBBF24), width: 2),
+              foregroundColor: _finishColor,
+              backgroundColor: _finishColor.withValues(alpha: _choiceBgAlpha),
+              side: BorderSide(color: _finishColor.withValues(alpha: _choiceBorderAlpha)),
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
             ),
@@ -1576,12 +1585,14 @@ class _StoryPageState extends State<StoryPage> {
         // 🎬 동화 영상 (팀원 기능)
         if (assembledVideoUrl.isNotEmpty)
           SceneVideo(key: ValueKey(assembledVideoUrl), storyId: storyId, sceneNumber: 0, journey: true),
-        TextButton.icon(
-          onPressed: _assemblingVideo ? null : _assembleJourneyVideo,
-          icon: const Icon(Icons.movie_outlined),
-          label: Text(_assemblingVideo ? '동화 영상 만드는 중' : '동화 영상 만들기'),
-        ),
-        const SizedBox(height: 12),
+        if (_mediaVideo) ...[
+          TextButton.icon(
+            onPressed: _assemblingVideo ? null : _assembleJourneyVideo,
+            icon: const Icon(Icons.movie_outlined),
+            label: Text(_assemblingVideo ? '동화 영상 만드는 중' : '동화 영상 만들기'),
+          ),
+          const SizedBox(height: 12),
+        ],
         // 🌐 커뮤니티 공유
         Row(
           children: [
@@ -1811,6 +1822,54 @@ class _StoryPageState extends State<StoryPage> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+
+/// 동화 본문 낱말 하나: 누르면 뜻풀이 팝업.
+/// 마우스를 올리면(웹·PC) 밑줄이 진해지고 은은한 배경 + 손가락 커서. 터치 화면은 늘 연한 밑줄로 누를 수 있다는 걸 보여 줌
+class _StoryWord extends StatefulWidget {
+  final String word;
+  final VoidCallback onTap;
+
+  const _StoryWord({required this.word, required this.onTap});
+
+  @override
+  State<_StoryWord> createState() => _StoryWordState();
+}
+
+class _StoryWordState extends State<_StoryWord> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+          decoration: BoxDecoration(
+            color: _hover ? const Color(0x268B5CF6) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            widget.word,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              height: 1.5,
+              decoration: TextDecoration.underline,
+              decorationColor: _hover ? const Color(0xFFC4B5FD) : const Color(0x668B5CF6),
+              decorationThickness: _hover ? 2.2 : 1.0,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
