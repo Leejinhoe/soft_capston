@@ -36,6 +36,8 @@ class StorySetup:
     age: str
     remote_story_id: str = ""   # Colab이 준 story_id (stories.colab_story_id)
     previous_choices: list[str] = field(default_factory=list)  # 이 동화에서 이미 보여 준 선택지 (겹치지 않게)
+    character_key: str = ""     # 고른 캐릭터 (male_01 … female_08), 없으면 ""
+    character_name: str = ""    # 캐릭터 이름 → Gemini 프롬프트에 주인공 이름으로
 
 
 @dataclass
@@ -146,7 +148,8 @@ _CHOICE_RULES = """
 
 
 def _setup_block(setup: StorySetup) -> str:
-    return f"주제(주인공): {setup.topic}\n장르: {setup.genre}\n연령대: {setup.age}"
+    character = f"\n선택된 주인공 이름: {setup.character_name}. 이야기 끝까지 이 이름을 유지해." if setup.character_name else ""
+    return f"주제(주인공): {setup.topic}\n장르: {setup.genre}\n연령대: {setup.age}{character}"
 
 
 def _avoid_block(setup: StorySetup) -> str:
@@ -218,6 +221,9 @@ def ending_prompt(setup: StorySetup, scenes: list[str], choice: Optional[str]) -
 """
 
 
+GEMINI_SCENE_TIMEOUT_SEC = 45  # 장면 하나 전체 (모델 바꿔 가며 다시 해 보는 시간 포함)
+
+
 class GeminiStoryEngine(StoryEngine):
     """장면 하나당 generate_content_async 1번. model은 gemini_client.FallbackModel (테스트에서는 가짜 모델)."""
 
@@ -227,9 +233,14 @@ class GeminiStoryEngine(StoryEngine):
         self.model = model
 
     async def _ask(self, prompt: str) -> dict:
-        response = await self.model.generate_content_async(
-            prompt, generation_config={"response_mime_type": "application/json"}
-        )
+        try:
+            response = await asyncio.wait_for(
+                self.model.generate_content_async(prompt, generation_config={"response_mime_type": "application/json"}),
+                GEMINI_SCENE_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            # 시간 제한이 없으면 Gemini가 답을 안 줄 때 화면이 한참 멈춤 → 예비 장면으로라도 이어 가게
+            raise StoryEngineError(f"Gemini 장면 {GEMINI_SCENE_TIMEOUT_SEC}초 시간 초과") from None
         return _parse_json(response.text)
 
     async def opening(self, setup: StorySetup) -> SceneResult:

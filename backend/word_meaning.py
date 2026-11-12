@@ -23,6 +23,8 @@ from typing import Optional
 
 import httpx
 
+MEANING_TIMEOUT_SEC = 20  # Gemini 뜻풀이 (넘으면 사전 뜻으로)
+
 SEARCH_URL = "https://stdict.korean.go.kr/api/search.do"
 VIEW_URL = "https://stdict.korean.go.kr/api/view.do"
 
@@ -319,9 +321,9 @@ JSON 배열로만 답해. 단어 순서대로 하나씩:
 
     results: list[Optional[dict]] = [None] * len(entries)
     try:
-        res = await model.generate_content_async(
+        res = await asyncio.wait_for(model.generate_content_async(
             prompt, generation_config={"response_mime_type": "application/json"}
-        )
+        ), MEANING_TIMEOUT_SEC)  # 팝업이 멈추지 않게 (넘으면 아래 except → 사전 뜻으로)
         data = _gemini_json(res.text)
         if isinstance(data, dict):
             data = [data]

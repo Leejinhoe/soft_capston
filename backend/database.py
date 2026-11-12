@@ -6,10 +6,14 @@ from pymongo.errors import OperationFailure
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGO_URI")
+MONGO_URI = (os.getenv("MONGO_URI") or os.getenv("MONGO_DETAILS") or "").strip()
+DB_NAME = (os.getenv("DB_NAME") or os.getenv("MONGO_DB_NAME") or
+           os.getenv("MONGO_DATABASE_NAME") or "fairytale_db").strip()
+MEDIA_FILES_BUCKET = (os.getenv("MEDIA_FILES_BUCKET") or
+                      os.getenv("MEDIA_GRIDFS_BUCKET") or "media_files").strip()
 
 client = AsyncIOMotorClient(MONGO_URI)
-database = client["fairytale_db"]
+database = client[DB_NAME]
 
 users_collection = database.get_collection("users")
 stories_collection = database.get_collection("stories")

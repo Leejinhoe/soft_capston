@@ -2,6 +2,7 @@
 
 기존 /api/generate-story에 있던 로직을 그대로 옮겨서, 분기형 동화 완료 때도 같이 씁니다.
 """
+import asyncio
 import json
 
 from meaning_cache import cached_explain_words
@@ -58,13 +59,17 @@ _FALLBACK_VOCAB = [
 ]
 
 
+VOCAB_TIMEOUT_SEC = 25
+
+
 async def recommend_vocab(model, story_text: str, age: str, on_error=None) -> list[dict]:
     """본문에 실제로 있는 단어만 최대 5개. on_error(where, e): Gemini 실패 로그용."""
     try:
-        response = await model.generate_content_async(
+        # 마무리 화면이 멈추지 않게 시간 제한 (넘으면 아래 예비 단어로)
+        response = await asyncio.wait_for(model.generate_content_async(
             _vocab_prompt(story_text, age),
             generation_config={"response_mime_type": "application/json"},
-        )
+        ), VOCAB_TIMEOUT_SEC)
         raw_vocab = json.loads(response.text)
         if not isinstance(raw_vocab, list):
             raise ValueError(f"추천 단어 응답이 배열이 아님: {type(raw_vocab).__name__}")

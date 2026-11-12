@@ -35,6 +35,13 @@
   - 기존 후처리 + 보이지 않는 문자·겹친 문장부호 정리 (`clean_colab_text`), 타임아웃 120초
   - 고른 선택지의 KOTE 감정(`selected_choice_emotion` 요약)을 `choice_history[].emotion`에 저장 (심리분석용)
   - Colab이 꺼지거나(연결 실패 → 60초 동안 건너뜀) 느리거나 실패하면 Gemini → 예비 장면
+- [x] 시연 중 Colab이 꺼져도 멈추지 않게 (`colab_client.FIRST_EVENT_TIMEOUT_SEC`)
+  - 주소가 죽었으면 바로, 터널은 살아 있는데 Colab이 답을 안 하면 15초 만에 Gemini로 (그 뒤 60초 동안 Colab 건너뜀)
+  - 우리 서버가 보낸 다른 Colab 요청(그림·TTS 등)이 처리 중일 땐 그게 끝날 때까지 기다려 줌 (Colab이 한 번에 하나만 처리해서)
+- [x] Gemini가 느려도 멈추지 않게 (`gemini_client.FallbackModel`)
+  - 장면 하나 45초 제한 (넘으면 예비 장면), 모델 하나 40초 제한, 504·503·500이면 다음 모델 (1분만 건너뜀)
+  - 첫 모델이 8초 안에 답이 없으면 다음 모델에도 같이 보내서 먼저 온 답 사용 (동시에 2개까지, 무료 한도 아끼기)
+  - 추천 단어 25초, 단어 뜻풀이 20초, 기본 목소리(gTTS) 15초 제한 → 넘으면 각자 예비 동작
   - 주소가 바뀌면 `.env`의 STORY_SERVER_URL만 고치고 백엔드 재시작
 - [x] 장면을 만든 엔진을 장면 카드에 작게 표시 ("🤖 우리 팀 AI" / "✨ Gemini" / "📘 기본 이야기", `SceneOut.engine`)
 - [x] 동화 생성은 우리 팀이 학습시킨 Colab 모델이 주인공 (Gemini는 Colab이 꺼지거나 실패할 때만)
@@ -59,10 +66,19 @@
 - [x] 조사 앞 띄어쓰기 고치기 (`story_text.fix_particle_spacing`, Colab 본문에만): "토끼 는" → "토끼는", "뿔 을" → "뿔을"
   - 보수적으로: 조사가 떨어진 낱말일 때만, 앞 낱말이 어미·조사로 끝나거나 부사·관형사면 그대로, 받침과 조사가 맞을 때만
   - 테스트 문장 36개(고칠 것 19 + 그대로 둘 것 17) 확인
-- [x] 장면 그림 (`backend/story_images.py`): 본문이 먼저 나오고 화면이 따로 `POST /api/stories/{id}/scenes/{n}/image` → Colab `/story/image`
+- [x] 장면 그림 (`backend/story_images.py`): 본문이 먼저 나오고 화면이 따로 `POST /api/stories/{id}/scenes/{n}/colab-image` → Colab `/story/image`
+  - 주소가 `/image`가 아닌 이유: `/image`는 팀원 캐릭터 그림(아래)이 씀. `SceneOut.image_url`은 캐릭터 그림이 있으면 그걸 먼저
   - PNG → JPEG로 줄여 `backend/static/story_images/`에 저장, URL은 `stories.scene_images.{n}` (scenes 배열과 따로라 다음 장면 저장과 안 겹침)
   - 실패하면 `scene_image_failed.{n}` → 그 장면은 그림 없이 진행, 같은 장면 동시 요청은 한 번만 그림
   - 화면: 그림 그리는 중 안내 → 장면 본문 위에 그림, 그림 없는 장면은 하나씩 차례로 요청
+- [x] 팀원 기능 합침 (team/app-integration PR #10, 캐릭터·미디어)
+  - 캐릭터 고르기 (`lib/widgets/character_strip.dart`, 16명) → `character_key` 저장, 이름을 Gemini 프롬프트에 주인공 이름으로
+  - 캐릭터 장면 그림 `POST/GET /api/stories/{id}/scenes/{n}/image` (Cloudflare Workers AI → GridFS, `cloudflare_character.py`)
+  - 장면 영상 `POST/GET .../scenes/{n}/video` (Hugging Face Space, `hf_space_video.py`), 완성 영상 `POST/GET .../journey-video`
+  - 결말 화면: 🔊 동화 듣기 + 목소리 고르기 → 🎬 동화 영상 만들기 → 🌐 커뮤니티 공유
+  - [ ] `.env`에 `CLOUDFLARE_CHARACTER_ENABLED`/`CLOUDFLARE_*`, `HF_VIDEO_SPACE_ENABLED`/`HF_*`가 없어서 지금은 503 안내만 (실제 그림·영상은 키 받은 뒤 확인)
+  - 외부 호출 시간 제한: Cloudflare 연결 5초·요청 40초·전체 60초, HF Space 연결 15초·전체 200초
+  - 백엔드 추가 패키지: `pip install -r backend/requirements-media.txt`
 
 ## 심리분석 (mind) — `backend/psych.py`, `backend/psych_engine.py`, `lib/pages/mind_page.dart`, `lib/pages/mind_detail_page.dart`
 - [x] 분석 대상: 완료된 분기형 동화 중 선택을 1번 이상 한 것 (`choice_history`), 진행 중·선택 없이 마무리한 동화·예전 통짜 동화는 제외

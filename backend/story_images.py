@@ -47,7 +47,8 @@ def png_b64_to_jpeg(image_b64: str) -> bytes:
     return out.getvalue()
 
 
-@router.post("/api/stories/{story_id}/scenes/{scene_number}/image", response_model=SceneImageResponse)
+# 주소가 /image가 아닌 이유: /image는 팀원 캐릭터 그림(branching.py, Cloudflare + GridFS)이 씀
+@router.post("/api/stories/{story_id}/scenes/{scene_number}/colab-image", response_model=SceneImageResponse)
 async def scene_image(story_id: str, scene_number: int, current_user: dict = Depends(get_current_user)):
     doc = await _my_story(story_id, current_user["user_id"])
     scenes = doc.get("scenes") or []

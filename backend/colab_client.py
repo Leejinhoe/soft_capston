@@ -23,6 +23,14 @@ IMAGE_TIMEOUT_SEC = 120     # 그림 하나 (실측 약 20초)
 PSYCH_TIMEOUT_SEC = 150     # 심리분석 (실측 75~100초)
 TTS_TIMEOUT_SEC = 180       # 장면 하나 낭독 (XTTS, 문장 수에 비례)
 CONNECT_TIMEOUT_SEC = 10
+# 스트리밍 첫 줄: Colab은 연결되자마자 meta 줄을 먼저 보냄. 이 안에 아무것도 안 오면
+# 커널이 멈췄거나 GPU가 다른 요청에 붙잡힌 것 → 꺼진 것처럼 60초 건너뛰고 바로 Gemini로 (시연 중 Colab이 꺼져도 빨리 넘어가게)
+FIRST_EVENT_TIMEOUT_SEC = 15
+# 단, 우리가 보낸 다른 Colab 요청(그림·TTS·심리분석·선택지)이 처리 중이면 Colab이 그걸 하느라 늦는 것이라
+# (Colab의 async def 엔드포인트가 GPU 작업 동안 서버 전체를 붙잡음) 그 요청이 끝날 때까지 이만큼은 더 기다림
+FIRST_EVENT_BUSY_TIMEOUT_SEC = 150
+
+_inflight = 0  # 지금 Colab에 보내 놓고 답을 기다리는 일반 요청(_post) 수 (스트리밍 첫 응답 기다리기에서 씀)
 OFFLINE_COOLDOWN_SEC = 60
 
 _offline_until = 0.0
@@ -58,6 +66,8 @@ def _mark_offline(e: Exception) -> None:
 async def _post(path: str, timeout: float, **kwargs) -> httpx.Response:
     base = _check_ready()
     limits = httpx.Timeout(timeout, connect=CONNECT_TIMEOUT_SEC)
+    global _inflight
+    _inflight += 1
     try:
         async with httpx.AsyncClient(timeout=limits) as client:
             response = await client.post(f"{base}{path}", **kwargs)
@@ -68,6 +78,8 @@ async def _post(path: str, timeout: float, **kwargs) -> httpx.Response:
         raise ColabError(f"Colab {path} 시간 초과({timeout:.0f}초)") from e
     except httpx.HTTPError as e:
         raise ColabError(f"Colab {path} 요청 오류: {type(e).__name__}: {e}") from e
+    finally:
+        _inflight -= 1
     # cloudflared 터널은 Colab이 꺼지면 502/530 같은 응답을 바로 돌려줌
     if response.status_code in (502, 503, 504, 530):
         if response.status_code in (502, 530):
@@ -101,10 +113,11 @@ async def post_ndjson(path: str, body: dict, on_event, timeout: float = STREAM_I
     async def run() -> dict:
         async with httpx.AsyncClient(timeout=limits) as client:
             async with client.stream("POST", f"{base}{path}", json=body) as response:
-                if response.status_code in (502, 530):
+                if response.status_code in (502, 503, 530):
                     _mark_offline(RuntimeError(f"HTTP {response.status_code}"))
                 if response.status_code != 200:
                     raise ColabError(f"Colab {path} 응답 {response.status_code}")
+                first_line.set()
                 async for line in response.aiter_lines():
                     line = line.strip()
                     if not line:
@@ -121,8 +134,34 @@ async def post_ndjson(path: str, body: dict, on_event, timeout: float = STREAM_I
                     on_event(event)
         raise ColabError(f"Colab {path} 스트림이 complete 없이 끝남")
 
+    first_line = asyncio.Event()  # 응답 헤더가 왔다 (Colab이 살아서 쓰기 시작함)
+
+    async def run_with_first_deadline() -> dict:
+        """응답 헤더가 FIRST_EVENT_TIMEOUT_SEC 안에 안 오면 Colab이 멈춘 것으로 보고 바로 실패
+        (다른 Colab 요청이 처리 중일 때만 FIRST_EVENT_BUSY_TIMEOUT_SEC까지 기다려 줌)"""
+        task = asyncio.ensure_future(run())
+        waiter = asyncio.ensure_future(first_line.wait())
+        started = time.monotonic()
+        try:
+            while True:
+                done, _ = await asyncio.wait({task, waiter}, timeout=FIRST_EVENT_TIMEOUT_SEC,
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if done:
+                    break
+                waited = time.monotonic() - started
+                if _inflight == 0 or waited >= FIRST_EVENT_BUSY_TIMEOUT_SEC:
+                    e = TimeoutError(f"{waited:.0f}초 동안 응답 없음")
+                    _mark_offline(e)
+                    raise ColabError(f"Colab {path} 응답 없음 ({e})")
+                print(f"[Colab] {path}: 다른 Colab 요청({_inflight}개)이 끝나길 기다리는 중 ({waited:.0f}초)", flush=True)
+            return await task
+        finally:
+            waiter.cancel()
+            if not task.done():
+                task.cancel()
+
     try:
-        return await asyncio.wait_for(run(), STREAM_TOTAL_TIMEOUT_SEC)
+        return await asyncio.wait_for(run_with_first_deadline(), STREAM_TOTAL_TIMEOUT_SEC)
     except ColabError:
         raise
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:

@@ -383,6 +383,12 @@ class _ItemDetailPage extends StatelessWidget {
               style: const TextStyle(color: Colors.white, fontSize: 17, height: 1.8),
             ),
           ),
+          if (kind == LinkedKind.story && !inProgress)
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context, 'resume'),
+              icon: const Icon(Icons.movie_outlined),
+              label: const Text('동화와 영상 보기'),
+            ),
         ],
       ),
       bottomNavigationBar: SafeArea(

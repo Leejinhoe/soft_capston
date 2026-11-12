@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import '../core/api_client.dart';
@@ -6,6 +7,8 @@ import '../core/story_genres.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../widgets/custom_bottom_nav.dart';
+import '../widgets/scene_video.dart';
+import '../widgets/character_strip.dart';
 import 'family_voice_page.dart';
 
 /// 장면을 만든 엔진 → 화면에 작게 표시. 우리 팀 AI(Colab) 장면에만 보여 주고,
@@ -72,12 +75,76 @@ const _sceneLoadingMessages = _gentleSceneMessages;
 const _endingLoadingMessages = _gentleEndingMessages;
 
 class _StoryPageState extends State<StoryPage> {
+  final Map<String, Future<Uint8List?>> _sceneImages = {};
+  final Set<int> _generatingImages = {};
+  final Set<int> _generatingVideos = {};
+
+  Future<void> _assembleJourneyVideo() async {
+    if (storyId.isEmpty || _assemblingVideo) return;
+    setState(() => _assemblingVideo = true);
+    try {
+      final response = await ApiClient.post('/api/stories/$storyId/journey-video');
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _applyState(ApiClient.decode(response));
+      } else {
+        _toast(ApiClient.errorMessage(response, '동화 영상을 만들지 못했어요.'));
+      }
+    } catch (_) {
+      _toast('서버에 연결하지 못했어요.');
+    } finally {
+      if (mounted) setState(() => _assemblingVideo = false);
+    }
+  }
+
+  Future<void> _generateSceneVideo(int number) async {
+    if (storyId.isEmpty || _generatingVideos.contains(number)) return;
+    setState(() => _generatingVideos.add(number));
+    try {
+      final response = await ApiClient.post('/api/stories/$storyId/scenes/$number/video');
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _applyState(ApiClient.decode(response));
+      } else {
+        _toast(ApiClient.errorMessage(response, '영상을 생성하지 못했어요.'));
+      }
+    } catch (_) {
+      _toast('서버에 연결하지 못했어요.');
+    } finally {
+      if (mounted) setState(() => _generatingVideos.remove(number));
+    }
+  }
+
+  Future<void> _generateSceneImage(int number) async {
+    if (storyId.isEmpty || _generatingImages.contains(number)) return;
+    setState(() => _generatingImages.add(number));
+    try {
+      final response = await ApiClient.post('/api/stories/$storyId/scenes/$number/image');
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _applyState(ApiClient.decode(response));
+      } else {
+        _toast(ApiClient.errorMessage(response, '이미지를 생성하지 못했어요.'));
+      }
+    } catch (_) {
+      _toast('서버에 연결하지 못했어요.');
+    } finally {
+      if (mounted) setState(() => _generatingImages.remove(number));
+    }
+  }
+
+  Future<Uint8List?> _loadSceneImage(int number) async {
+    final response = await ApiClient.get('/api/stories/$storyId/scenes/$number/image');
+    return response.statusCode == 200 ? response.bodyBytes : null;
+  }
   final TextEditingController promptController = TextEditingController();
   final AudioPlayer _audioPlayer = AudioPlayer();
   final ScrollController _scrollController = ScrollController();
 
   String selectedGenre = '판타지';
   String selectedAge = '5-7세';
+  String characterGender = 'male';
+  String selectedCharacterKey = 'male_01';
 
   bool isPlayingTTS = false; // 🔊 TTS 재생 상태 관리
   bool isSharing = false;
@@ -101,6 +168,8 @@ class _StoryPageState extends State<StoryPage> {
   // 진행 중인 동화 상태 (서버 응답 그대로)
   String storyId = ''; // 생성 즉시 저장된 동화 id (커뮤니티 공유 시 원본 연결용)
   String storyTitle = '';
+  String assembledVideoUrl = '';
+  bool _assemblingVideo = false;
   String status = ''; // in_progress / completed
   int maxScenes = 8;
   List<Map<String, dynamic>> scenes = [];
@@ -162,7 +231,13 @@ class _StoryPageState extends State<StoryPage> {
     setState(() {
       storyId = (data['story_id'] ?? '').toString();
       storyTitle = (data['title'] ?? '').toString();
+      assembledVideoUrl = (data['assembled_video_url'] ?? '').toString();
       status = (data['status'] ?? '').toString();
+      final characterKey = data['character_key'];
+      if (characterKey is String && RegExp(r'^(male|female)_0[1-8]$').hasMatch(characterKey)) {
+        selectedCharacterKey = characterKey;
+        characterGender = characterKey.split('_').first;
+      }
       maxScenes = (data['max_scenes'] as num?)?.toInt() ?? 8;
       scenes = ((data['scenes'] as List?) ?? [])
           .map((e) => Map<String, dynamic>.from(e as Map))
@@ -195,7 +270,7 @@ class _StoryPageState extends State<StoryPage> {
         String? url;
         for (var attempt = 0; attempt < 6; attempt++) {
           try {
-            final response = await ApiClient.post('/api/stories/$id/scenes/$number/image');
+            final response = await ApiClient.post('/api/stories/$id/scenes/$number/colab-image');
             final data = ApiClient.decode(response);
             status = response.statusCode == 200 && data is Map ? (data['status'] ?? 'failed').toString() : 'failed';
             url = data is Map ? data['image_url']?.toString() : null;
@@ -437,6 +512,7 @@ class _StoryPageState extends State<StoryPage> {
     await stopTTS();
     setState(() {
       storyId = '';
+      assembledVideoUrl = '';
       scenes = [];
       vocabList = [];
       status = '';
@@ -447,6 +523,7 @@ class _StoryPageState extends State<StoryPage> {
         'prompt': promptController.text.trim(),
         'genre': selectedGenre,
         'age': selectedAge,
+        'character_key': selectedCharacterKey,
       },
       messages: _sceneLoadingMessages,
     );
@@ -987,6 +1064,11 @@ class _StoryPageState extends State<StoryPage> {
   // ---------- 장면 화면 ----------
   Widget _sceneCard(Map<String, dynamic> scene, int number) {
     final isEnding = scene['is_ending'] == true;
+    final rawImageUrl = (scene['image_url'] ?? '').toString().trim();
+    // 캐릭터 그림(팀원, GridFS)은 /api/media/images/… → 로그인 토큰으로 받아서 보여 줌.
+    // Colab 그림(/static/…)은 _sceneImage가 그대로 보여 줌
+    final imageUrl = rawImageUrl.startsWith('/api/media/images/') ? rawImageUrl : '';
+    final videoUrl = (scene['video_url'] ?? '').toString().trim();
     final choices = ((scene['choices'] as List?) ?? []).cast<dynamic>();
     final rawIndex = scene['chosen_index'];
     final int chosenIndex = rawIndex is int ? rawIndex : -1;
@@ -1040,6 +1122,45 @@ class _StoryPageState extends State<StoryPage> {
           const SizedBox(height: 14),
           _sceneImage(scene, number),
           buildClickableStoryText((scene['text'] ?? '').toString()),
+          if (imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Center(
+              child: FutureBuilder<Uint8List?>(
+                future: _sceneImages.putIfAbsent(
+                  '$storyId:$number:$imageUrl', () => _loadSceneImage(number)),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const CircularProgressIndicator();
+                  }
+                  final bytes = snapshot.data;
+                  if (bytes == null || bytes.isEmpty) {
+                    return const Text('장면 이미지를 불러오지 못했어요.',
+                        style: TextStyle(color: Colors.white70));
+                  }
+                  return Image.memory(bytes, height: 280, fit: BoxFit.contain);
+                },
+              ),
+            ),
+          ],
+          if (rawImageUrl.isEmpty && storyId.isNotEmpty && !_imageLoading.contains(number)) ...[
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: _generatingImages.contains(number) ? null : () => _generateSceneImage(number),
+              icon: const Icon(Icons.image_outlined),
+              label: Text(_generatingImages.contains(number) ? '이미지 생성 중' : '장면 이미지 만들기'),
+            ),
+          ],
+          if (videoUrl.isNotEmpty && storyId.isNotEmpty)
+            ExpansionTile(
+              title: const Text('장면 영상', style: TextStyle(color: Colors.white)),
+              children: [SceneVideo(storyId: storyId, sceneNumber: number)],
+            ),
+          if (videoUrl.isEmpty && imageUrl.isNotEmpty && storyId.isNotEmpty)
+            TextButton.icon(
+              onPressed: _generatingVideos.contains(number) ? null : () => _generateSceneVideo(number),
+              icon: const Icon(Icons.movie_creation_outlined),
+              label: Text(_generatingVideos.contains(number) ? '영상 생성 중' : '장면 영상 만들기'),
+            ),
           if (chosen.isNotEmpty) ...[
             const SizedBox(height: 14),
             Container(
@@ -1069,7 +1190,7 @@ class _StoryPageState extends State<StoryPage> {
 
   Widget _sceneImage(Map<String, dynamic> scene, int number) {
     final url = (scene['image_url'] ?? '').toString();
-    if (url.isNotEmpty) {
+    if (url.isNotEmpty && !url.startsWith('/api/media/')) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: ClipRRect(
@@ -1452,6 +1573,15 @@ class _StoryPageState extends State<StoryPage> {
         // 🔊 동화 듣기 + 목소리 고르기
         _listenArea(),
         const SizedBox(height: 12),
+        // 🎬 동화 영상 (팀원 기능)
+        if (assembledVideoUrl.isNotEmpty)
+          SceneVideo(key: ValueKey(assembledVideoUrl), storyId: storyId, sceneNumber: 0, journey: true),
+        TextButton.icon(
+          onPressed: _assemblingVideo ? null : _assembleJourneyVideo,
+          icon: const Icon(Icons.movie_outlined),
+          label: Text(_assemblingVideo ? '동화 영상 만드는 중' : '동화 영상 만들기'),
+        ),
+        const SizedBox(height: 12),
         // 🌐 커뮤니티 공유
         Row(
           children: [
@@ -1565,6 +1695,16 @@ class _StoryPageState extends State<StoryPage> {
         const Text(
           '주인공 설정',
           style: TextStyle(color: Colors.white70, fontSize: 18),
+        ),
+        const SizedBox(height: 12),
+        CharacterStrip(
+          gender: characterGender,
+          selectedKey: selectedCharacterKey,
+          onGenderChanged: (gender) => setState(() {
+            characterGender = gender;
+            selectedCharacterKey = '${characterGender}_01';
+          }),
+          onSelected: (key) => setState(() => selectedCharacterKey = key),
         ),
         const SizedBox(height: 12),
         TextField(

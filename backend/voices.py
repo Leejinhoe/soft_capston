@@ -37,6 +37,8 @@ from branching import _my_story
 from database import family_voices_collection, safe_create_index
 from security import get_current_user
 
+GTTS_TIMEOUT_SEC = 15  # 기본 목소리(gTTS, 구글 번역 서버) 한 번 요청
+
 router = APIRouter(tags=["가족 목소리 / 동화 듣기"])
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -206,7 +208,7 @@ def _gtts_sync(text: str) -> bytes:
     from gtts import gTTS
 
     buf = io.BytesIO()
-    gTTS(text=text, lang="ko").write_to_fp(buf)
+    gTTS(text=text, lang="ko", timeout=GTTS_TIMEOUT_SEC).write_to_fp(buf)
     return buf.getvalue()
 
 
