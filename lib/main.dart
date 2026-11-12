@@ -10,6 +10,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
 
+  // 저장해 둔 서버 주소 불러오기 (안드로이드 폰에서 노트북 서버에 붙을 때)
+  await ServerAddress.load();
+
   // Kakao SDK 초기화
   KakaoSdk.init(
     nativeAppKey: 'fa2f07355c5d24ed9b226ff59a91d57a',

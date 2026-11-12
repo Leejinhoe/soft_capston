@@ -1,11 +1,12 @@
-import 'dart:html' as html;
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/auth_service.dart';
 import '../core/banned_notice.dart';
+import '../core/web_window.dart' as web;
 import 'admin_login_dialog.dart';
 import 'password_reset_page.dart';
 import 'signup_page.dart';
@@ -28,10 +29,10 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
 
-    final uri = Uri.parse(html.window.location.href);
+    final uri = Uri.parse(web.currentUrl().isEmpty ? '/' : web.currentUrl());
     authCode = uri.queryParameters['code'];
     final state = uri.queryParameters['state'];
-    final provider = html.window.sessionStorage['login_provider'];
+    final provider = web.sessionGet('login_provider');
 
     if (authCode != null) {
       isProcessingLogin = true;
@@ -40,10 +41,12 @@ class _LoginPageState extends State<LoginPage> {
         if (provider == 'kakao') {
           await sendSocialCodeToServer('/auth/kakao', {'code': authCode});
         } else if (provider == 'naver') {
-          final savedState = html.window.sessionStorage['naver_oauth_state'];
+          final savedState = web.sessionGet('naver_oauth_state');
           if (state != null && savedState == state) {
-            await sendSocialCodeToServer(
-                '/auth/naver', {'code': authCode, 'state': state});
+            await sendSocialCodeToServer('/auth/naver', {
+              'code': authCode,
+              'state': state,
+            });
           } else {
             _finishProcessing('네이버 로그인 확인에 실패했어요. 다시 시도해 주세요.');
           }
@@ -58,15 +61,15 @@ class _LoginPageState extends State<LoginPage> {
 
   void showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 소셜 로그인 처리가 실패했을 때 주소창의 ?code=... 를 지우고 로그인 화면으로 돌아옵니다.
   void _finishProcessing(String? message) {
-    html.window.history.replaceState(null, '', '/');
-    html.window.sessionStorage.remove('login_provider');
+    web.replaceUrl('/');
+    web.sessionRemove('login_provider');
     if (!mounted) return;
     setState(() => isProcessingLogin = false);
     if (message != null) showMessage(message);
@@ -74,19 +77,26 @@ class _LoginPageState extends State<LoginPage> {
 
   /// 카카오/네이버/구글 공통: 인가 코드를 서버로 보내 JWT를 받고 홈으로 이동
   Future<void> sendSocialCodeToServer(
-      String path, Map<String, dynamic> body) async {
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     try {
       final response = await ApiClient.post(path, body: body);
       final data = ApiClient.decode(response);
 
-      if (response.statusCode == 200 && data is Map && data['success'] == true) {
-        html.window.history.replaceState(null, '', '/');
-        html.window.sessionStorage.remove('login_provider');
+      if (response.statusCode == 200 &&
+          data is Map &&
+          data['success'] == true) {
+        web.replaceUrl('/');
+        web.sessionRemove('login_provider');
         await AuthService.completeLogin(data);
       } else if (ApiClient.isBanned(response)) {
         _finishProcessing(null);
         final detail = data['detail'] as Map;
-        await _showBanned(detail['message'] ?? '', detail['contact_email'] ?? '');
+        await _showBanned(
+          detail['message'] ?? '',
+          detail['contact_email'] ?? '',
+        );
       } else {
         _finishProcessing(ApiClient.errorMessage(response, '로그인에 실패했어요.'));
       }
@@ -98,8 +108,11 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _showBanned(dynamic message, dynamic contactEmail) async {
     if (!mounted) return;
-    await showBannedDialog(context,
-        message: message.toString(), contactEmail: contactEmail.toString());
+    await showBannedDialog(
+      context,
+      message: message.toString(),
+      contactEmail: contactEmail.toString(),
+    );
   }
 
   String generateState() {
@@ -119,8 +132,10 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     try {
-      final response =
-          await ApiClient.post('/login', body: {'id': id, 'password': pw});
+      final response = await ApiClient.post(
+        '/login',
+        body: {'id': id, 'password': pw},
+      );
       final data = ApiClient.decode(response);
 
       if (data is Map && data['success'] == true) {
@@ -136,51 +151,115 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  /// 앱(안드로이드)은 소셜 로그인 앱 등록 전이라, 누르면 짧게 안내만 하고 멈춥니다.
+  bool _socialNotReadyOnApp() {
+    if (kIsWeb) return false;
+    showMessage('앱에서는 아직 간편 로그인을 준비 중이에요. 아이디로 로그인해 주세요.');
+    return true;
+  }
+
   void loginWithKakao() {
+    if (_socialNotReadyOnApp()) return;
     const restApiKey = '56748969c02c4df8c73911627fba1c1b';
     const redirectUri = 'http://localhost:53730/';
 
-    html.window.sessionStorage['login_provider'] = 'kakao';
+    web.sessionSet('login_provider', 'kakao');
 
-    final url = 'https://kauth.kakao.com/oauth/authorize'
+    final url =
+        'https://kauth.kakao.com/oauth/authorize'
         '?response_type=code'
         '&client_id=$restApiKey'
         '&redirect_uri=$redirectUri';
 
-    html.window.location.href = url;
+    web.navigateTo(url);
   }
 
   void loginWithNaver() {
+    if (_socialNotReadyOnApp()) return;
     const clientId = 'B4YB9wjku1DPIHdgSPNg';
     const redirectUri = 'http://localhost:53730/';
     final state = generateState();
 
-    html.window.sessionStorage['login_provider'] = 'naver';
-    html.window.sessionStorage['naver_oauth_state'] = state;
+    web.sessionSet('login_provider', 'naver');
+    web.sessionSet('naver_oauth_state', state);
 
-    final url = 'https://nid.naver.com/oauth2.0/authorize'
+    final url =
+        'https://nid.naver.com/oauth2.0/authorize'
         '?response_type=code'
         '&client_id=$clientId'
         '&redirect_uri=$redirectUri'
         '&state=$state';
 
-    html.window.location.href = url;
+    web.navigateTo(url);
   }
 
   void loginWithGoogle() {
+    if (_socialNotReadyOnApp()) return;
     const clientId =
         '306054774600-o43jp420lgvfu16lhr1l8r2ta4ie59b7.apps.googleusercontent.com';
     const redirectUri = 'http://localhost:53730/';
 
-    html.window.sessionStorage['login_provider'] = 'google';
+    web.sessionSet('login_provider', 'google');
 
-    final url = 'https://accounts.google.com/o/oauth2/v2/auth'
+    final url =
+        'https://accounts.google.com/o/oauth2/v2/auth'
         '?response_type=code'
         '&client_id=$clientId'
         '&redirect_uri=$redirectUri'
         '&scope=openid%20email%20profile';
 
-    html.window.location.href = url;
+    web.navigateTo(url);
+  }
+
+  /// 로고를 길게 누르면: 폰에서 노트북 서버 주소(예: 192.168.0.5:8000)를 넣는 창
+  Future<void> _showServerAddressDialog() async {
+    final controller = TextEditingController(text: ServerAddress.current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF140028),
+        title: const Text('서버 주소 설정', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '예) 192.168.0.5:8000 또는 https://xxxx.trycloudflare.com',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'http://192.168.0.5:8000',
+                hintStyle: TextStyle(color: Colors.white38),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, ''),
+            child: const Text('기본값으로'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    await ServerAddress.save(result);
+    showMessage('서버 주소: ${ServerAddress.current}');
   }
 
   Widget socialButton({
@@ -202,10 +281,7 @@ class _LoginPageState extends State<LoginPage> {
         ),
         child: Text(
           text,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -224,9 +300,7 @@ class _LoginPageState extends State<LoginPage> {
       return const Scaffold(
         backgroundColor: Color(0xFF070018),
         body: Center(
-          child: CircularProgressIndicator(
-            color: Colors.purpleAccent,
-          ),
+          child: CircularProgressIndicator(color: Colors.purpleAccent),
         ),
       );
     }
@@ -254,19 +328,22 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                GestureDetector(
+                  onLongPress: _showServerAddressDialog,
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                      ),
+                      borderRadius: BorderRadius.circular(30),
                     ),
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  child: const Icon(
-                    Icons.auto_stories,
-                    color: Colors.white,
-                    size: 52,
+                    child: const Icon(
+                      Icons.auto_stories,
+                      color: Colors.white,
+                      size: 52,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -326,10 +403,14 @@ class _LoginPageState extends State<LoginPage> {
                   child: TextButton(
                     onPressed: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const PasswordResetPage()),
+                      MaterialPageRoute(
+                        builder: (_) => const PasswordResetPage(),
+                      ),
                     ),
-                    child: const Text('비밀번호를 잊으셨나요?',
-                        style: TextStyle(color: Colors.white54, fontSize: 13)),
+                    child: const Text(
+                      '비밀번호를 잊으셨나요?',
+                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -354,38 +435,40 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 26),
-                Row(
-                  children: const [
-                    Expanded(child: Divider(color: Colors.white24)),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 14),
-                      child: Text(
-                        '간편 로그인',
-                        style: TextStyle(color: Colors.white54),
+                ...[
+                  const SizedBox(height: 26),
+                  Row(
+                    children: const [
+                      Expanded(child: Divider(color: Colors.white24)),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 14),
+                        child: Text(
+                          '간편 로그인',
+                          style: TextStyle(color: Colors.white54),
+                        ),
                       ),
-                    ),
-                    Expanded(child: Divider(color: Colors.white24)),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                socialButton(
-                  text: '카카오로 시작하기',
-                  color: const Color(0xFFFEE500),
-                  onTap: loginWithKakao,
-                ),
-                const SizedBox(height: 14),
-                socialButton(
-                  text: '네이버로 시작하기',
-                  color: const Color(0xFF03C75A),
-                  onTap: loginWithNaver,
-                ),
-                const SizedBox(height: 14),
-                socialButton(
-                  text: '구글로 시작하기',
-                  color: const Color(0xFF4285F4),
-                  onTap: loginWithGoogle,
-                ),
+                      Expanded(child: Divider(color: Colors.white24)),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  socialButton(
+                    text: '카카오로 시작하기',
+                    color: const Color(0xFFFEE500),
+                    onTap: loginWithKakao,
+                  ),
+                  const SizedBox(height: 14),
+                  socialButton(
+                    text: '네이버로 시작하기',
+                    color: const Color(0xFF03C75A),
+                    onTap: loginWithNaver,
+                  ),
+                  const SizedBox(height: 14),
+                  socialButton(
+                    text: '구글로 시작하기',
+                    color: const Color(0xFF4285F4),
+                    onTap: loginWithGoogle,
+                  ),
+                ],
                 const SizedBox(height: 20),
                 TextButton(
                   onPressed: () {
@@ -411,10 +494,7 @@ class _LoginPageState extends State<LoginPage> {
                   },
                   child: const Text(
                     '관리자 로그인',
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: Colors.white38, fontSize: 13),
                   ),
                 ),
               ],

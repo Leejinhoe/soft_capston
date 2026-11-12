@@ -837,7 +837,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               backgroundColor: Colors.white24,
                               backgroundImage: (imagePath != null &&
                                       imagePath!.startsWith('http'))
-                                  ? NetworkImage(imagePath!) as ImageProvider
+                                  ? NetworkImage(ServerAddress.resolve(imagePath!)) as ImageProvider
                                   : null,
                               child: (imagePath == null ||
                                       !imagePath!.startsWith('http'))

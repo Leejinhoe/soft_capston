@@ -440,7 +440,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
             CircleAvatar(
               radius: 42,
               backgroundColor: AdminColors.purple,
-              backgroundImage: image.isEmpty ? null : NetworkImage(image),
+              backgroundImage: image.isEmpty ? null : NetworkImage(ServerAddress.resolve(image)),
               child: image.isEmpty
                   ? Icon(isAdmin ? Icons.admin_panel_settings : Icons.person,
                       color: Colors.white, size: 42)

@@ -904,7 +904,7 @@ class _StoryPageState extends State<StoryPage> {
         _fallbackToastShown = true;
         _toast(message.isNotEmpty ? message : '기본 목소리로 읽어 줄게요.');
       }
-      await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse('$kApiBaseUrl$url')));
+      await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(ServerAddress.resolve(url))));
       if (!mounted || token != _ttsToken) return;
       setState(() {
         ttsLoading = false;
@@ -1210,7 +1210,7 @@ class _StoryPageState extends State<StoryPage> {
           child: AspectRatio(
             aspectRatio: 1,
             child: Image.network(
-              '$kApiBaseUrl$url',
+              ServerAddress.resolve(url),
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
               loadingBuilder: (context, child, progress) => progress == null

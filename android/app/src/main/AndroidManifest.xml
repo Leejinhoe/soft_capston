@@ -3,6 +3,7 @@
     <!-- 우리 가족 목소리 녹음 (record 패키지) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
+        android:usesCleartextTraffic="true"
         android:label="test1"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
@@ -39,6 +40,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- 프로필 사진 자르기 (image_cropper) -->
+        <activity
+            android:name="com.yalantis.ucrop.UCropActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
 
         <meta-data
             android:name="flutterEmbedding"

@@ -15,11 +15,73 @@ class NdjsonResponse {
   const NdjsonResponse(this.statusCode, this.events, this.error);
 }
 
-/// 백엔드 주소 (한 곳에서만 관리)
-const String kApiBaseUrl = String.fromEnvironment(
+/// 백엔드 기본 주소 (빌드 때 --dart-define=API_BASE_URL=... 로 바꿀 수 있음)
+const String kDefaultApiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: 'http://127.0.0.1:8000',
 );
+
+/// 지금 쓰는 백엔드 주소. 로그인 화면 로고를 길게 눌러 바꾸면 저장됩니다.
+String get kApiBaseUrl => ServerAddress.current;
+
+/// 서버 주소 저장/불러오기 (shared_preferences)
+class ServerAddress {
+  static const String _key = 'server_base_url';
+  static String _current = kDefaultApiBaseUrl;
+
+  static String get current => _current;
+  static bool get isDefault => _current == kDefaultApiBaseUrl;
+
+  /// 앱 시작 때 한 번 불러옵니다.
+  static Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_key);
+      if (saved != null && saved.trim().isNotEmpty) _current = saved;
+    } catch (_) {}
+  }
+
+  /// "192.168.0.5:8000" 처럼 넣어도 http:// 를 붙이고 끝의 / 는 뗍니다.
+  static String normalize(String input) {
+    var value = input.trim();
+    if (value.isEmpty) return kDefaultApiBaseUrl;
+    if (!value.startsWith('http://') && !value.startsWith('https://')) {
+      value = 'http://$value';
+    }
+    while (value.endsWith('/')) {
+      value = value.substring(0, value.length - 1);
+    }
+    return value;
+  }
+
+  static Future<void> save(String input) async {
+    _current = normalize(input);
+    final prefs = await SharedPreferences.getInstance();
+    if (isDefault) {
+      await prefs.remove(_key);
+    } else {
+      await prefs.setString(_key, _current);
+    }
+  }
+
+  /// 이미지·오디오 주소를 지금 서버 주소에 맞춥니다.
+  /// - "/static/..." 같은 상대 주소 → 서버 주소를 앞에 붙임
+  /// - 예전에 저장된 "http://127.0.0.1:8000/..." / "http://localhost:8000/..." → 지금 서버 주소로 바꿈
+  static String resolve(String url) {
+    final value = url.trim();
+    if (value.isEmpty) return value;
+    if (value.startsWith('/')) return '$_current$value';
+    for (final old in const [
+      'http://127.0.0.1:8000',
+      'http://localhost:8000',
+    ]) {
+      if (value.startsWith('$old/')) {
+        return '$_current${value.substring(old.length)}';
+      }
+    }
+    return value;
+  }
+}
 
 /// 화면 어디서든 로그인 화면으로 보내거나 안내 문구를 띄우기 위한 전역 키
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();

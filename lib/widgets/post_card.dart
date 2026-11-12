@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/api_client.dart';
+
 /// 커뮤니티 공통 색
 const kCommunityBg = Color(0xFF070018);
 const kCommunityCard = Color(0xFF140028);
@@ -26,7 +28,7 @@ class AuthorAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: radius,
       backgroundColor: Colors.purple.withOpacity(0.35),
-      backgroundImage: url.isNotEmpty ? NetworkImage(url) : null,
+      backgroundImage: url.isNotEmpty ? NetworkImage(ServerAddress.resolve(url)) : null,
       child: url.isNotEmpty
           ? null
           : Text(
