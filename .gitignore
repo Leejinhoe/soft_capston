@@ -69,3 +69,8 @@ backend/voice_data/
 
 # Team members' reference code (read-only, kept locally)
 team_code/
+
+# 안드로이드 빌드 결과물·힙 덤프 (용량 커서 깃허브에 못 올림)
+*.apk
+*.aab
+*.hprof
