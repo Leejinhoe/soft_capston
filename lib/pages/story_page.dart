@@ -16,11 +16,7 @@ class StoryPage extends StatefulWidget {
   final String displayName;
   final String? resumeStoryId;
 
-  const StoryPage({
-    super.key,
-    required this.displayName,
-    this.resumeStoryId,
-  });
+  const StoryPage({super.key, required this.displayName, this.resumeStoryId});
 
   @override
   State<StoryPage> createState() => _StoryPageState();
@@ -47,31 +43,76 @@ const _endingLoadingMessages = [
 ];
 
 class _StoryPageState extends State<StoryPage> {
+  final GlobalKey _journeyVideoCardKey = GlobalKey();
   final Map<String, Future<Uint8List?>> _sceneImages = {};
   final Set<int> _generatingImages = {};
+  final Set<String> _autoImageAttempts = {};
+  final Set<String> _failedSceneImages = {};
+  Timer? _journeyVideoPoller;
+  bool _pollingJourneyVideo = false;
 
-  Future<void> _generateSceneImage(int number) async {
+  Future<void> _generateSceneImage(int number, {bool automatic = false}) async {
     if (storyId.isEmpty || _generatingImages.contains(number)) return;
+    final imageKey = '$storyId:$number';
     setState(() => _generatingImages.add(number));
     try {
-      final response = await ApiClient.post('/api/stories/$storyId/scenes/$number/image');
+      final response = await ApiClient.post(
+        '/api/stories/$storyId/scenes/$number/image',
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
+        _failedSceneImages.remove(imageKey);
         _applyState(ApiClient.decode(response));
       } else {
-        _toast(ApiClient.errorMessage(response, '이미지를 생성하지 못했어요.'));
+        _failedSceneImages.add(imageKey);
+        if (!automatic) {
+          _toast(ApiClient.errorMessage(response, '이미지를 생성하지 못했어요.'));
+        }
       }
     } catch (_) {
-      _toast('서버에 연결하지 못했어요.');
+      _failedSceneImages.add(imageKey);
+      if (!automatic) {
+        _toast('서버에 연결하지 못했어요.');
+      }
     } finally {
-      if (mounted) setState(() => _generatingImages.remove(number));
+      if (mounted) {
+        setState(() => _generatingImages.remove(number));
+        if (automatic && _failedSceneImages.contains(imageKey)) {
+          _requestMissingSceneImages(storyId, scenes);
+        }
+      }
+    }
+  }
+
+  void _requestMissingSceneImages(
+    String id,
+    List<Map<String, dynamic>> nextScenes,
+  ) {
+    for (var index = 0; index < nextScenes.length; index++) {
+      final scene = nextScenes[index];
+      final hasImage =
+          (scene['image_url'] ?? '').toString().isNotEmpty ||
+          (scene['image_file_id'] ?? '').toString().isNotEmpty;
+      if (hasImage) continue;
+      final number = index + 1;
+      final key = '$id:$number';
+      if (!_autoImageAttempts.add(key)) continue;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && storyId == id && number <= scenes.length) {
+          _generateSceneImage(number, automatic: true);
+        }
+      });
+      break;
     }
   }
 
   Future<Uint8List?> _loadSceneImage(int number) async {
-    final response = await ApiClient.get('/api/stories/$storyId/scenes/$number/image');
+    final response = await ApiClient.get(
+      '/api/stories/$storyId/scenes/$number/image',
+    );
     return response.statusCode == 200 ? response.bodyBytes : null;
   }
+
   final TextEditingController promptController = TextEditingController();
   final AudioPlayer _audioPlayer = AudioPlayer();
   final ScrollController _scrollController = ScrollController();
@@ -88,6 +129,8 @@ class _StoryPageState extends State<StoryPage> {
   String storyId = ''; // 생성 즉시 저장된 동화 id (커뮤니티 공유 시 원본 연결용)
   String storyTitle = '';
   String status = ''; // in_progress / completed
+  String assembledVideoStatus = '';
+  String assembledVideoUrl = '';
   int maxScenes = 8;
   List<Map<String, dynamic>> scenes = [];
   List<dynamic> vocabList = [];
@@ -101,11 +144,7 @@ class _StoryPageState extends State<StoryPage> {
 
   final List<String> genres = kStoryGenres;
 
-  final List<String> ages = [
-    '5-7세',
-    '8-10세',
-    '11-13세',
-  ];
+  final List<String> ages = ['5-7세', '8-10세', '11-13세'];
 
   bool get hasStory => scenes.isNotEmpty;
   bool get isCompleted => status == 'completed';
@@ -131,6 +170,7 @@ class _StoryPageState extends State<StoryPage> {
   @override
   void dispose() {
     _loadingTimer?.cancel();
+    _journeyVideoPoller?.cancel();
     _audioPlayer.dispose();
     promptController.dispose();
     _scrollController.dispose();
@@ -140,25 +180,100 @@ class _StoryPageState extends State<StoryPage> {
   // ---------- 서버 응답 반영 ----------
   void _applyState(dynamic data) {
     if (data is! Map) return;
+    final nextStoryId = (data['story_id'] ?? '').toString();
+    final nextStatus = (data['status'] ?? '').toString();
+    final nextVideoStatus = (data['assembled_video_status'] ?? '').toString();
+    final nextVideoUrl = (data['assembled_video_url'] ?? '').toString();
+    final nextScenes = ((data['scenes'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
     setState(() {
-      storyId = (data['story_id'] ?? '').toString();
+      storyId = nextStoryId;
       storyTitle = (data['title'] ?? '').toString();
-      status = (data['status'] ?? '').toString();
+      status = nextStatus;
+      assembledVideoStatus = nextVideoStatus;
+      assembledVideoUrl = nextVideoUrl;
       final characterKey = data['character_key'];
-      if (characterKey is String && RegExp(r'^(male|female)_0[1-8]$').hasMatch(characterKey)) {
+      if (characterKey is String &&
+          RegExp(r'^(male|female)_0[1-8]$').hasMatch(characterKey)) {
         selectedCharacterKey = characterKey;
         characterGender = characterKey.split('_').first;
       }
       maxScenes = (data['max_scenes'] as num?)?.toInt() ?? 8;
-      scenes = ((data['scenes'] as List?) ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      scenes = nextScenes;
       vocabList = (data['vocab_list'] as List?) ?? [];
       final age = (data['age'] ?? '').toString();
       if (ages.contains(age)) selectedAge = age;
       final topic = (data['topic'] ?? '').toString();
       if (topic.isNotEmpty) promptController.text = topic;
     });
+    _requestMissingSceneImages(nextStoryId, nextScenes);
+    if (nextStatus == 'completed' &&
+        (nextVideoStatus == 'pending' || nextVideoStatus == 'running')) {
+      _startJourneyVideoPolling();
+    } else {
+      _journeyVideoPoller?.cancel();
+      _journeyVideoPoller = null;
+    }
+  }
+
+  void _startJourneyVideoPolling() {
+    if (_journeyVideoPoller != null) return;
+    _journeyVideoPoller = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _pollJourneyVideo(),
+    );
+  }
+
+  Future<void> _pollJourneyVideo() async {
+    if (_pollingJourneyVideo || storyId.isEmpty || !isCompleted) return;
+    _pollingJourneyVideo = true;
+    try {
+      final response = await ApiClient.get('/api/stories/$storyId/branching');
+      if (mounted && response.statusCode == 200) {
+        _applyState(ApiClient.decode(response));
+      }
+    } catch (_) {
+      // Keep polling while the background video job is still pending.
+    } finally {
+      _pollingJourneyVideo = false;
+    }
+  }
+
+  Future<void> _retryJourneyVideo() async {
+    if (storyId.isEmpty) return;
+    try {
+      final response = await ApiClient.post(
+        '/api/stories/$storyId/journey-video/retry',
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _applyState(ApiClient.decode(response));
+      } else {
+        _toast(ApiClient.errorMessage(response, '영상을 다시 준비하지 못했어요.'));
+      }
+    } catch (_) {
+      _toast('서버에 연결하지 못했어요.');
+    }
+  }
+
+  void _showJourneyVideo() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(storyTitle.isEmpty ? '동화 영상' : storyTitle),
+        content: SizedBox(
+          width: 640,
+          child: SceneVideo(storyId: storyId, sceneNumber: 0, journey: true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _startLoading(List<String> messages) {
@@ -183,6 +298,16 @@ class _StoryPageState extends State<StoryPage> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
+      final videoCardContext = _journeyVideoCardKey.currentContext;
+      if (isCompleted && videoCardContext != null) {
+        Scrollable.ensureVisible(
+          videoCardContext,
+          alignment: 0.12,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOut,
+        );
+        return;
+      }
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 500),
@@ -193,12 +318,17 @@ class _StoryPageState extends State<StoryPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 장면 만들기 API 공통: 성공하면 화면 갱신, 409(이미 넘어감)면 서버 상태로 다시 맞춤
-  Future<void> _runStep(String path, Map<String, dynamic> body,
-      {required List<String> messages}) async {
+  Future<void> _runStep(
+    String path,
+    Map<String, dynamic> body, {
+    required List<String> messages,
+  }) async {
     if (isBusy) return;
     _startLoading(messages);
     try {
@@ -231,39 +361,35 @@ class _StoryPageState extends State<StoryPage> {
     setState(() {
       isPlayingTTS = false;
       storyId = '';
+      storyTitle = '';
       scenes = [];
       vocabList = [];
       status = '';
+      assembledVideoStatus = '';
+      assembledVideoUrl = '';
     });
-    await _runStep(
-      '/api/stories/branching/start',
-      {
-        'prompt': promptController.text.trim(),
-        'genre': selectedGenre,
-        'age': selectedAge,
-        'character_key': selectedCharacterKey,
-      },
-      messages: _sceneLoadingMessages,
-    );
+    await _runStep('/api/stories/branching/start', {
+      'prompt': promptController.text.trim(),
+      'genre': selectedGenre,
+      'age': selectedAge,
+      'character_key': selectedCharacterKey,
+    }, messages: _sceneLoadingMessages);
   }
 
   // 🧭 선택지 고르기 → 다음 장면 (8번째 자리면 서버가 결말로 마무리)
   Future<void> chooseOption(int index) async {
     final willEnd = scenes.length + 1 >= maxScenes;
-    await _runStep(
-      '/api/stories/$storyId/choose',
-      {'scene_number': scenes.length, 'choice_index': index},
-      messages: willEnd ? _endingLoadingMessages : _sceneLoadingMessages,
-    );
+    await _runStep('/api/stories/$storyId/choose', {
+      'scene_number': scenes.length,
+      'choice_index': index,
+    }, messages: willEnd ? _endingLoadingMessages : _sceneLoadingMessages);
   }
 
   // 🌙 이야기 마무리하기
   Future<void> finishStory() async {
-    await _runStep(
-      '/api/stories/$storyId/finish',
-      {'scene_number': scenes.length},
-      messages: _endingLoadingMessages,
-    );
+    await _runStep('/api/stories/$storyId/finish', {
+      'scene_number': scenes.length,
+    }, messages: _endingLoadingMessages);
   }
 
   // 📂 이어하기 / 다시 맞추기
@@ -293,6 +419,8 @@ class _StoryPageState extends State<StoryPage> {
       storyId = '';
       storyTitle = '';
       status = '';
+      assembledVideoStatus = '';
+      assembledVideoUrl = '';
       scenes = [];
       vocabList = [];
       isPlayingTTS = false;
@@ -307,7 +435,9 @@ class _StoryPageState extends State<StoryPage> {
     try {
       final title = storyTitle.isNotEmpty
           ? storyTitle
-          : (promptController.text.isEmpty ? '신비한 동화 이야기' : promptController.text);
+          : (promptController.text.isEmpty
+                ? '신비한 동화 이야기'
+                : promptController.text);
       final response = await ApiClient.post(
         '/api/vocabularies/add',
         body: {
@@ -320,8 +450,9 @@ class _StoryPageState extends State<StoryPage> {
           // "뜻이 여러 가지예요" 상태면 서버가 저장할 때 다시 고릅니다.
           'ambiguous': wordItem['ambiguous'] == true,
           'source_story_title': title,
-          'origin_story_id':
-              storyId.isNotEmpty ? storyId : '650000000000000000000001',
+          'origin_story_id': storyId.isNotEmpty
+              ? storyId
+              : '650000000000000000000001',
         },
       );
 
@@ -341,9 +472,7 @@ class _StoryPageState extends State<StoryPage> {
       debugPrint('단어 저장 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('단어장에 등록 완료 (\'${wordItem['hard']}\')'),
-          ),
+          SnackBar(content: Text('단어장에 등록 완료 (\'${wordItem['hard']}\')')),
         );
       }
     }
@@ -363,20 +492,22 @@ class _StoryPageState extends State<StoryPage> {
       final data = ApiClient.decode(response);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok
-              ? (data['already_shared'] == true
-                  ? '이미 커뮤니티에 올린 동화예요 😊'
-                  : '커뮤니티에 동화가 공유되었어요! 🌐')
-              : ApiClient.errorMessage(response)),
+          content: Text(
+            ok
+                ? (data['already_shared'] == true
+                      ? '이미 커뮤니티에 올린 동화예요 😊'
+                      : '커뮤니티에 동화가 공유되었어요! 🌐')
+                : ApiClient.errorMessage(response),
+          ),
           backgroundColor: ok ? const Color(0xFF8B5CF6) : null,
         ),
       );
     } catch (e) {
       debugPrint('커뮤니티 공유 오류: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('서버에 연결하지 못했어요.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('서버에 연결하지 못했어요.')));
       }
     } finally {
       if (mounted) setState(() => isSharing = false);
@@ -384,7 +515,10 @@ class _StoryPageState extends State<StoryPage> {
   }
 
   // 🔍 본문 클릭 단어 + 포함된 문장 전체를 백엔드로 전달해 실시간 사전 조회
-  Future<void> fetchAndShowVocabDialog(String targetWord, String fullSentence) async {
+  Future<void> fetchAndShowVocabDialog(
+    String targetWord,
+    String fullSentence,
+  ) async {
     final cleanWord = targetWord.replaceAll(RegExp(r'[^\w\s가-힣]'), '');
     if (cleanWord.trim().isEmpty) return;
 
@@ -399,11 +533,7 @@ class _StoryPageState extends State<StoryPage> {
     try {
       final response = await ApiClient.post(
         '/api/vocabularies/search-context',
-        body: {
-          'word': cleanWord,
-          'sentence': fullSentence,
-          'age': selectedAge,
-        },
+        body: {'word': cleanWord, 'sentence': fullSentence, 'age': selectedAge},
       );
 
       if (mounted) Navigator.pop(context); // 로딩 닫기
@@ -452,10 +582,7 @@ class _StoryPageState extends State<StoryPage> {
                   color: Colors.purple.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.menu_book,
-                  color: Colors.purpleAccent,
-                ),
+                child: const Icon(Icons.menu_book, color: Colors.purpleAccent),
               ),
               const SizedBox(width: 12),
               Text(
@@ -494,10 +621,7 @@ class _StoryPageState extends State<StoryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
-                '닫기',
-                style: TextStyle(color: Colors.white54),
-              ),
+              child: const Text('닫기', style: TextStyle(color: Colors.white54)),
             ),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -514,7 +638,11 @@ class _StoryPageState extends State<StoryPage> {
                 Navigator.of(context).pop();
                 saveVocabularyToDB(wordItem);
               },
-              icon: const Icon(Icons.bookmark_add, color: Colors.white, size: 18),
+              icon: const Icon(
+                Icons.bookmark_add,
+                color: Colors.white,
+                size: 18,
+              ),
               label: const Text(
                 '내 단어장 저장',
                 style: TextStyle(
@@ -547,9 +675,7 @@ class _StoryPageState extends State<StoryPage> {
 
     try {
       await _audioPlayer.setAudioSource(
-        AudioSource.uri(
-          ApiClient.uri('/api/tts'),
-        ),
+        AudioSource.uri(ApiClient.uri('/api/tts')),
       );
       await _audioPlayer.play();
     } catch (e) {
@@ -559,9 +685,7 @@ class _StoryPageState extends State<StoryPage> {
           isPlayingTTS = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('음성 재생 실패: 백엔드 서버를 확인해 주세요.'),
-          ),
+          const SnackBar(content: Text('음성 재생 실패: 백엔드 서버를 확인해 주세요.')),
         );
       }
     }
@@ -630,9 +754,7 @@ class _StoryPageState extends State<StoryPage> {
             decoration: BoxDecoration(
               color: const Color(0xFF140028),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white10,
-              ),
+              border: Border.all(color: Colors.white10),
             ),
             child: ListTile(
               onTap: () => showVocabularyDialog(word),
@@ -643,10 +765,7 @@ class _StoryPageState extends State<StoryPage> {
                   color: Colors.purple.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.menu_book,
-                  color: Colors.purpleAccent,
-                ),
+                child: const Icon(Icons.menu_book, color: Colors.purpleAccent),
               ),
               title: Text(
                 word['hard'] ?? '',
@@ -659,14 +778,14 @@ class _StoryPageState extends State<StoryPage> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   word['definition'] ?? '',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    height: 1.4,
-                  ),
+                  style: const TextStyle(color: Colors.white70, height: 1.4),
                 ),
               ),
               trailing: IconButton(
-                icon: const Icon(Icons.bookmark_add_outlined, color: Colors.purpleAccent),
+                icon: const Icon(
+                  Icons.bookmark_add_outlined,
+                  color: Colors.purpleAccent,
+                ),
                 onPressed: () => saveVocabularyToDB(word),
               ),
             ),
@@ -687,18 +806,11 @@ class _StoryPageState extends State<StoryPage> {
       },
       child: Container(
         margin: const EdgeInsets.only(right: 10),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF8B5CF6)
-              : const Color(0xFF1A0B3A),
+          color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF1A0B3A),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.white10,
-          ),
+          border: Border.all(color: Colors.white10),
         ),
         child: Text(
           genre,
@@ -761,15 +873,19 @@ class _StoryPageState extends State<StoryPage> {
             Center(
               child: FutureBuilder<Uint8List?>(
                 future: _sceneImages.putIfAbsent(
-                  '$storyId:$number:$imageUrl', () => _loadSceneImage(number)),
+                  '$storyId:$number:$imageUrl',
+                  () => _loadSceneImage(number),
+                ),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done) {
                     return const CircularProgressIndicator();
                   }
                   final bytes = snapshot.data;
                   if (bytes == null || bytes.isEmpty) {
-                    return const Text('장면 이미지를 불러오지 못했어요.',
-                        style: TextStyle(color: Colors.white70));
+                    return const Text(
+                      '장면 이미지를 불러오지 못했어요.',
+                      style: TextStyle(color: Colors.white70),
+                    );
                   }
                   return Image.memory(bytes, height: 280, fit: BoxFit.contain);
                 },
@@ -778,11 +894,33 @@ class _StoryPageState extends State<StoryPage> {
           ],
           if (imageUrl.isEmpty && storyId.isNotEmpty) ...[
             const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: _generatingImages.contains(number) ? null : () => _generateSceneImage(number),
-              icon: const Icon(Icons.image_outlined),
-              label: Text(_generatingImages.contains(number) ? '이미지 생성 중' : '장면 이미지 만들기'),
-            ),
+            if (_generatingImages.contains(number))
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    '장면 이미지를 만들고 있어요',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              )
+            else if (_failedSceneImages.contains('$storyId:$number'))
+              TextButton.icon(
+                onPressed: () => _generateSceneImage(number),
+                icon: const Icon(Icons.refresh),
+                label: const Text('이미지 다시 시도'),
+              )
+            else
+              const Text(
+                '장면 이미지를 준비하고 있어요',
+                style: TextStyle(color: Colors.white70),
+              ),
           ],
           if (videoUrl.isNotEmpty && storyId.isNotEmpty)
             ExpansionTile(
@@ -836,7 +974,10 @@ class _StoryPageState extends State<StoryPage> {
           const SizedBox(
             width: 42,
             height: 42,
-            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 4),
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 4,
+            ),
           ),
           const SizedBox(height: 18),
           AnimatedSwitcher(
@@ -883,8 +1024,10 @@ class _StoryPageState extends State<StoryPage> {
             ),
             child: Row(
               children: [
-                Text(_choiceEmojis[index % _choiceEmojis.length],
-                    style: const TextStyle(fontSize: 28)),
+                Text(
+                  _choiceEmojis[index % _choiceEmojis.length],
+                  style: const TextStyle(fontSize: 28),
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
@@ -907,7 +1050,9 @@ class _StoryPageState extends State<StoryPage> {
 
   Widget _choicesArea() {
     final last = scenes.last;
-    final choices = ((last['choices'] as List?) ?? []).map((e) => e.toString()).toList();
+    final choices = ((last['choices'] as List?) ?? [])
+        .map((e) => e.toString())
+        .toList();
     final willEnd = scenes.length + 1 >= maxScenes;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -935,7 +1080,9 @@ class _StoryPageState extends State<StoryPage> {
               foregroundColor: const Color(0xFFFBBF24),
               side: const BorderSide(color: Color(0xFFFBBF24), width: 2),
               padding: const EdgeInsets.symmetric(vertical: 18),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
             ),
             onPressed: isBusy ? null : finishStory,
             icon: const Text('🌙', style: TextStyle(fontSize: 22)),
@@ -973,12 +1120,19 @@ class _StoryPageState extends State<StoryPage> {
                   backgroundColor: isPlayingTTS
                       ? const Color(0xFF5B21B6)
                       : const Color(0xFF8B5CF6),
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 onPressed: playTTS,
                 icon: Icon(
-                  isPlayingTTS ? Icons.pause_circle_filled : Icons.volume_up_rounded,
+                  isPlayingTTS
+                      ? Icons.pause_circle_filled
+                      : Icons.volume_up_rounded,
                   color: Colors.white,
                 ),
                 label: Text(
@@ -997,10 +1151,17 @@ class _StoryPageState extends State<StoryPage> {
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF8B5CF6),
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
-                onPressed: (storyId.isEmpty || isSharing) ? null : shareStoryToCommunity,
+                onPressed: (storyId.isEmpty || isSharing)
+                    ? null
+                    : shareStoryToCommunity,
                 icon: const Icon(Icons.share, color: Colors.white),
                 label: const Text(
                   '커뮤니티에 이 동화 공유하기',
@@ -1015,9 +1176,92 @@ class _StoryPageState extends State<StoryPage> {
             ),
           ],
         ),
-        const SizedBox(height: 30),
+        const SizedBox(height: 22),
+        _journeyVideoCard(),
+        const SizedBox(height: 24),
         buildVocabulary(),
       ],
+    );
+  }
+
+  Widget _journeyVideoCard() {
+    final hasVideo = assembledVideoUrl.isNotEmpty;
+    final isPreparing =
+        assembledVideoStatus == 'pending' || assembledVideoStatus == 'running';
+    final failed = assembledVideoStatus == 'failed';
+    return Container(
+      key: _journeyVideoCardKey,
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF140028),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.movie_creation_outlined, color: Color(0xFFFBBF24)),
+              SizedBox(width: 10),
+              Text(
+                '우리 동화 영상',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (hasVideo)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ElevatedButton.icon(
+                onPressed: _showJourneyVideo,
+                icon: const Icon(Icons.play_circle_outline),
+                label: const Text('완성 영상 보기'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5CF6),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            )
+          else if (isPreparing)
+            const Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '장면 이미지를 이어 영상으로 만들고 있어요. 준비되면 여기에 표시됩니다.',
+                    style: TextStyle(color: Colors.white70, height: 1.4),
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            Text(
+              failed
+                  ? '영상 생성이 완료되지 않았어요. 다시 시도할 수 있어요.'
+                  : '완성된 장면 이미지를 이어 영상으로 만들어요.',
+              style: const TextStyle(color: Colors.white70, height: 1.4),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _retryJourneyVideo,
+              icon: const Icon(Icons.refresh),
+              label: Text(failed ? '영상 다시 만들기' : '영상 만들기'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1032,8 +1276,8 @@ class _StoryPageState extends State<StoryPage> {
                 isCompleted && storyTitle.isNotEmpty
                     ? storyTitle
                     : (promptController.text.trim().isEmpty
-                        ? '나의 동화'
-                        : promptController.text.trim()),
+                          ? '나의 동화'
+                          : promptController.text.trim()),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 28,
@@ -1043,9 +1287,17 @@ class _StoryPageState extends State<StoryPage> {
             ),
             TextButton.icon(
               onPressed: isBusy ? null : resetStory,
-              icon: const Icon(Icons.add_circle_outline, color: Colors.purpleAccent),
-              label: const Text('새 동화',
-                  style: TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
+              icon: const Icon(
+                Icons.add_circle_outline,
+                color: Colors.purpleAccent,
+              ),
+              label: const Text(
+                '새 동화',
+                style: TextStyle(
+                  color: Colors.purpleAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -1207,7 +1459,9 @@ class _StoryPageState extends State<StoryPage> {
         displayName: widget.displayName,
       ),
       body: isOpening
-          ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+          ? const Center(
+              child: CircularProgressIndicator(color: Colors.purpleAccent),
+            )
           : SingleChildScrollView(
               controller: _scrollController,
               padding: const EdgeInsets.all(24),

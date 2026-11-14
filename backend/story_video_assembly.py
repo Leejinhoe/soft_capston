@@ -15,7 +15,7 @@ FADE_FRAMES = 6
 
 
 def assemble_scene_images(images):
-    """Turn the chosen story's saved illustrations into one short MP4."""
+    """Turn saved illustrations into a still-image MP4 with dissolve-only transitions."""
     if not images or len(images) > MAX_SCENES:
         raise ValueError("A story must have between 1 and 20 scene images")
     side, fps, scene_frames, fade = 1024, 24, 48, 12
@@ -32,18 +32,14 @@ def assemble_scene_images(images):
                 with Image.open(BytesIO(raw)) as source:
                     source.load()
                     base = ImageOps.fit(source.convert("RGB"), (side, side), method=Image.Resampling.LANCZOS)
-                frames = []
-                for step in range(12):
-                    inset = round(side * 0.04 * step / 11)
-                    crop = base.crop((inset, inset, side - inset, side - inset))
-                    frames.append(np.asarray(crop.resize((side, side), Image.Resampling.BICUBIC), dtype=np.uint8))
+                base_frame = np.asarray(base, dtype=np.uint8)
                 for index in range(scene_frames):
-                    frame = frames[min(11, index * 12 // scene_frames)]
+                    frame = base_frame
                     if previous is not None and index < fade:
                         alpha = (index + 1) / (fade + 1)
-                        frame = (previous.astype(np.float32) * (1 - alpha) + frame.astype(np.float32) * alpha).astype(np.uint8)
+                        frame = (previous.astype(np.float32) * (1 - alpha) + base_frame.astype(np.float32) * alpha).astype(np.uint8)
                     writer.append_data(frame)
-                previous = frames[-1]
+                previous = base_frame
         return output.read_bytes()
 
 

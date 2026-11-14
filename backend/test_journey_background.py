@@ -1,6 +1,10 @@
 import os
 import unittest
+import imageio.v2 as imageio
 from io import BytesIO
+import numpy as np
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("JWT_SECRET", "test-only-secret")
@@ -21,6 +25,30 @@ class ImageAssemblyTests(unittest.TestCase):
         video = assemble_scene_images([source.getvalue()])
         self.assertGreater(len(video), 100)
         self.assertEqual(video[4:8], b"ftyp")
+
+    def test_still_scenes_hold_steady_and_only_dissolve_between_them(self):
+        inputs = []
+        for color in ("red", "blue"):
+            source = BytesIO()
+            Image.new("RGB", (128, 128), color).save(source, "PNG")
+            inputs.append(source.getvalue())
+
+        video = assemble_scene_images(inputs)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "still-journey.mp4"
+            path.write_bytes(video)
+            reader = imageio.get_reader(str(path))
+            try:
+                start = reader.get_data(0).astype(np.int16)
+                held = reader.get_data(30).astype(np.int16)
+                fade = reader.get_data(53).astype(np.int16)
+                end = reader.get_data(70).astype(np.int16)
+            finally:
+                reader.close()
+
+        self.assertLess(np.abs(start - held).mean(), 2.0)
+        self.assertGreater(np.abs(held - fade).mean(), 10.0)
+        self.assertLess(np.abs(fade - end).mean(), np.abs(held - end).mean())
 
 
 class BackgroundJourneyTests(unittest.IsolatedAsyncioTestCase):
