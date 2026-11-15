@@ -11,7 +11,8 @@ from typing import Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from fairytale_emotion_service import runtime as emotion_runtime
 
 from database import safe_create_index, stories_collection
 from psych_engine import (
@@ -67,6 +68,8 @@ class ChoiceInsight(BaseModel):
     choice: str
     options: list[str] = []
     insight: str
+    emotion_labels: list[str] = Field(default_factory=list)
+    emotion_status: str = "unavailable"
 
 
 class PsychStoryCard(BaseModel):
@@ -176,7 +179,7 @@ async def analyze_story(doc: dict) -> Optional[dict]:
     analysis = {
         "traits": result.traits,
         "insights": [
-            {"scene": step.scene, "choice": step.choice, "options": step.options, "insight": insight}
+            _choice_insight(step, insight)
             for step, insight in zip(data.steps, result.insights)
         ],
         "summary": result.summary,
@@ -188,6 +191,62 @@ async def analyze_story(doc: dict) -> Optional[dict]:
         {"_id": doc["_id"]},
         {"$set": {"psych_analysis": analysis}, "$unset": {"psych_claimed_at": ""}},
     )
+    return analysis
+
+
+def _choice_emotion(choice: str) -> Optional[dict]:
+    """Return reviewed target-only KOTE labels, or None when inference is unavailable."""
+    try:
+        result = emotion_runtime.analyze(choice)
+    except Exception:
+        return None
+    if not result.get("emotion_scoring_enabled"):
+        return None
+    labels = []
+    if result.get("presentation_status") == "emotion_candidates":
+        labels = list(dict.fromkeys(
+            item.get("label_display") or item.get("label")
+            for item in result.get("display_emotions", [])
+            if isinstance(item, dict) and (item.get("label_display") or item.get("label"))
+        ))
+    return {
+        "emotion_labels": labels,
+        "emotion_status": "detected" if labels else "no_candidate",
+    }
+
+
+def _choice_insight(step: ChoiceStep, insight: str) -> dict:
+    """Add conservative target-only KOTE labels to the existing story insight."""
+    emotion = _choice_emotion(step.choice) or {
+        "emotion_labels": [],
+        "emotion_status": "unavailable",
+    }
+    return {
+        "scene": step.scene,
+        "choice": step.choice,
+        "options": step.options,
+        "insight": insight,
+        **emotion,
+    }
+
+
+async def _enrich_cached_emotions(doc: dict, analysis: dict) -> dict:
+    """Backfill emotion labels for psych results cached before the KOTE model was added."""
+    insights = list(analysis.get("insights") or [])
+    if not insights or all(item.get("emotion_status") in {"detected", "no_candidate"} for item in insights):
+        return analysis
+    changed = False
+    for item in insights:
+        emotion = _choice_emotion(item.get("choice") or "")
+        if emotion is not None:
+            item.update(emotion)
+            changed = True
+    if changed:
+        await stories_collection.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {"psych_analysis.insights": insights}},
+        )
+        analysis["insights"] = insights
     return analysis
 
 
@@ -299,6 +358,8 @@ async def psych_detail(story_id: str, current_user: dict = Depends(get_current_u
             raise HTTPException(status_code=503, detail=ENGINE_FAILED)
         if analysis is None:  # 다른 요청이 분석 중
             raise HTTPException(status_code=409, detail="지금 이 동화를 살펴보는 중이에요. 잠시 후 다시 열어 주세요.")
+    else:
+        analysis = await _enrich_cached_emotions(doc, analysis)
 
     return PsychDetailResponse(
         story_id=str(doc["_id"]),

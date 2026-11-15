@@ -273,6 +273,7 @@ class _MindDetailPageState extends State<MindDetailPage> {
   Widget insightItem(int number, Map item, bool isLast) {
     final choice = (item['choice'] ?? '') as String;
     final options = List<String>.from(item['options'] ?? []).where((o) => o != choice).toList();
+    final emotionLabels = List<String>.from(item['emotion_labels'] ?? []);
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -317,6 +318,29 @@ class _MindDetailPageState extends State<MindDetailPage> {
                         style: const TextStyle(
                             color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                   ),
+                  if (emotionLabels.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        const Text('문장 감정 단서',
+                            style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        for (final label in emotionLabels)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: kMindPink.withOpacity(0.18),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: kMindPink.withOpacity(0.45)),
+                            ),
+                            child: Text(label,
+                                style: const TextStyle(color: Colors.white, fontSize: 12)),
+                          ),
+                      ],
+                    ),
+                  ],
                   if (options.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text('다른 길: ${options.join(' / ')}',
