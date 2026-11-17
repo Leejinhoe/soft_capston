@@ -7,38 +7,92 @@ import 'package:fairytale_hyeonlim_merged/models/app_state.dart';
 import 'package:fairytale_hyeonlim_merged/models/story_model.dart';
 
 void main() {
-  test('resuming polls the saved job without submitting another render', () async {
-    final requests = <http.Request>[];
+  test(
+    'resuming polls the saved job without submitting another render',
+    () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode({
+            'job_id': 'saved-job',
+            'status': 'completed',
+            'result': {
+              'image_url': '/api/media/images/image-1',
+              'video_url': '/api/media/videos/video-1',
+            },
+          }),
+          200,
+        );
+      });
+      final result = await http.runWithClient(
+        () => DbService.generateSceneMedia(
+          storyId: 'story',
+          stepNumber: 1,
+          storyText: 'A scene',
+          genre: 'fantasy',
+          age: '7',
+          resumeJobId: 'saved-job',
+        ),
+        () => client,
+      );
+      expect(requests.length, 1);
+      expect(requests.single.method, 'GET');
+      expect(requests.single.url.path, '/api/media/jobs/saved-job');
+      expect(result?.status, 'completed');
+      expect(result?.videoUrl, endsWith('/api/media/videos/video-1'));
+    },
+  );
+
+  test('keeps HTTP failure details for illustration retries', () async {
     final client = MockClient((request) async {
-      requests.add(request);
-      return http.Response(jsonEncode({
-        'job_id': 'saved-job', 'status': 'completed',
-        'result': {'image_url': '/api/media/images/image-1',
-                   'video_url': '/api/media/videos/video-1'},
-      }), 200);
+      return http.Response(
+        jsonEncode({'detail': 'AI_API_BASE_URL is not configured'}),
+        503,
+      );
     });
-    final result = await http.runWithClient(() => DbService.generateSceneMedia(
-      storyId: 'story', stepNumber: 1, storyText: 'A scene', genre: 'fantasy',
-      age: '7', resumeJobId: 'saved-job',
-    ), () => client);
-    expect(requests.length, 1);
-    expect(requests.single.method, 'GET');
-    expect(requests.single.url.path, '/api/media/jobs/saved-job');
-    expect(result?.status, 'completed');
-    expect(result?.videoUrl, endsWith('/api/media/videos/video-1'));
-  });
-  test('missing persisted job becomes retryable instead of staying running', () {
-    final chapter = StoryChapter(chapter: 1, text: 'A scene', mediaStatus: 'running');
-    final story = StorySession(
-      storyId: 'restore-test', genre: 'fantasy', age: '7', initialPrompt: 'test',
-      chapters: [chapter], choices: [], choiceOptions: [], vocab: [],
-      allChoicesMade: [], currentChapter: 1,
+    final result = await http.runWithClient(
+      () => DbService.generateSceneMedia(
+        storyId: 'story',
+        stepNumber: 2,
+        storyText: 'A scene',
+        genre: 'fantasy',
+        age: '7',
+      ),
+      () => client,
     );
-    final state = AppState();
-    state.restoreMediaJobs(story);
-    expect(chapter.mediaStatus, 'failed');
-    expect(chapter.mediaError, isNotEmpty);
-    expect(story.mediaGenerationChapterNumbers, isEmpty);
-    state.dispose();
+
+    expect(result?.status, 'failed');
+    expect(result?.error, contains('HTTP 503'));
+    expect(result?.error, contains('AI_API_BASE_URL is not configured'));
   });
+
+  test(
+    'missing persisted job becomes retryable instead of staying running',
+    () {
+      final chapter = StoryChapter(
+        chapter: 1,
+        text: 'A scene',
+        mediaStatus: 'running',
+      );
+      final story = StorySession(
+        storyId: 'restore-test',
+        genre: 'fantasy',
+        age: '7',
+        initialPrompt: 'test',
+        chapters: [chapter],
+        choices: [],
+        choiceOptions: [],
+        vocab: [],
+        allChoicesMade: [],
+        currentChapter: 1,
+      );
+      final state = AppState();
+      state.restoreMediaJobs(story);
+      expect(chapter.mediaStatus, 'failed');
+      expect(chapter.mediaError, isNotEmpty);
+      expect(story.mediaGenerationChapterNumbers, isEmpty);
+      state.dispose();
+    },
+  );
 }

@@ -54,6 +54,11 @@ class MediaReadiness {
   final int readyAssets;
   final int targetAssets;
   final bool workerRunning;
+  final String? providerMode;
+  final bool? providerConfigured;
+  final String? providerConfigurationError;
+  final bool? providerReachable;
+  final String? providerConnectionError;
   final List<CharacterReadiness> characters;
   final MediaQueueStatus queue;
 
@@ -64,6 +69,11 @@ class MediaReadiness {
     required this.readyAssets,
     required this.targetAssets,
     required this.workerRunning,
+    this.providerMode,
+    this.providerConfigured,
+    this.providerConfigurationError,
+    this.providerReachable,
+    this.providerConnectionError,
     required this.characters,
     required this.queue,
   });
@@ -72,6 +82,7 @@ class MediaReadiness {
     final profiles = json['profiles'] as Map<String, dynamic>? ?? const {};
     final assets = json['assets'] as Map<String, dynamic>? ?? const {};
     final worker = json['worker'] as Map<String, dynamic>? ?? const {};
+    final provider = json['provider'] as Map<String, dynamic>? ?? const {};
     final characterItems = json['characters'] as List<dynamic>? ?? const [];
 
     return MediaReadiness(
@@ -81,6 +92,11 @@ class MediaReadiness {
       readyAssets: (assets['ready'] as num?)?.toInt() ?? 0,
       targetAssets: (assets['target'] as num?)?.toInt() ?? 0,
       workerRunning: worker['running'] == true,
+      providerMode: provider['mode']?.toString(),
+      providerConfigured: provider['configured'] as bool?,
+      providerConfigurationError: provider['configuration_error']?.toString(),
+      providerReachable: provider['reachable'] as bool?,
+      providerConnectionError: provider['connection_error']?.toString(),
       characters: characterItems
           .whereType<Map<String, dynamic>>()
           .map(CharacterReadiness.fromJson)

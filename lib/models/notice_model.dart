@@ -14,6 +14,8 @@ class Notice {
   final int emailSentCount;
   final int emailFailedCount;
   final String? emailDeliveryError;
+  final String target;
+  final List<String> targetUserIds;
 
   const Notice({
     required this.id,
@@ -31,6 +33,8 @@ class Notice {
     this.publishedAt,
     this.updatedAt,
     this.emailDeliveryError,
+    this.target = 'all',
+    this.targetUserIds = const [],
   });
 
   factory Notice.fromJson(Map<String, dynamic> json) {
@@ -59,6 +63,10 @@ class Notice {
       emailSentCount: count('email_sent_count'),
       emailFailedCount: count('email_failed_count'),
       emailDeliveryError: text('email_delivery_error'),
+      target: json['target']?.toString() ?? 'all',
+      targetUserIds: (json['target_user_ids'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
     );
   }
 }

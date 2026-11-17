@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
 
 import '../services/api_service.dart';
 import '../services/db_service.dart';
@@ -20,6 +21,7 @@ class AppState extends ChangeNotifier {
   ];
 
   StorySession? currentStory;
+  int selectedMainTab = 0;
   bool isLoading = false;
   String? errorMessage;
 
@@ -35,19 +37,45 @@ class AppState extends ChangeNotifier {
   List<VocabWord> savedVocabulary = [];
   bool isUserDataLoading = false;
   String? userDataErrorMessage;
+  int _userDataLoadGeneration = 0;
+  String? _loadingUserId;
 
   PsychResult? psychResult;
   bool isPsychLoading = false;
+  bool isPsychRestoreLoading = false;
   String? psychAnalysisNotice;
   String? _psychResultStoryIdentity;
+  String? _psychRestoreStoryIdentity;
+  Map<String, dynamic>? emotionReport;
+  String? emotionAnalysisNotice;
+  bool isEmotionAnalysisLoading = false;
+  Map<String, dynamic>? cumulativeEmotionSummary;
+  String? cumulativeEmotionNotice;
+  bool isCumulativeEmotionLoading = false;
+  bool temporaryEmotionModelTestMode = false;
+  String? _temporaryEmotionTestStoryId;
+  String? _emotionReportStoryIdentity;
   final Map<StorySession, Future<void>> _storySyncQueue = {};
+  bool _journeyVideoRefreshInProgress = false;
   List<VocabWord>? _allVocabularyCache;
 
   bool get hasSignedInUser =>
       (currentAccountId != null && currentAccountId!.isNotEmpty) ||
       (currentUserId != null && currentUserId!.isNotEmpty);
 
+  void selectMainTab(int index) {
+    if (index < 0 || index > 5 || selectedMainTab == index) return;
+    selectedMainTab = index;
+    notifyListeners();
+  }
+
   StorySession? get activePsychStory {
+    if (currentStory != null && currentStory!.choiceEmotionHistory.isNotEmpty) {
+      return currentStory;
+    }
+    for (final story in completedStories) {
+      if (story.choiceEmotionHistory.isNotEmpty) return story;
+    }
     if (currentStory != null && currentStory!.chapters.isNotEmpty) {
       return currentStory;
     }
@@ -56,11 +84,332 @@ class AppState extends ChangeNotifier {
   }
 
   bool canAnalyzeStory(StorySession story) =>
-      story.hasReachedEnding && !isLoading;
+      story.choiceEmotionHistory.isNotEmpty;
 
   PsychResult? psychResultFor(StorySession story) {
     if (_psychResultStoryIdentity != _storyIdentity(story)) return null;
     return psychResult;
+  }
+
+  Map<String, dynamic>? emotionReportFor(StorySession story) =>
+      _emotionReportStoryIdentity == _storyIdentity(story)
+      ? emotionReport
+      : null;
+
+  bool isTemporaryEmotionTestStory(StorySession story) =>
+      temporaryEmotionModelTestMode &&
+      _temporaryEmotionTestStoryId == story.storyId;
+
+  Future<void> loadStoryEmotionAnalysis(StorySession story) async {
+    if (isEmotionAnalysisLoading) return;
+    if (_isTemporaryStory(story)) {
+      if (isTemporaryEmotionTestStory(story)) {
+        await _analyzeAndSaveTemporaryEmotion(story);
+        return;
+      }
+      emotionAnalysisNotice =
+          '임시 생성은 화면 흐름 확인용이라 실제 감정 분류 모델을 실행하지 않아요. 실모델 결과는 AI 서버로 생성해 계정에 저장한 동화에서 확인해 주세요.';
+      notifyListeners();
+      return;
+    }
+    final userId = currentUserId;
+    isEmotionAnalysisLoading = true;
+    emotionAnalysisNotice = null;
+    emotionReport = null;
+    notifyListeners();
+    try {
+      await (_storySyncQueue[story] ?? Future<void>.value());
+      final dbId = story.dbStoryId;
+      if (dbId == null || dbId.isEmpty || userId == null) {
+        throw StateError('먼저 동화를 계정에 저장해 주세요.');
+      }
+      if (story.chapters.any(
+        (chapter) => !story.syncedChapterNumbers.contains(chapter.chapter),
+      )) {
+        throw StateError('동화 장면을 모두 저장한 뒤 다시 분석해 주세요.');
+      }
+      final result = await DbService.fetchStoryEmotionAnalysis(dbId);
+      if (currentUserId != userId) return;
+      emotionReport = result;
+      _emotionReportStoryIdentity = _storyIdentity(story);
+      final missingChoices = (result['missing_choices'] as num?)?.toInt() ?? 0;
+      if (missingChoices > 0) {
+        emotionAnalysisNotice =
+            '이전 선택 $missingChoices개에는 저장된 감정 분류 점수가 없어요. 새로 선택한 문장부터 점수가 저장됩니다.';
+      }
+    } catch (error) {
+      if (currentUserId == userId) {
+        emotionAnalysisNotice = error
+            .toString()
+            .replaceFirst('Exception: ', '')
+            .replaceFirst('Bad state: ', '');
+      }
+    } finally {
+      isEmotionAnalysisLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _analyzeAndSaveTemporaryEmotion(StorySession story) async {
+    final userId = currentUserId?.trim() ?? '';
+    if (userId.isEmpty) {
+      emotionAnalysisNotice = '로그인하면 분류 결과를 계정에 저장할 수 있어요.';
+      notifyListeners();
+      return;
+    }
+    final selectedScenes = story.chapters
+        .where((chapter) => chapter.choiceMade?.trim().isNotEmpty == true)
+        .toList();
+    if (selectedScenes.isEmpty) {
+      emotionAnalysisNotice = '먼저 임시 동화에서 선택지를 한 번 고른 뒤 분석해 주세요.';
+      notifyListeners();
+      return;
+    }
+
+    isEmotionAnalysisLoading = true;
+    emotionAnalysisNotice = null;
+    emotionReport = null;
+    _emotionReportStoryIdentity = null;
+    psychResult = null;
+    _psychResultStoryIdentity = null;
+    notifyListeners();
+    try {
+      final scenes = story.chapters
+          .map(
+            (chapter) => {
+              'step_number': chapter.chapter,
+              'content': chapter.text,
+              'offered_choices': chapter.offeredChoices,
+              if (chapter.choiceMade?.trim().isNotEmpty == true)
+                'user_choice': chapter.choiceMade!.trim(),
+            },
+          )
+          .toList(growable: false);
+
+      // Reuse the saved classifier/LLM result only if the preview has not changed.
+      try {
+        final cached = await DbService.fetchTemporaryEmotionAnalysis(
+          userId: userId,
+          temporaryStoryId: story.storyId,
+        );
+        if (currentUserId != userId || !isTemporaryEmotionTestStory(story)) {
+          return;
+        }
+        if (_sameTemporaryEmotionScenes(cached['scenes'], scenes)) {
+          final cachedReport = cached['report'];
+          if (cachedReport is Map) {
+            emotionReport = Map<String, dynamic>.from(cachedReport);
+            _emotionReportStoryIdentity = _storyIdentity(story);
+            final cachedPsych = cached['psych_result'];
+            if (cachedPsych is Map) {
+              psychResult = PsychResult.fromJson(
+                Map<String, dynamic>.from(cachedPsych),
+              );
+              _psychResultStoryIdentity = _storyIdentity(story);
+            }
+            emotionAnalysisNotice = '저장된 임시 동화 감정 분류 결과를 불러왔어요.';
+            return;
+          }
+        }
+      } catch (_) {
+        // A missing cache is expected on the first analysis; proceed to classify.
+      }
+
+      psychResult = null;
+      _psychResultStoryIdentity = null;
+      final result = await DbService.saveTemporaryEmotionAnalysis(
+        userId: userId,
+        temporaryStoryId: story.storyId,
+        title: story.initialPrompt,
+        scenes: scenes,
+      );
+      if (currentUserId != userId || !isTemporaryEmotionTestStory(story)) {
+        return;
+      }
+      final rawReport = result['report'];
+      if (rawReport is! Map) {
+        throw const FormatException('감정 분류 결과 형식이 올바르지 않아요.');
+      }
+      emotionReport = Map<String, dynamic>.from(rawReport);
+      _emotionReportStoryIdentity = _storyIdentity(story);
+      emotionAnalysisNotice = result['saved'] == true
+          ? '실제 감정 분류 모델 결과를 계정에 저장했어요.'
+          : '감정 분류 결과를 받았지만 저장 여부를 확인하지 못했어요.';
+    } catch (error) {
+      if (currentUserId == userId) {
+        emotionAnalysisNotice = error
+            .toString()
+            .replaceFirst('Exception: ', '')
+            .replaceFirst('Bad state: ', '');
+      }
+    } finally {
+      isEmotionAnalysisLoading = false;
+      notifyListeners();
+    }
+  }
+
+  bool _sameTemporaryEmotionScenes(
+    dynamic saved,
+    List<Map<String, dynamic>> current,
+  ) {
+    if (saved is! List || saved.length != current.length) return false;
+    for (var index = 0; index < current.length; index++) {
+      final oldScene = saved[index];
+      if (oldScene is! Map) return false;
+      final newScene = current[index];
+      if ((oldScene['step_number'] as num?)?.toInt() !=
+              newScene['step_number'] ||
+          oldScene['content']?.toString() != newScene['content']?.toString() ||
+          jsonEncode(oldScene['offered_choices'] ?? const []) !=
+              jsonEncode(newScene['offered_choices'] ?? const []) ||
+          (oldScene['user_choice']?.toString().trim() ?? '') !=
+              (newScene['user_choice']?.toString().trim() ?? '')) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> loadCumulativeEmotionSummary() async {
+    final userId = currentUserId;
+    if (userId == null || userId.isEmpty) {
+      cumulativeEmotionSummary = null;
+      cumulativeEmotionNotice = '누적 분류 기록은 로그인 후 확인할 수 있어요.';
+      notifyListeners();
+      return;
+    }
+    isCumulativeEmotionLoading = true;
+    cumulativeEmotionNotice = null;
+    notifyListeners();
+    try {
+      final summary = await DbService.fetchEmotionSummary(userId);
+      if (currentUserId != userId) return;
+      cumulativeEmotionSummary = summary;
+      cumulativeEmotionNotice = null;
+    } catch (error) {
+      if (currentUserId != userId) return;
+      final detail = error
+          .toString()
+          .replaceFirst('Exception: ', '')
+          .replaceFirst('Bad state: ', '');
+      final normalized = detail.toLowerCase();
+      if (normalized.contains('authentication') ||
+          normalized.contains('invalid token') ||
+          normalized.contains('expired token') ||
+          normalized.contains('401')) {
+        cumulativeEmotionNotice =
+            '로그인 인증이 만료되었거나 유효하지 않아요. 다시 로그인하면 누적 기록을 불러올 수 있어요.';
+      } else if (normalized.contains('clientfailed to fetch') ||
+          normalized.contains('socketexception') ||
+          normalized.contains('connection refused')) {
+        cumulativeEmotionNotice = 'DB 서버에 연결하지 못했어요. 서버 실행 상태와 연결 주소를 확인해 주세요.';
+      } else {
+        cumulativeEmotionNotice = '누적 분류 결과를 불러오지 못했어요: $detail';
+      }
+    } finally {
+      isCumulativeEmotionLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> analyzeStoryAndHistory(
+    StorySession story, {
+    bool forceRegenerate = false,
+  }) async {
+    if (isEmotionAnalysisLoading || isPsychLoading || isPsychRestoreLoading) {
+      return;
+    }
+    if (isLoading) {
+      psychAnalysisNotice = '장면을 만드는 중이에요. 생성이 끝나면 지금까지의 선택을 분석할 수 있어요.';
+      notifyListeners();
+      return;
+    }
+    if (!canAnalyzeStory(story)) {
+      psychAnalysisNotice = '한 번 이상 선택하면 엔딩 전에도 분석할 수 있어요.';
+      notifyListeners();
+      return;
+    }
+    final userId = currentUserId;
+    if (emotionReportFor(story) == null) {
+      await loadStoryEmotionAnalysis(story);
+    }
+    if (currentUserId != userId) return;
+    if (!forceRegenerate && psychResultFor(story) != null) return;
+    if (!forceRegenerate) {
+      await restoreSavedPsychAnalysis(story);
+      if (currentUserId != userId || psychResultFor(story) != null) return;
+    }
+    await loadPsychAnalysis(selectedStory: story);
+    if (currentUserId == userId) {
+      unawaited(_analyzeOtherCompletedStories());
+    }
+  }
+
+  Future<void> restoreSavedPsychAnalysis(StorySession story) async {
+    final dbStoryId = story.dbStoryId;
+    final userId = currentUserId;
+    if (_isTemporaryStory(story) ||
+        dbStoryId == null ||
+        dbStoryId.isEmpty ||
+        userId == null ||
+        !canAnalyzeStory(story) ||
+        isPsychRestoreLoading) {
+      return;
+    }
+
+    final identity = _storyIdentity(story);
+    final restoreKey = '$userId:$identity';
+    if (_psychRestoreStoryIdentity == restoreKey) return;
+    _psychRestoreStoryIdentity = restoreKey;
+    isPsychRestoreLoading = true;
+    notifyListeners();
+    var completed = false;
+    try {
+      await (_storySyncQueue[story] ?? Future<void>.value());
+      final cached = await DbService.fetchStoryPsychAnalysis(dbStoryId);
+      if (currentUserId != userId) return;
+      completed = true;
+      final rawResult = cached['psych_result'];
+      final savedKey = cached['analysis_key']?.toString();
+      if (rawResult is! Map ||
+          savedKey != _psychAnalysisKey(story, emotionReportFor(story))) {
+        return;
+      }
+      final restored = PsychResult.fromJson(
+        Map<String, dynamic>.from(rawResult),
+      );
+      if (restored.description.trim().isEmpty) return;
+      psychResult = restored;
+      _psychResultStoryIdentity = identity;
+      psychAnalysisNotice = '저장된 LLM 해설을 불러왔어요.';
+    } catch (error) {
+      _psychRestoreStoryIdentity = null;
+      debugPrint(
+        '[emotion] saved psych explanation restore failed: ${error.runtimeType}',
+      );
+    } finally {
+      if (!completed) _psychRestoreStoryIdentity = null;
+      isPsychRestoreLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _analyzeOtherCompletedStories() async {
+    final userId = currentUserId;
+    if (userId == null || isCumulativeEmotionLoading) return;
+    isCumulativeEmotionLoading = true;
+    cumulativeEmotionNotice = null;
+    notifyListeners();
+    for (final sync in _storySyncQueue.values.toList()) {
+      try {
+        await sync;
+      } catch (_) {
+        // Preserve any already-saved cumulative scores if a story sync fails.
+      }
+    }
+    await loadCumulativeEmotionSummary();
+    isCumulativeEmotionLoading = false;
+    notifyListeners();
   }
 
   String get currentDisplayName {
@@ -111,6 +460,10 @@ class AppState extends ChangeNotifier {
     String? phone,
     String? address,
   }) {
+    if (currentUserId != userId) {
+      cumulativeEmotionSummary = null;
+      cumulativeEmotionNotice = null;
+    }
     currentUserId = userId;
     currentAccountId = accountId;
     currentNickname = nickname;
@@ -155,6 +508,9 @@ class AppState extends ChangeNotifier {
   }
 
   void clearSignedInUser() {
+    _userDataLoadGeneration++;
+    _loadingUserId = null;
+    isUserDataLoading = false;
     DbService.clearAccessToken();
     currentUserId = null;
     currentAccountId = null;
@@ -164,11 +520,32 @@ class AppState extends ChangeNotifier {
     currentPhone = null;
     currentAddress = null;
     currentStory = null;
+    selectedMainTab = 0;
     completedStories = [];
+    cumulativeEmotionSummary = null;
+    cumulativeEmotionNotice = null;
     savedVocabulary = [];
     _invalidateVocabularyCache();
     _clearPsychResult();
     userDataErrorMessage = null;
+    notifyListeners();
+  }
+
+  void updateCurrentNickname(String nickname) {
+    final normalized = nickname.trim();
+    if (normalized.isEmpty) return;
+    currentNickname = normalized;
+    unawaited(
+      DbService.persistSessionUser({
+        'id': currentUserId,
+        'account_id': currentAccountId,
+        'nickname': normalized,
+        'provider': currentProvider,
+        'email': currentEmail,
+        'phone': currentPhone,
+        'address': currentAddress,
+      }),
+    );
     notifyListeners();
   }
 
@@ -199,31 +576,70 @@ class AppState extends ChangeNotifier {
   Future<void> loadUserData() async {
     final userId = currentUserId;
     if (userId == null || userId.isEmpty) return;
+    if (isUserDataLoading && _loadingUserId == userId) return;
+
+    final loadGeneration = ++_userDataLoadGeneration;
+    _loadingUserId = userId;
 
     isUserDataLoading = true;
     userDataErrorMessage = null;
     notifyListeners();
 
     try {
-      final userData = await Future.wait<Object>([
-        DbService.fetchUserStories(userId),
-        DbService.fetchUserVocabularies(userId),
-      ]);
-      final stories = userData[0] as List<StorySession>;
-      final vocabularies = userData[1] as List<VocabWord>;
-      if (currentUserId != userId) return;
+      Object? storyError;
+      Object? vocabularyError;
+      final storyFuture = DbService.fetchUserStories(userId)
+          .then<List<StorySession>?>((value) => value)
+          .catchError((Object error) {
+            storyError = error;
+            return null;
+          });
+      final vocabFuture = DbService.fetchUserVocabularies(userId)
+          .then<List<VocabWord>?>((value) => value)
+          .catchError((Object error) {
+            vocabularyError = error;
+            return null;
+          });
+      final stories = await storyFuture;
+      final vocabularies = await vocabFuture;
+      if (currentUserId != userId ||
+          loadGeneration != _userDataLoadGeneration) {
+        return;
+      }
 
-      _replaceCompletedStoriesFromDb(stories);
-      savedVocabulary = vocabularies;
+      if (stories != null) _replaceCompletedStoriesFromDb(stories);
+      if (vocabularies != null) savedVocabulary = vocabularies;
+      if (storyError != null || vocabularyError != null) {
+        final cause = storyError ?? vocabularyError;
+        final detail = cause
+            .toString()
+            .replaceFirst('Exception: ', '')
+            .replaceFirst('FormatException: ', '');
+        final normalizedDetail = detail.toLowerCase();
+        final authenticationFailed =
+            normalizedDetail.contains('authentication is required') ||
+            normalizedDetail.contains('invalid token') ||
+            normalizedDetail.contains('expired token');
+        userDataErrorMessage = authenticationFailed
+            ? '로그인 인증이 만료되었거나 유효하지 않습니다. 다시 로그인하면 저장된 기록을 불러옵니다.'
+            : storyError != null
+            ? '동화 목록 조회 실패: $detail'
+            : '단어장 조회 실패: $detail';
+        debugPrint('[db-sync] ${userDataErrorMessage!}');
+      }
       _invalidateVocabularyCache();
       if (currentStory == null && completedStories.isNotEmpty) {
         psychResult ??= _buildPsychResultFromStory(completedStories.first);
       }
     } catch (e) {
-      userDataErrorMessage = e.toString().replaceAll('Exception: ', '');
+      if (currentUserId == userId &&
+          loadGeneration == _userDataLoadGeneration) {
+        userDataErrorMessage = e.toString().replaceAll('Exception: ', '');
+      }
     } finally {
-      if (currentUserId == userId) {
+      if (loadGeneration == _userDataLoadGeneration) {
         isUserDataLoading = false;
+        _loadingUserId = null;
         notifyListeners();
       }
     }
@@ -272,12 +688,10 @@ class AppState extends ChangeNotifier {
       if (selectedCharacterKey != null && selectedCharacterKey.isNotEmpty) {
         characterOverrides['hero'] = selectedCharacterKey;
       }
-      if (selectedCharacterKey != null &&
-          selectedCharacterKey.isNotEmpty &&
-          !storyCharacters.containsKey('hero')) {
-        storyCharacters['hero'] = 'The selected story protagonist';
-      }
 
+      _rememberCurrentStory();
+      temporaryEmotionModelTestMode = false;
+      _temporaryEmotionTestStoryId = null;
       currentStory = StorySession(
         storyId: data['story_id']?.toString() ?? 'story_0',
         runtimeState: data['runtime_state']?.toString(),
@@ -299,6 +713,7 @@ class AppState extends ChangeNotifier {
         currentChapter: 1,
         readProgress: 1,
       );
+      _rememberCurrentStory();
       _invalidateVocabularyCache();
       psychResult = _buildPsychResultFromStory(currentStory!);
 
@@ -307,6 +722,9 @@ class AppState extends ChangeNotifier {
       _queueStorySync(storyToSync, () => _syncStoryStart(storyToSync));
       return true;
     } catch (e) {
+      debugPrint(
+        '[story] {"event":"app_state_error","operation":"start","error_type":"${e.runtimeType}"}',
+      );
       errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       return false;
@@ -324,6 +742,22 @@ class AppState extends ChangeNotifier {
     errorMessage = null;
     try {
       final session = currentStory!;
+      final newChapter = session.currentChapter + 1;
+      final offeredChoices = _offeredChoiceTexts(session);
+      final previousScene = session.chapters.isEmpty
+          ? ''
+          : session.chapters.last.text;
+      final choiceEmotionFuture =
+          ApiService.classifySelectedChoice(
+            selectedStep: newChapter,
+            previousScene: previousScene,
+            choice: choice,
+          ).catchError((Object error) {
+            debugPrint(
+              '[story] {"event":"choice_emotion_unavailable","error_type":"${error.runtimeType}"}',
+            );
+            return null;
+          });
       final data = await ApiService.continueStory(
         storyId: session.storyId,
         storySoFar: session.fullStoryText,
@@ -337,10 +771,26 @@ class AppState extends ChangeNotifier {
             ? null
             : session.chapters.last.sceneContract,
         runtimeState: session.runtimeState,
+        recoveryContext: {
+          'title': session.initialPrompt,
+          'genre': session.genre,
+          'characters': session.characters,
+          'story_cast': _storyCastJson(session),
+          if (session.storedPlan != null) 'plan': session.storedPlan,
+          'scenes': session.chapters
+              .map(
+                (chapter) => {
+                  'text': chapter.text,
+                  'choice_made': chapter.choiceMade,
+                },
+              )
+              .toList(),
+          'choices': offeredChoices,
+        },
       );
 
       final newText = data['new_text']?.toString() ?? '';
-      final newChapter = session.currentChapter + 1;
+      final selectedChoiceEmotion = await choiceEmotionFuture;
 
       final serverVocab = (data['vocab'] as List? ?? [])
           .map((e) => VocabWord.fromJson(e as Map<String, dynamic>))
@@ -355,17 +805,19 @@ class AppState extends ChangeNotifier {
         chapter: newChapter,
         text: newText,
         choiceMade: choice,
+        offeredChoices: offeredChoices,
         imageBytes: _decodeImage(data['image_b64']),
         sceneContract: data['scene_contract'] is Map
             ? Map<String, dynamic>.from(data['scene_contract'] as Map)
             : null,
-        selectedChoiceEmotion: _parseEmotionAnalysis(
-          data['selected_choice_emotion'],
-        ),
+        selectedChoiceEmotion: selectedChoiceEmotion == null
+            ? _parseEmotionAnalysis(data['selected_choice_emotion'])
+            : _parseEmotionAnalysis(selectedChoiceEmotion),
         storyEmotion: _parseEmotionAnalysis(data['story_emotion']),
       );
 
       session.chapters.add(chapter);
+      _invalidateCurrentStoryAnalysis();
       session.choices = List<String>.from(data['choices'] ?? []);
       session.choiceOptions = _buildChoiceOptions(
         data['choices'] as List?,
@@ -386,6 +838,9 @@ class AppState extends ChangeNotifier {
       _queueStorySync(session, () => _syncChapter(session, chapter));
       return true;
     } catch (e) {
+      debugPrint(
+        '[story] {"event":"app_state_error","operation":"continue","error_type":"${e.runtimeType}"}',
+      );
       errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       return false;
@@ -394,14 +849,21 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> loadPsychAnalysis() async {
-    final story = activePsychStory;
+  Future<void> loadPsychAnalysis({StorySession? selectedStory}) async {
+    final story = selectedStory ?? activePsychStory;
     if (story == null) return;
+    final userId = currentUserId;
     if (!canAnalyzeStory(story)) {
-      psychAnalysisNotice = '모든 선택을 마치고 엔딩을 본 뒤 분석할 수 있어요.';
+      psychAnalysisNotice = '한 번 이상 선택하면 엔딩 전에도 분석할 수 있어요.';
       notifyListeners();
       return;
     }
+    if (isLoading || isPsychRestoreLoading) {
+      psychAnalysisNotice = '장면을 만드는 중이에요. 생성이 끝나면 지금까지의 선택을 분석할 수 있어요.';
+      notifyListeners();
+      return;
+    }
+    final report = emotionReportFor(story);
     isPsychLoading = true;
     psychAnalysisNotice = null;
     psychResult = null;
@@ -412,14 +874,63 @@ class AppState extends ChangeNotifier {
         storyId: story.storyId,
         storyTitle: story.initialPrompt,
         choicesMade: story.allChoicesMade,
-        completed: true,
+        completed: story.hasReachedEnding,
         runtimeState: story.runtimeState,
+        storyContext: _psychStoryContext(story),
+        emotionReport: report ?? const {'model': '', 'items': <dynamic>[]},
       );
+      if (currentUserId != userId) return;
+      if (data['analysis_source'] == 'fallback') {
+        throw StateError('서버가 LLM 해설 대신 임시 문구를 반환했습니다. 다시 시도해 주세요.');
+      }
       psychResult = PsychResult.fromJson(data);
+      if (psychResult!.description.trim().isEmpty) {
+        psychResult = null;
+        throw const FormatException('LLM 해설 내용이 비어 있습니다.');
+      }
+      if (report == null || data['classifier_report_used'] != true) {
+        psychAnalysisNotice =
+            '저장된 감정 분류 점수가 없어 선택·장면 기록으로 LLM 해설을 만들었어요. 점수 그래프는 분류 결과가 저장된 뒤 표시됩니다.';
+      }
       _psychResultStoryIdentity = _storyIdentity(story);
+      if (!_isTemporaryStory(story) &&
+          userId != null &&
+          story.dbStoryId != null) {
+        try {
+          await DbService.saveStoryPsychAnalysis(
+            storyId: story.dbStoryId!,
+            psychResult: data,
+            analysisKey: _psychAnalysisKey(story, report),
+          );
+        } catch (error) {
+          debugPrint(
+            '[emotion] saved psych explanation persistence failed: ${error.runtimeType}',
+          );
+          psychAnalysisNotice = '해설은 표시했지만 다음에 다시 볼 수 있도록 저장하지 못했어요.';
+        }
+      }
+      if (isTemporaryEmotionTestStory(story) &&
+          userId != null &&
+          data['classifier_report_used'] == true &&
+          data['analysis_source'] != 'fallback') {
+        try {
+          await DbService.saveTemporaryEmotionExplanation(
+            userId: userId,
+            temporaryStoryId: story.storyId,
+            psychResult: data,
+          );
+        } catch (error) {
+          debugPrint(
+            '[emotion] temporary explanation persistence failed: ${error.runtimeType}',
+          );
+          psychAnalysisNotice =
+              'AI 해설은 표시했지만 임시 분석 기록 저장에 실패했어요. DB 서버 연결을 확인해 주세요.';
+        }
+      }
     } catch (e) {
-      psychResult = _buildPsychResultFromStory(story);
-      _psychResultStoryIdentity = _storyIdentity(story);
+      if (currentUserId != userId) return;
+      psychResult = null;
+      _psychResultStoryIdentity = null;
       final detail = e
           .toString()
           .replaceFirst('Exception: ', '')
@@ -428,8 +939,7 @@ class AppState extends ChangeNotifier {
       final shortDetail = detail.length > 120
           ? '${detail.substring(0, 120)}...'
           : detail;
-      psychAnalysisNotice =
-          'AI 해설 응답을 받지 못해 고른 선택 기록만 보여드려요.\n원인: $shortDetail';
+      psychAnalysisNotice = 'LLM 해설을 불러오지 못했어요. 다시 시도해 주세요.\n원인: $shortDetail';
       errorMessage = null;
     } finally {
       isPsychLoading = false;
@@ -439,16 +949,21 @@ class AppState extends ChangeNotifier {
 
   void finishCurrentStory() {
     if (currentStory != null) {
-      final story = currentStory!;
-      completedStories.removeWhere(
-        (item) => _storyIdentity(item) == _storyIdentity(story),
-      );
-      completedStories.insert(0, story);
+      _rememberCurrentStory();
       _clearPsychResult();
     }
     currentStory = null;
     _invalidateVocabularyCache();
     notifyListeners();
+  }
+
+  void _rememberCurrentStory() {
+    final story = currentStory;
+    if (story == null) return;
+    completedStories.removeWhere(
+      (item) => _storyIdentity(item) == _storyIdentity(story),
+    );
+    completedStories.insert(0, story);
   }
 
   void resetCurrentStory() {
@@ -473,6 +988,11 @@ class AppState extends ChangeNotifier {
         await DbService.deleteStory(storyId: dbStoryId, userId: currentUserId);
         savedVocabulary.removeWhere((word) => word.originStoryId == dbStoryId);
         _invalidateVocabularyCache();
+      }
+      if (currentStory != null &&
+          _storyIdentity(currentStory!) == _storyIdentity(story)) {
+        currentStory = null;
+        _clearPsychResult();
       }
       notifyListeners();
       return true;
@@ -599,10 +1119,16 @@ class AppState extends ChangeNotifier {
     required String age,
     required String prompt,
     String? selectedHeroCharacterKey,
+    bool analyzeChoicesWithModel = false,
   }) async {
     _setLoading(true);
     errorMessage = null;
     try {
+      if (analyzeChoicesWithModel &&
+          (currentUserId == null || currentUserId!.isEmpty)) {
+        errorMessage = '모델 분석 결과를 저장하려면 먼저 로그인해 주세요.';
+        return false;
+      }
       final normalizedPrompt = prompt.trim().isEmpty
           ? '반짝이는 숲속 모험'
           : prompt.trim();
@@ -628,6 +1154,7 @@ class AppState extends ChangeNotifier {
         prompt: normalizedPrompt,
       );
 
+      _rememberCurrentStory();
       currentStory = StorySession(
         storyId: 'mock_${DateTime.now().millisecondsSinceEpoch}',
         genre: genre,
@@ -639,21 +1166,30 @@ class AppState extends ChangeNotifier {
             .map(
               (choice) => ChoiceOption(
                 text: choice,
-                emotion: _temporaryChoiceEmotion(choice, 1),
+                emotion: analyzeChoicesWithModel
+                    ? null
+                    : _temporaryChoiceEmotion(choice, 1),
               ),
             )
             .toList(),
         candidateVocab: chapterVocab,
         vocab: [],
-        characters: selectedCharacterKey.isEmpty
-            ? const {}
-            : const {'hero': 'The selected story protagonist'},
+        characters: const {},
         characterOverrides: selectedCharacterKey.isEmpty
             ? const {}
             : {'hero': selectedCharacterKey},
         allChoicesMade: [],
         currentChapter: 1,
       );
+      temporaryEmotionModelTestMode = analyzeChoicesWithModel;
+      _temporaryEmotionTestStoryId = analyzeChoicesWithModel
+          ? currentStory!.storyId
+          : null;
+      emotionReport = null;
+      _emotionReportStoryIdentity = null;
+      emotionAnalysisNotice = analyzeChoicesWithModel
+          ? '임시 동화예요. 선택지를 고른 뒤 분석 버튼을 누르면 모델 점수를 계정에 저장합니다.'
+          : null;
       _invalidateVocabularyCache();
       psychResult = _buildPsychResultFromStory(currentStory!);
       notifyListeners();
@@ -688,6 +1224,9 @@ class AppState extends ChangeNotifier {
     psychResult = null;
     psychAnalysisNotice = null;
     _psychResultStoryIdentity = null;
+    emotionReport = null;
+    emotionAnalysisNotice = null;
+    _emotionReportStoryIdentity = null;
   }
 
   Map<String, String> _parseStoryCharacters(Map<String, dynamic> data) {
@@ -723,9 +1262,7 @@ class AppState extends ChangeNotifier {
   Map<String, String> _parseCharacterOverrides(Map<String, dynamic> data) {
     final raw = data['character_overrides'];
     if (raw is! Map) return <String, String>{};
-    return raw.map(
-      (key, value) => MapEntry(key.toString(), value.toString()),
-    );
+    return raw.map((key, value) => MapEntry(key.toString(), value.toString()));
   }
 
   List<StoryCastMember> _parseStoryCast(Map<String, dynamic> data) {
@@ -774,8 +1311,14 @@ class AppState extends ChangeNotifier {
     final queued = previous.then<void>((_) async {
       try {
         await task();
-      } catch (_) {
-        // Local story progress remains available when a background DB sync fails.
+        if (userDataErrorMessage?.startsWith('동화 저장에 실패') == true) {
+          userDataErrorMessage = null;
+          notifyListeners();
+        }
+      } catch (error) {
+        userDataErrorMessage = '동화 저장에 실패했어요. 서버 연결을 확인하고 다시 저장해 주세요.';
+        debugPrint('Story sync failed: ${error.runtimeType}');
+        notifyListeners();
       }
     });
     _storySyncQueue[session] = queued;
@@ -786,6 +1329,17 @@ class AppState extends ChangeNotifier {
         }
       }),
     );
+  }
+
+  void retryStorySync() {
+    userDataErrorMessage = null;
+    final stories = <StorySession>{...completedStories, ?currentStory};
+    for (final story in stories) {
+      if (!_isTemporaryStory(story)) {
+        _queueStorySync(story, () => _syncStoryStart(story));
+      }
+    }
+    notifyListeners();
   }
 
   Future<void> _syncStoryStart(StorySession session) async {
@@ -810,7 +1364,7 @@ class AppState extends ChangeNotifier {
         readProgress: session.readProgress,
       );
 
-      if (dbStoryId == null) return;
+      if (dbStoryId == null) throw StateError('Story creation failed');
       session.dbStoryId = dbStoryId;
     }
 
@@ -848,7 +1402,7 @@ class AppState extends ChangeNotifier {
   Future<void> _syncReadingState(StorySession session) async {
     final dbStoryId = session.dbStoryId;
     if (dbStoryId == null || dbStoryId.isEmpty) return;
-    await DbService.saveStoryReadingState(
+    final saved = await DbService.saveStoryReadingState(
       storyId: dbStoryId,
       aiStoryId: session.storyId,
       runtimeState: session.runtimeState,
@@ -861,14 +1415,20 @@ class AppState extends ChangeNotifier {
       readProgress: session.readProgress,
       completed: session.hasReachedEnding,
     );
+    if (!saved) throw StateError('Story reading state save failed');
+    session.persistedCompleted = session.hasReachedEnding;
   }
 
   void resumeStory(StorySession story) {
+    if (currentStory != null && !identical(currentStory, story)) {
+      _rememberCurrentStory();
+    }
     currentStory = story;
     story.readProgress = story.currentChapter;
-    completedStories = completedStories
-        .where((item) => _storyIdentity(item) != _storyIdentity(story))
-        .toList();
+    completedStories.removeWhere(
+      (item) => _storyIdentity(item) == _storyIdentity(story),
+    );
+    completedStories.insert(0, story);
     _invalidateVocabularyCache();
     psychResult = _buildPsychResultFromStory(story);
     notifyListeners();
@@ -878,8 +1438,13 @@ class AppState extends ChangeNotifier {
 
   void restoreMediaJobs(StorySession story) {
     for (final chapter in story.chapters) {
-      if (chapter.mediaStatus != 'pending' && chapter.mediaStatus != 'running') continue;
-      if (story.mediaGenerationChapterNumbers.contains(chapter.chapter)) continue;
+      if (chapter.mediaStatus != 'pending' &&
+          chapter.mediaStatus != 'running') {
+        continue;
+      }
+      if (story.mediaGenerationChapterNumbers.contains(chapter.chapter)) {
+        continue;
+      }
       final jobId = chapter.mediaJobId;
       if (jobId == null || jobId.isEmpty) {
         chapter.mediaStatus = 'failed';
@@ -904,13 +1469,14 @@ class AppState extends ChangeNotifier {
       stepNumber: chapter.chapter,
       storyText: chapter.text,
       choiceMade: chapter.choiceMade,
+      offeredChoices: chapter.offeredChoices,
       sceneContract: chapter.sceneContract,
       selectedChoiceEmotion: chapter.selectedChoiceEmotion?.toJson(),
       storyEmotion: chapter.storyEmotion?.toJson(),
       imageUrl: chapter.imageUrl,
       videoUrl: chapter.videoUrl,
     );
-    if (!pushed) return false;
+    if (!pushed) throw StateError('Story scene save failed');
 
     session.syncedChapterNumbers.add(chapter.chapter);
     return true;
@@ -924,12 +1490,17 @@ class AppState extends ChangeNotifier {
   }) async {
     if (_isTemporaryStory(session)) return;
     if (chapter.text.trim().isEmpty) return;
-    if (resumeJobId == null && !includeVideo && chapter.imageBytes != null) return;
+    if (resumeJobId == null && !includeVideo && chapter.imageBytes != null) {
+      return;
+    }
     if (!session.syncedChapterNumbers.contains(chapter.chapter)) return;
 
     final hasImageUrl = chapter.imageUrl?.trim().isNotEmpty ?? false;
     final hasVideoUrl = chapter.videoUrl?.trim().isNotEmpty ?? false;
-    if (resumeJobId == null && ((!includeVideo && hasImageUrl) || (includeVideo && hasVideoUrl))) return;
+    if (resumeJobId == null &&
+        ((!includeVideo && hasImageUrl) || (includeVideo && hasVideoUrl))) {
+      return;
+    }
 
     if (session.mediaGenerationChapterNumbers.contains(chapter.chapter)) {
       return;
@@ -1059,6 +1630,83 @@ class AppState extends ChangeNotifier {
     return 'local:${session.storyId}';
   }
 
+  List<String> _offeredChoiceTexts(StorySession session) {
+    final fromOptions = session.choiceOptions
+        .map((option) => option.text.trim())
+        .where((text) => text.isNotEmpty)
+        .take(5)
+        .toList(growable: false);
+    if (fromOptions.isNotEmpty) return fromOptions;
+    return session.choices
+        .map((choice) => choice.trim())
+        .where((choice) => choice.isNotEmpty)
+        .take(5)
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic> _psychStoryContext(StorySession story) => {
+    'run_mode': isTemporaryEmotionTestStory(story)
+        ? 'temporary_preview'
+        : 'saved_story',
+    'context_available': true,
+    'records': story.chapters
+        .where((chapter) => chapter.choiceMade?.trim().isNotEmpty == true)
+        .toList(growable: false)
+        .asMap()
+        .entries
+        .map(
+          (entry) => {
+            'step': entry.key + 1,
+            'scene_excerpt': entry.value.text,
+            'choice': entry.value.choiceMade!.trim(),
+            'offered_choices': entry.value.offeredChoices,
+          },
+        )
+        .toList(growable: false),
+  };
+
+  String _psychAnalysisKey(StorySession story, Map<String, dynamic>? report) {
+    final reportItems = (report?['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) {
+          final scores = <String, dynamic>{};
+          final rawScores = item['scores'];
+          if (rawScores is Map) {
+            final labels = rawScores.keys.map((key) => key.toString()).toList()
+              ..sort();
+            for (final label in labels) {
+              scores[label] = rawScores[label];
+            }
+          }
+          return {
+            'step': item['step'],
+            'label': item['label'],
+            'status': item['status'],
+            'scores': scores,
+          };
+        })
+        .toList(growable: false);
+    final snapshot = jsonEncode({
+      'title': story.initialPrompt,
+      'context': _psychStoryContext(story),
+      'emotion_report': {
+        'model': report?['model'] ?? '',
+        'items': reportItems,
+        'missing_choices': report?['missing_choices'] ?? 0,
+      },
+    });
+    return sha256.convert(utf8.encode(snapshot)).toString();
+  }
+
+  void _invalidateCurrentStoryAnalysis() {
+    emotionReport = null;
+    _emotionReportStoryIdentity = null;
+    emotionAnalysisNotice = null;
+    psychResult = null;
+    _psychResultStoryIdentity = null;
+    psychAnalysisNotice = null;
+  }
+
   String _vocabIdentity(VocabWord vocab) {
     final id = vocab.id;
     if (id != null && id.isNotEmpty) return 'db:$id';
@@ -1099,29 +1747,120 @@ class AppState extends ChangeNotifier {
   void _applyStoryMetadata(StorySession target, StorySession source) {
     target.storyId = source.storyId;
     target.dbStoryId = source.dbStoryId;
+    target.isCommunityShared = source.isCommunityShared;
     target.initialPrompt = source.initialPrompt;
     target.genre = source.genre;
     target.age = source.age;
   }
 
   void _replaceCompletedStoriesFromDb(List<StorySession> dbStories) {
-    final currentDbStoryId = currentStory?.dbStoryId;
-    final remoteStories = dbStories
-        .where((story) => story.dbStoryId != currentDbStoryId)
-        .toList();
+    final current = currentStory;
+    final remoteStories = dbStories.map((story) {
+      if (current != null &&
+          current.dbStoryId != null &&
+          story.dbStoryId == current.dbStoryId) {
+        current.isCommunityShared = story.isCommunityShared;
+        return current;
+      }
+      return story;
+    }).toList();
     final localOnlyStories = completedStories
-        .where((story) => story.dbStoryId == null || _isTemporaryStory(story))
+        .where(
+          (story) =>
+              story.dbStoryId == null ||
+              _isTemporaryStory(story) ||
+              _storySyncQueue.containsKey(story) ||
+              story.chapters.any(
+                (chapter) =>
+                    !story.syncedChapterNumbers.contains(chapter.chapter),
+              ),
+        )
         .toList();
 
     final merged = <StorySession>[];
     final seen = <String>{};
-    for (final story in [...remoteStories, ...localOnlyStories]) {
+    for (final story in [...localOnlyStories, ...remoteStories]) {
       if (seen.add(_storyIdentity(story))) {
         merged.add(story);
       }
     }
     completedStories = merged;
     _invalidateVocabularyCache();
+  }
+
+  Future<void> refreshJourneyVideoStatuses() async {
+    final userId = currentUserId;
+    if (userId == null || userId.isEmpty || _journeyVideoRefreshInProgress) {
+      return;
+    }
+    _journeyVideoRefreshInProgress = true;
+    try {
+      final statuses = await DbService.fetchJourneyVideoStatuses(userId);
+      final byStoryId = <String, Map<String, dynamic>>{
+        for (final item in statuses)
+          if (item['story_id'] != null) item['story_id'].toString(): item,
+      };
+      var changed = false;
+      final stories = <StorySession>{...completedStories, ?currentStory};
+      for (final story in stories) {
+        final id = story.dbStoryId;
+        if (id == null) continue;
+        final status = byStoryId[id];
+        if (status == null) continue;
+        final nextStatus = status['status']?.toString();
+        final nextUrl = status['video_url']?.toString();
+        final nextError = status['error']?.toString();
+        if (story.assembledVideoStatus != nextStatus ||
+            story.assembledVideoUrl != nextUrl ||
+            story.assembledVideoError != nextError) {
+          story.assembledVideoStatus = nextStatus;
+          story.assembledVideoUrl = nextUrl;
+          story.assembledVideoError = nextError;
+          changed = true;
+        }
+      }
+      if (changed) notifyListeners();
+    } catch (error) {
+      debugPrint('Journey video status refresh failed: ${error.runtimeType}');
+    } finally {
+      _journeyVideoRefreshInProgress = false;
+    }
+  }
+
+  Future<void> refreshStoryJourneyVideoStatus(StorySession story) async {
+    final storyId = story.dbStoryId;
+    if (storyId == null || storyId.isEmpty) return;
+    try {
+      final status = await DbService.fetchJourneyVideoStatus(storyId);
+      story.assembledVideoStatus = status['status']?.toString();
+      story.assembledVideoUrl = status['video_url']?.toString();
+      story.assembledVideoError = status['error']?.toString();
+      notifyListeners();
+    } catch (error) {
+      debugPrint(
+        'Story journey video status refresh failed: ${error.runtimeType}',
+      );
+    }
+  }
+
+  Future<bool> retryStoryJourneyVideo(StorySession story) async {
+    final storyId = story.dbStoryId;
+    if (storyId == null || storyId.isEmpty || !story.hasReachedEnding) {
+      return false;
+    }
+    try {
+      final result = await DbService.retryJourneyVideo(storyId);
+      story.assembledVideoStatus = result['status']?.toString();
+      story.assembledVideoUrl = result['video_url']?.toString();
+      story.assembledVideoError = result['error']?.toString();
+      errorMessage = null;
+      notifyListeners();
+      return true;
+    } catch (error) {
+      errorMessage = error.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
   }
 
   List<String> _temporaryChoicesForChapter(
@@ -1536,6 +2275,7 @@ class AppState extends ChangeNotifier {
     try {
       final session = currentStory!;
       final newChapterNumber = session.currentChapter + 1;
+      final offeredChoices = _offeredChoiceTexts(session);
       final chapterVocab = _temporaryVocabForChapter(
         genre: session.genre,
         prompt: session.initialPrompt,
@@ -1546,11 +2286,11 @@ class AppState extends ChangeNotifier {
         chapter: newChapterNumber,
         text: _buildTemporaryContinuation(session, choice, newChapterNumber),
         choiceMade: choice,
+        offeredChoices: offeredChoices,
         imageUrl: _temporaryImageMarker(session.genre, newChapterNumber),
-        selectedChoiceEmotion: _temporaryChoiceEmotion(
-          choice,
-          newChapterNumber,
-        ),
+        selectedChoiceEmotion: isTemporaryEmotionTestStory(session)
+            ? null
+            : _temporaryChoiceEmotion(choice, newChapterNumber),
         storyEmotion: _temporaryStoryEmotion(
           genre: session.genre,
           chapter: newChapterNumber,
@@ -1563,6 +2303,7 @@ class AppState extends ChangeNotifier {
         prompt: session.initialPrompt,
       );
       session.chapters.add(chapter);
+      _invalidateCurrentStoryAnalysis();
       session.currentChapter = newChapterNumber;
       session.allChoicesMade = [...session.allChoicesMade, choice];
       session.choices = nextChoices;
@@ -1570,7 +2311,9 @@ class AppState extends ChangeNotifier {
           .map(
             (item) => ChoiceOption(
               text: item,
-              emotion: _temporaryChoiceEmotion(item, newChapterNumber),
+              emotion: isTemporaryEmotionTestStory(session)
+                  ? null
+                  : _temporaryChoiceEmotion(item, newChapterNumber),
             ),
           )
           .toList();
@@ -1579,6 +2322,9 @@ class AppState extends ChangeNotifier {
         chapterVocab,
       );
       psychResult = _buildPsychResultFromStory(session);
+      if (isTemporaryEmotionTestStory(session)) {
+        emotionAnalysisNotice = '선택이 추가됐어요. 감정분석 화면에서 모델을 실행해 결과를 저장해 주세요.';
+      }
       notifyListeners();
       if (session.dbStoryId != null) {
         _queueStorySync(session, () => _syncChapter(session, chapter));

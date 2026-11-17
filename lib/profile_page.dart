@@ -1,14 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'additional_info_page.dart';
+import 'app_theme.dart';
+import 'community_page.dart';
 import 'library_page.dart';
 import 'login_page.dart';
 import 'models/app_state.dart';
-import 'notice_page.dart';
-import 'psych_page.dart';
 import 'services/api_service.dart';
 import 'services/db_service.dart';
+import 'services/profile_image_picker.dart';
+import 'social_pages.dart';
+
+String _profileDate(dynamic value) {
+  final date = DateTime.tryParse(value?.toString() ?? '');
+  if (date == null) return '';
+  final local = date.isUtc ? date.toLocal() : date;
+  return '${local.year}.${local.month.toString().padLeft(2, '0')}.${local.day.toString().padLeft(2, '0')}';
+}
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -20,12 +31,173 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   late Future<bool> _storyServerHealth;
   late Future<bool> _databaseHealth;
+  String? _profileImageUrl;
+  String _bio = '';
+  int _unreadMessages = 0;
+  int _unreadWarnings = 0;
+  List<Map<String, dynamic>> _inboxPreview = const [];
+  int _myPostCount = 0;
+  int _myLikeCount = 0;
+  bool _uploadingProfileImage = false;
 
   @override
   void initState() {
     super.initState();
     _storyServerHealth = ApiService.checkHealth();
     _databaseHealth = DbService.checkHealth();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(context.read<AppState>().loadUserData());
+      unawaited(_loadSocialProfile());
+    });
+  }
+
+  Future<void> _loadSocialProfile() async {
+    try {
+      final accountId = context.read<AppState>().currentAccountId?.trim();
+      final values = await Future.wait<dynamic>([
+        DbService.fetchMyProfile(),
+        DbService.fetchUnreadMessageCount().catchError((_) => 0),
+        DbService.fetchMyInbox(
+          limit: 100,
+        ).catchError((_) => <String, dynamic>{}),
+      ]);
+      if (!mounted) return;
+      final profile = values[0] as Map<String, dynamic>;
+      final inbox = values[2] as Map<String, dynamic>;
+      setState(() {
+        _profileImageUrl = DbService.resolveMediaUrl(
+          profile['profile_image_url']?.toString(),
+        );
+        _bio = profile['bio']?.toString() ?? '';
+        _unreadMessages = values[1] as int;
+        _unreadWarnings = (inbox['unread_warning_count'] as num?)?.toInt() ?? 0;
+        _inboxPreview = (inbox['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .take(3)
+            .toList();
+      });
+      if (accountId != null && accountId.isNotEmpty) {
+        try {
+          final publicProfile = await DbService.fetchPublicProfile(accountId);
+          if (!mounted) return;
+          setState(() {
+            _myPostCount =
+                (publicProfile['public_post_count'] as num?)?.toInt() ?? 0;
+            _myLikeCount = (publicProfile['like_count'] as num?)?.toInt() ?? 0;
+          });
+        } catch (error) {
+          debugPrint('Could not load profile activity counts: $error');
+        }
+      }
+    } catch (error) {
+      debugPrint('Could not load social profile summary: $error');
+    }
+  }
+
+  Future<void> _pickAndUploadProfileImage() async {
+    if (_uploadingProfileImage) return;
+    try {
+      final picked = await pickProfileImage();
+      if (picked == null || !mounted) return;
+      setState(() => _uploadingProfileImage = true);
+      final url = await DbService.uploadProfileImage(
+        bytes: picked.bytes,
+        filename: picked.filename,
+        mimeType: picked.mimeType,
+      );
+      if (!mounted) return;
+      setState(() => _profileImageUrl = url);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('프로필 사진을 저장했어요.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '사진 업로드 실패: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted && _uploadingProfileImage) {
+        setState(() => _uploadingProfileImage = false);
+      }
+    }
+  }
+
+  Future<void> _editProfile(AppState state) async {
+    final nicknameController = TextEditingController(
+      text: state.currentDisplayName,
+    );
+    final bioController = TextEditingController(text: _bio);
+    final saved = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.pageSurface,
+        title: const Text('프로필 편집', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nicknameController,
+                maxLength: 80,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: '닉네임'),
+              ),
+              TextField(
+                controller: bioController,
+                maxLength: 300,
+                maxLines: 3,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: '한 줄 소개'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, {
+              'nickname': nicknameController.text,
+              'bio': bioController.text,
+            }),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    nicknameController.dispose();
+    bioController.dispose();
+    if (saved == null) return;
+    try {
+      final result = await DbService.updateSocialProfile(
+        nickname: saved['nickname']?.toString(),
+        bio: saved['bio']?.toString(),
+      );
+      if (!mounted) return;
+      state.updateCurrentNickname(
+        result['nickname']?.toString() ?? saved['nickname'].toString(),
+      );
+      setState(() => _bio = result['bio']?.toString() ?? '');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('프로필을 수정했어요.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 
   void _refreshServerHealth() {
@@ -96,7 +268,7 @@ class _ProfilePageState extends State<ProfilePage> {
           }
 
           return AlertDialog(
-            backgroundColor: const Color(0xFF140028),
+            backgroundColor: AppColors.pageSurface,
             title: const Text('회원 탈퇴', style: TextStyle(color: Colors.white)),
             content: SingleChildScrollView(
               child: Column(
@@ -237,7 +409,7 @@ class _ProfilePageState extends State<ProfilePage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: const Color(0xFF140028),
+              backgroundColor: AppColors.pageSurface,
               title: const Text(
                 '비밀번호 변경',
                 style: TextStyle(color: Colors.white),
@@ -315,49 +487,264 @@ class _ProfilePageState extends State<ProfilePage> {
     required String title,
     required String value,
     Color color = Colors.purpleAccent,
+    VoidCallback? onTap,
+    int? badge,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF140028),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(icon, color: color, size: 30),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.pageSurface,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white10),
           ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(color: Colors.white54, fontSize: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(18),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                child: Icon(icon, color: color, size: 30),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (badge != null && badge > 0)
+                Container(
+                  margin: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.pink,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$badge',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-              ],
-            ),
+              if (onTap != null)
+                const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: Colors.white38,
+                  size: 16,
+                ),
+            ],
           ),
-        ],
+        ),
       ),
+    );
+  }
+
+  Widget _recentInboxSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '알림·공지함',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (_unreadWarnings > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  '안 읽은 경고 $_unreadWarnings',
+                  style: const TextStyle(
+                    color: Colors.orangeAccent,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            TextButton(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const InboxPage()),
+                );
+                if (mounted) unawaited(_loadSocialProfile());
+              },
+              child: const Text('전체 보기  >'),
+            ),
+          ],
+        ),
+        if (_inboxPreview.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.pageSurface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Text(
+              '아직 새로운 공지사항이 없어요.',
+              style: TextStyle(color: Colors.white54),
+            ),
+          )
+        else
+          ..._inboxPreview.map((item) {
+            final isWarning = item['type'] == 'warning';
+            final unread = isWarning && item['is_read'] != true;
+            final color = isWarning ? Colors.orangeAccent : AppColors.p300;
+            final body =
+                item['body']?.toString() ?? item['content']?.toString() ?? '';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InboxPage()),
+                    );
+                    if (mounted) unawaited(_loadSocialProfile());
+                  },
+                  child: Ink(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: unread
+                          ? color.withValues(alpha: 0.09)
+                          : AppColors.pageSurface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: color.withValues(alpha: unread ? 0.6 : 0.22),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            isWarning
+                                ? Icons.warning_amber_rounded
+                                : Icons.campaign_rounded,
+                            color: color,
+                            size: 19,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  if (unread) ...[
+                                    Container(
+                                      margin: const EdgeInsets.only(right: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.pink,
+                                        borderRadius: BorderRadius.circular(7),
+                                      ),
+                                      child: const Text(
+                                        'NEW',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      item['title']?.toString() ?? '알림',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _profileDate(item['created_at']),
+                                    style: const TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                body,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+      ],
     );
   }
 
@@ -365,22 +752,53 @@ class _ProfilePageState extends State<ProfilePage> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
+    int? badge,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF140028),
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white10),
       ),
-      child: ListTile(
-        onTap: onTap,
-        leading: Icon(icon, color: Colors.white),
-        title: Text(title, style: const TextStyle(color: Colors.white)),
-        trailing: const Icon(
-          Icons.arrow_forward_ios,
-          color: Colors.white54,
-          size: 16,
+      child: Material(
+        color: AppColors.pageSurface,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          onTap: onTap,
+          leading: Icon(icon, color: Colors.white),
+          title: Text(title, style: const TextStyle(color: Colors.white)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (badge != null && badge > 0)
+                Container(
+                  margin: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.pinkAccent,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$badge',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              const Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.white54,
+                size: 16,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -460,6 +878,19 @@ class _ProfilePageState extends State<ProfilePage> {
     final email = profile.email;
     final phone = profile.phone;
     final address = profile.address;
+    final noLoadedRecords =
+        totalStories == 0 && totalWords == 0 && totalChoices == 0;
+    final recordsUnavailable =
+        noLoadedRecords &&
+        (profile.isUserDataLoading || profile.userDataErrorMessage != null);
+    String statValue(int value, String suffix) {
+      if (recordsUnavailable && profile.isUserDataLoading) return '불러오는 중';
+      if (recordsUnavailable && profile.userDataErrorMessage != null) {
+        return '확인 필요';
+      }
+      return '$value$suffix';
+    }
+
     final providerLabel = switch (profile.provider) {
       'google' => 'Google 로그인',
       'kakao' => 'Kakao 로그인',
@@ -469,7 +900,7 @@ class _ProfilePageState extends State<ProfilePage> {
     };
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -488,10 +919,58 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 child: Column(
                   children: [
-                    const CircleAvatar(
-                      radius: 46,
-                      backgroundColor: Colors.white24,
-                      child: Icon(Icons.person, size: 52, color: Colors.white),
+                    InkWell(
+                      onTap: _uploadingProfileImage
+                          ? null
+                          : _pickAndUploadProfileImage,
+                      customBorder: const CircleBorder(),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CircleAvatar(
+                            radius: 46,
+                            backgroundColor: Colors.white24,
+                            backgroundImage: _profileImageUrl == null
+                                ? null
+                                : NetworkImage(
+                                    _profileImageUrl!,
+                                    headers: DbService.mediaHeaders,
+                                  ),
+                            child: _profileImageUrl == null
+                                ? const Icon(
+                                    Icons.person,
+                                    size: 52,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: -2,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: AppColors.p500,
+                                shape: BoxShape.circle,
+                              ),
+                              child: _uploadingProfileImage
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.camera_alt,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 18),
                     Text(
@@ -499,7 +978,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 30,
+                        fontSize: 28,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -511,28 +990,150 @@ class _ProfilePageState extends State<ProfilePage> {
                         fontSize: 15,
                       ),
                     ),
+                    if (_bio.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        _bio,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                    TextButton.icon(
+                      onPressed: () => _editProfile(state),
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                      label: const Text(
+                        '프로필 수정',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 30),
               _infoCard(
                 icon: Icons.auto_stories,
-                title: '생성한 동화',
-                value: '$totalStories편',
-                color: Colors.purpleAccent,
+                title: '내가 만든 동화',
+                value: statValue(totalStories, '편'),
+                color: AppColors.pink,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LibraryPage()),
+                ),
               ),
+              _infoCard(
+                icon: Icons.article_outlined,
+                title: '내가 올린 게시글',
+                value: '$_myPostCount개',
+                color: AppColors.pink2,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CommunityPage(initialTab: 2),
+                  ),
+                ),
+              ),
+              _infoCard(
+                icon: Icons.bookmark_outline,
+                title: '스크랩한 글',
+                value: '모아 보기',
+                color: AppColors.teal,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ScrapListPage()),
+                ),
+              ),
+              _infoCard(
+                icon: Icons.mail_outline,
+                title: '쪽지함',
+                value: _unreadMessages > 0 ? '새 쪽지가 왔어요!' : '쪽지 보기',
+                color: Colors.lightBlueAccent,
+                badge: _unreadMessages,
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MessageBoxPage()),
+                  );
+                  if (mounted) unawaited(_loadSocialProfile());
+                },
+              ),
+              _infoCard(
+                icon: Icons.favorite_outline,
+                title: '받은 좋아요',
+                value: '$_myLikeCount개',
+                color: Colors.pinkAccent,
+              ),
+              const SizedBox(height: 8),
+              _recentInboxSection(),
+              const SizedBox(height: 18),
+              const SizedBox(height: 6),
+              const Text(
+                '내 활동 기록',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
               _infoCard(
                 icon: Icons.menu_book,
                 title: '학습한 단어',
-                value: '$totalWords개',
+                value: statValue(totalWords, '개'),
                 color: Colors.lightBlueAccent,
               ),
               _infoCard(
                 icon: Icons.touch_app,
                 title: '선택한 이야기',
-                value: '$totalChoices회',
+                value: statValue(totalChoices, '회'),
                 color: Colors.greenAccent,
               ),
+              if (recordsUnavailable && profile.isUserDataLoading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    '계정에 저장된 동화와 단어 기록을 확인하고 있어요.',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ),
+              if (recordsUnavailable && profile.userDataErrorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF321B2A),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.orangeAccent),
+                    ),
+                    child: Text(
+                      '기록 조회에 실패해 숫자를 확인할 수 없어요. '
+                      '${profile.userDataErrorMessage}',
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                ),
+              if ((email != null && email.isNotEmpty) ||
+                  (phone != null && phone.isNotEmpty) ||
+                  (address != null && address.isNotEmpty)) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  '계정 정보',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               if (email != null && email.isNotEmpty)
                 _infoCard(
                   icon: Icons.email,
@@ -554,11 +1155,21 @@ class _ProfilePageState extends State<ProfilePage> {
                   value: address,
                   color: Colors.tealAccent,
                 ),
+              const SizedBox(height: 6),
+              const Text(
+                '서비스 상태',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
               Container(
                 margin: const EdgeInsets.only(bottom: 28),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF140028),
+                  color: AppColors.pageSurface,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: Colors.white10),
                 ),
@@ -632,32 +1243,16 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 20),
               _menuButton(
-                icon: Icons.sync,
-                title: state.isUserDataLoading
-                    ? 'DB 기록 불러오는 중...'
-                    : 'DB 기록 새로고침',
+                icon: Icons.notifications_active_outlined,
+                title: '알림·공지함',
+                badge: _unreadWarnings,
                 onTap: () async {
-                  await context.read<AppState>().loadUserData();
-                  if (!context.mounted) return;
-                  final error = context.read<AppState>().userDataErrorMessage;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        error == null
-                            ? '서재와 단어장을 최신 DB 기록으로 불러왔어요.'
-                            : 'DB 기록 새로고침 실패: $error',
-                      ),
-                    ),
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const InboxPage()),
                   );
+                  if (mounted) unawaited(_loadSocialProfile());
                 },
-              ),
-              _menuButton(
-                icon: Icons.campaign_outlined,
-                title: '공지사항',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const NoticePage()),
-                ),
               ),
               if (state.currentAccountId != null &&
                   state.currentAccountId!.isNotEmpty)
@@ -688,14 +1283,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const LibraryPage()),
-                ),
-              ),
-              _menuButton(
-                icon: Icons.psychology,
-                title: '심리 분석',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PsychPage()),
                 ),
               ),
               _menuButton(

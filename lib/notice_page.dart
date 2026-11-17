@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'main.dart';
+import 'app_theme.dart';
 import 'models/notice_model.dart';
 import 'services/db_service.dart';
 
@@ -46,9 +46,9 @@ class _NoticePageState extends State<NoticePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: AppColors.pageBackground,
       appBar: AppBar(
-        backgroundColor: AppColors.bg,
+        backgroundColor: AppColors.pageBackground,
         surfaceTintColor: Colors.transparent,
         title: const Text('공지사항'),
       ),
@@ -93,7 +93,7 @@ class _NoticePageState extends State<NoticePage> {
   void _showNotice(Notice notice) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.card,
+      backgroundColor: AppColors.pageSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -181,7 +181,7 @@ class _NoticeCard extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.card,
+            color: AppColors.pageSurface,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: notice.isPinned

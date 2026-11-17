@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'main.dart';
+import 'app_theme.dart';
 import 'models/app_state.dart';
+import 'models/story_model.dart';
 import 'story_page.dart';
 import 'widgets/character_picker.dart';
 
@@ -14,6 +15,8 @@ class CreatePage extends StatefulWidget {
 }
 
 class _CreatePageState extends State<CreatePage> {
+  static const _showTemporaryCreationActions = false;
+
   final _promptCtrl = TextEditingController();
   String? _selectedHeroCharacterKey;
   String _selectedGenre = '판타지';
@@ -22,6 +25,9 @@ class _CreatePageState extends State<CreatePage> {
   static const _genres = [
     {'emoji': '🏰', 'label': '판타지'},
     {'emoji': '🗺️', 'label': '모험'},
+    {'emoji': '🚀', 'label': 'SF'},
+    {'emoji': '🏡', 'label': '일상'},
+    {'emoji': '👑', 'label': '전래동화'},
     {'emoji': '🤝', 'label': '우정'},
     {'emoji': '🌿', 'label': '자연'},
     {'emoji': '🐾', 'label': '동물'},
@@ -105,7 +111,9 @@ class _CreatePageState extends State<CreatePage> {
     }
   }
 
-  Future<void> _startTemporaryStory() async {
+  Future<void> _startTemporaryStory({
+    bool analyzeChoicesWithModel = false,
+  }) async {
     final prompt = _promptCtrl.text.trim().isEmpty
         ? '반짝이는 숲속에서 작은 비밀을 발견하는 이야기'
         : _promptCtrl.text.trim();
@@ -127,6 +135,7 @@ class _CreatePageState extends State<CreatePage> {
       age: _selectedAge,
       prompt: prompt,
       selectedHeroCharacterKey: selectedCharacterKey,
+      analyzeChoicesWithModel: analyzeChoicesWithModel,
     );
 
     if (!mounted) return;
@@ -151,9 +160,16 @@ class _CreatePageState extends State<CreatePage> {
     final isLoading = context.select<AppState, bool>(
       (state) => state.isLoading,
     );
+    final activeStory = context.select<AppState, StorySession?>((state) => state.currentStory);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
+      appBar: AppBar(
+        title: Text(
+          '${context.select<AppState, String>((state) => state.currentDisplayName)}님의 동화',
+        ),
+        foregroundColor: Colors.white,
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -169,12 +185,28 @@ class _CreatePageState extends State<CreatePage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              const SizedBox(height: 8),
+              const Text(
+                '첫 장면을 만들고, 다음 이야기는 직접 골라 가며 만들어요!',
+                style: TextStyle(color: Colors.white54, fontSize: 15),
+              ),
+              if (activeStory != null && !activeStory.hasReachedEnding) ...[
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StoryPage())),
+                    icon: const Icon(Icons.menu_book_rounded),
+                    label: const Text('만들던 동화 이어하기'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 30),
               _sectionLabel('장르 선택'),
               const SizedBox(height: 16),
               _buildGenreSelector(),
               const SizedBox(height: 34),
-              _sectionLabel('주인공 캐릭터'),
+              _sectionLabel('주인공 설정'),
               const SizedBox(height: 12),
               CharacterPicker(
                 selectedCharacterKey: _selectedHeroCharacterKey,
@@ -184,8 +216,6 @@ class _CreatePageState extends State<CreatePage> {
                   });
                 },
               ),
-              const SizedBox(height: 34),
-              _sectionLabel('주인공 설정'),
               const SizedBox(height: 12),
               _buildPromptInput(),
               const SizedBox(height: 16),
@@ -196,8 +226,10 @@ class _CreatePageState extends State<CreatePage> {
               _buildAgeSelector(),
               const SizedBox(height: 40),
               _buildStartButton(isLoading),
-              const SizedBox(height: 12),
-              _buildTemporaryButton(isLoading),
+              if (_showTemporaryCreationActions) ...[
+                const SizedBox(height: 12),
+                _buildTemporaryButton(isLoading),
+              ],
               const SizedBox(height: 80),
             ],
           ),
@@ -230,7 +262,7 @@ class _CreatePageState extends State<CreatePage> {
               decoration: BoxDecoration(
                 color: isSelected
                     ? const Color(0xFF8B5CF6)
-                    : const Color(0xFF1A0B3A),
+                    : AppColors.pageSurface,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.white10),
               ),
@@ -259,12 +291,12 @@ class _CreatePageState extends State<CreatePage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A0B3A),
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(20),
       ),
       child: DropdownButton<String>(
         value: _selectedAge,
-        dropdownColor: const Color(0xFF1A0B3A),
+        dropdownColor: AppColors.pageSurface,
         isExpanded: true,
         underline: const SizedBox(),
         style: const TextStyle(color: Colors.white),
@@ -285,12 +317,13 @@ class _CreatePageState extends State<CreatePage> {
   Widget _buildPromptInput() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1A0B3A),
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(20),
       ),
       child: TextField(
         controller: _promptCtrl,
         maxLines: 3,
+        maxLength: 200,
         style: const TextStyle(color: Colors.white, fontSize: 14),
         decoration: const InputDecoration(
           hintText: '예: 용감한 꼬마 마법사',
@@ -302,55 +335,36 @@ class _CreatePageState extends State<CreatePage> {
     );
   }
 
-  Widget _buildSuggestions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '추천 주제',
-          style: TextStyle(color: AppColors.gray, fontSize: 12),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _suggestions.map((s) {
-            return GestureDetector(
-              onTap: () => _promptCtrl.text = s,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF140028),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Text(
-                  s,
-                  style: const TextStyle(
-                    color: Colors.purpleAccent,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
+  Widget _buildSuggestions() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text('추천 주제', style: TextStyle(color: AppColors.gray, fontSize: 12)),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final suggestion in _suggestions)
+          ActionChip(
+            label: Text(suggestion),
+            onPressed: () => _promptCtrl.text = suggestion,
+          ),
+      ]),
+    ],
+  );
 
   Widget _buildStartButton(bool isLoading) {
-    return SizedBox(
+    return Container(
       width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
       child: ElevatedButton(
         onPressed: isLoading ? null : _startStory,
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 20),
-          backgroundColor: const Color(0xFF8B5CF6),
-          disabledBackgroundColor: const Color(0xFF1A0B3A),
+          backgroundColor: Colors.transparent,
+          disabledBackgroundColor: AppColors.pageSurface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
@@ -380,7 +394,7 @@ class _CreatePageState extends State<CreatePage> {
                 ],
               )
             : const Text(
-                '✨ 동화 시작하기',
+                '동화 시작하기 ✨',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
@@ -411,9 +425,36 @@ class _CreatePageState extends State<CreatePage> {
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
         ),
+        const SizedBox(height: 10),
+        ElevatedButton.icon(
+          onPressed: isLoading
+              ? null
+              : () => _startTemporaryStory(analyzeChoicesWithModel: true),
+          style: ElevatedButton.styleFrom(
+            foregroundColor: Colors.white,
+            backgroundColor: AppColors.teal.withValues(alpha: 0.2),
+            disabledBackgroundColor: Colors.white10,
+            padding: const EdgeInsets.symmetric(vertical: 15),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(color: AppColors.teal.withValues(alpha: 0.65)),
+            ),
+          ),
+          icon: const Icon(Icons.query_stats_rounded, size: 18),
+          label: const Text(
+            '임시 생성 + 모델 감정분석 테스트',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+        ),
         const SizedBox(height: 8),
         const Text(
           '서버 연결이 안 될 때도 앱 흐름을 확인할 수 있도록 로컬 예시 동화를 바로 만들어요.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.gray, fontSize: 11, height: 1.5),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '두 번째 버튼은 로그인 후 선택지를 고르고 분석하면 실제 모델 점수를 계정에 저장해요. AI·DB 서버 연결이 필요합니다.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.gray, fontSize: 11, height: 1.5),
         ),

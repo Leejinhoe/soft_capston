@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../models/admin_model.dart';
 import '../models/character_profile.dart';
@@ -212,11 +213,103 @@ class DbService {
   }
 
   static StorySession _withAbsoluteStoryMedia(StorySession story) {
+    story.assembledVideoUrl = _absoluteMediaUrl(story.assembledVideoUrl);
     for (final chapter in story.chapters) {
       chapter.imageUrl = _absoluteMediaUrl(chapter.imageUrl);
       chapter.videoUrl = _absoluteMediaUrl(chapter.videoUrl);
     }
     return story;
+  }
+
+  static Future<String> assembleStoryVideo(String storyId) async {
+    final response = await http
+        .post(
+          _apiUri('/api/stories/$storyId/journey-video'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(minutes: 5));
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractDetailMessage(response.body) ?? '동화 영상을 만들지 못했어요.',
+      );
+    }
+    final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map;
+    final url = _absoluteMediaUrl(data['video_url']?.toString());
+    if (url == null) throw Exception('동화 영상 주소가 없습니다.');
+    return url;
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchJourneyVideoStatuses(
+    String userId,
+  ) async {
+    final response = await http
+        .get(
+          _apiUri('/api/users/$userId/journey-videos'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+            '동화 영상 상태를 불러오지 못했어요: ${response.statusCode}',
+      );
+    }
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final items = data is Map ? data['videos'] : null;
+    if (items is! List) return const [];
+    return items
+        .whereType<Map>()
+        .map(
+          (item) => <String, dynamic>{
+            ...Map<String, dynamic>.from(item),
+            'video_url': _absoluteMediaUrl(item['video_url']?.toString()),
+          },
+        )
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>> fetchJourneyVideoStatus(
+    String storyId,
+  ) async {
+    final response = await http
+        .get(
+          _apiUri('/api/stories/$storyId/journey-video/status'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = utf8.decode(response.bodyBytes);
+    if (response.statusCode != 200) {
+      throw Exception(_extractDetailMessage(body) ?? '동화 영상 상태를 불러오지 못했어요.');
+    }
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) {
+      throw const FormatException('Invalid video status response');
+    }
+    return <String, dynamic>{
+      ...Map<String, dynamic>.from(decoded),
+      'video_url': _absoluteMediaUrl(decoded['video_url']?.toString()),
+    };
+  }
+
+  static Future<Map<String, dynamic>> retryJourneyVideo(String storyId) async {
+    final response = await http
+        .post(
+          _apiUri('/api/stories/$storyId/journey-video/retry'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = utf8.decode(response.bodyBytes);
+    if (response.statusCode != 200 && response.statusCode != 202) {
+      throw Exception(_extractDetailMessage(body) ?? '동화 영상 작업을 시작하지 못했어요.');
+    }
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) {
+      throw const FormatException('Invalid video job response');
+    }
+    return <String, dynamic>{
+      ...Map<String, dynamic>.from(decoded),
+      'video_url': _absoluteMediaUrl(decoded['video_url']?.toString()),
+    };
   }
 
   static Future<bool> checkHealth() async {
@@ -230,9 +323,113 @@ class DbService {
     }
   }
 
+  static Future<Uint8List?> loadVoiceSample() async {
+    final response = await http
+        .get(_apiUri('/api/users/me/voice-sample'), headers: mediaHeaders)
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) throw Exception('저장된 목소리를 불러오지 못했어요.');
+    return response.bodyBytes;
+  }
+
+  static Future<void> saveVoiceSample(Uint8List wav) async {
+    final response = await http
+        .put(
+          _apiUri('/api/users/me/voice-sample'),
+          headers: {...mediaHeaders, 'Content-Type': 'audio/wav'},
+          body: wav,
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) throw Exception('목소리를 계정에 저장하지 못했어요.');
+  }
+
+  static Future<void> deleteVoiceSample() async {
+    final response = await http
+        .delete(_apiUri('/api/users/me/voice-sample'), headers: mediaHeaders)
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) throw Exception('저장된 목소리를 삭제하지 못했어요.');
+  }
+
+  static Future<Map<String, dynamic>> listVoiceSamples() async {
+    final response = await http
+        .get(_apiUri('/api/users/me/voice-samples'), headers: mediaHeaders)
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) throw Exception('목소리 목록을 불러오지 못했어요.');
+    return Map<String, dynamic>.from(
+      jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+    );
+  }
+
+  static Future<Uint8List?> loadSelectedVoiceSample() async {
+    final data = await listVoiceSamples();
+    final selected = data['selected_id']?.toString() ?? 'default';
+    if (selected == 'default') return null;
+    return loadVoiceSampleById(selected);
+  }
+
+  static Future<Uint8List> loadVoiceSampleById(String id) async {
+    final response = await http
+        .get(
+          _apiUri(
+            '/api/users/me/voice-samples/${Uri.encodeComponent(id)}/audio',
+          ),
+          headers: mediaHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) throw Exception('목소리를 불러오지 못했어요.');
+    return response.bodyBytes;
+  }
+
+  static Future<String> addVoiceSample(Uint8List wav, String name) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            _apiUri(
+              '/api/users/me/voice-samples',
+            ).replace(queryParameters: {'name': name}),
+          )
+          ..headers.addAll(mediaHeaders)
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'audio',
+              wav,
+              filename: 'voice.wav',
+              contentType: MediaType('audio', 'wav'),
+            ),
+          );
+    final response = await http.Response.fromStream(
+      await request.send().timeout(const Duration(seconds: 20)),
+    ).timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) throw Exception('목소리를 저장하지 못했어요.');
+    return (jsonDecode(utf8.decode(response.bodyBytes)) as Map)['id']
+        .toString();
+  }
+
+  static Future<void> selectVoiceSample(String id) async {
+    final response = await http
+        .put(
+          _apiUri('/api/users/me/voice-samples/selection'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'id': id}),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) throw Exception('목소리를 선택하지 못했어요.');
+  }
+
+  static Future<void> deleteVoiceSampleById(String id) async {
+    final response = await http
+        .delete(
+          _apiUri('/api/users/me/voice-samples/${Uri.encodeComponent(id)}'),
+          headers: mediaHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) throw Exception('목소리를 삭제하지 못했어요.');
+  }
+
   static Future<Uint8List> synthesizeNarration(
     String text, {
     Uint8List? speakerWav,
+    String? voiceGender,
   }) async {
     late http.Response response;
 
@@ -241,7 +438,11 @@ class DbService {
           .post(
             _ttsUri('/api/tts'),
             headers: _jsonHeaders,
-            body: jsonEncode({'text': text}),
+            body: jsonEncode({
+              'text': text,
+              if (voiceGender != null && voiceGender.isNotEmpty)
+                'voice_gender': voiceGender,
+            }),
           )
           .timeout(const Duration(seconds: 180));
     } else {
@@ -260,9 +461,9 @@ class DbService {
       // send() only waits for the response headers. Bound the body read too,
       // otherwise a stalled tunnel can leave narration showing as "generating"
       // forever after XTTS has already finished.
-      response = await http.Response.fromStream(streamed).timeout(
-        const Duration(seconds: 180),
-      );
+      response = await http.Response.fromStream(
+        streamed,
+      ).timeout(const Duration(seconds: 180));
     }
 
     if (response.statusCode == 200) return response.bodyBytes;
@@ -307,6 +508,7 @@ class DbService {
     String? password,
     required String nickname,
     String? email,
+    String? birth,
     String? phone,
     String? address,
     String provider = 'local',
@@ -322,6 +524,7 @@ class DbService {
             'password': password,
             'nickname': nickname,
             'email': email,
+            'birth': birth,
             'phone': phone,
             'address': address,
             'provider': provider,
@@ -340,6 +543,47 @@ class DbService {
       _extractDetailMessage(response.body) ??
           '회원 저장 실패: ${response.statusCode}',
     );
+  }
+
+  static Future<bool> isSignupIdAvailable(String accountId) async {
+    final response = await http
+        .post(
+          _apiUri('/api/users/check-id'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'account_id': accountId.trim()}),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractDetailMessage(response.body) ?? '아이디를 확인하지 못했어요.',
+      );
+    }
+    return (jsonDecode(response.body) as Map<String, dynamic>)['available'] ==
+        true;
+  }
+
+  static Future<Map<String, dynamic>> loginWithSocialToken({
+    required String provider,
+    required String token,
+    String? tokenType,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/auth/social/$provider'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'token': token,
+            if (tokenType != null) 'token_type': tokenType,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) {
+      throw Exception(_extractDetailMessage(response.body) ?? '소셜 로그인에 실패했어요.');
+    }
+    final data =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    await setAccessToken(data['access_token']?.toString());
+    return data;
   }
 
   static Future<void> sendEmailVerificationCode({required String email}) async {
@@ -371,6 +615,66 @@ class DbService {
       if (token.isNotEmpty) return token;
     }
     throw Exception(_extractDetailMessage(response.body) ?? '인증번호 확인에 실패했어요.');
+  }
+
+  static Future<void> requestPasswordResetCode({
+    required String accountId,
+    required String email,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/auth/password-reset/request'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'account_id': accountId.trim(),
+            'email': email.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) return;
+    throw Exception(_extractDetailMessage(response.body) ?? '인증번호 발송에 실패했어요.');
+  }
+
+  static Future<String> verifyPasswordResetCode({
+    required String accountId,
+    required String email,
+    required String code,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/auth/password-reset/verify'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'account_id': accountId.trim(),
+            'email': email.trim(),
+            'code': code.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['reset_token']?.toString().trim() ?? '';
+      if (token.isNotEmpty) return token;
+    }
+    throw Exception(_extractDetailMessage(response.body) ?? '인증번호 확인에 실패했어요.');
+  }
+
+  static Future<void> confirmPasswordReset({
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/auth/password-reset/confirm'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'reset_token': resetToken,
+            'new_password': newPassword,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) return;
+    throw Exception(_extractDetailMessage(response.body) ?? '비밀번호 변경에 실패했어요.');
   }
 
   static Future<Map<String, dynamic>> loginUser({
@@ -444,6 +748,8 @@ class DbService {
     required String content,
     required bool isPinned,
     required bool sendEmail,
+    String target = 'all',
+    List<String> userIds = const [],
   }) async {
     final response = await http
         .post(
@@ -455,6 +761,8 @@ class DbService {
             'content': content,
             'is_pinned': isPinned,
             'send_email': sendEmail,
+            'target': target,
+            'user_ids': userIds,
           }),
         )
         .timeout(const Duration(seconds: 20));
@@ -473,6 +781,8 @@ class DbService {
     required String title,
     required String content,
     required bool isPinned,
+    String? target,
+    List<String>? userIds,
   }) async {
     final response = await http
         .patch(
@@ -483,6 +793,8 @@ class DbService {
             'title': title,
             'content': content,
             'is_pinned': isPinned,
+            if (target != null) 'target': target,
+            if (userIds != null) 'user_ids': userIds,
           }),
         )
         .timeout(const Duration(seconds: 20));
@@ -735,6 +1047,40 @@ class DbService {
       _extractDetailMessage(response.body) ??
           '비밀번호 변경 실패: ${response.statusCode}',
     );
+  }
+
+  static Future<Map<String, dynamic>> fetchAdminStoryDetail(
+    String storyId,
+  ) async {
+    final response = await http
+        .get(
+          _apiUri('/api/admin/stories/${Uri.encodeComponent(storyId)}'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) {
+      throw Exception(_extractDetailMessage(response.body) ?? '동화를 불러오지 못했어요.');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  static Future<void> updateAdminUserStatus({
+    required String userId,
+    required String status,
+    String reason = '',
+  }) async {
+    final response = await http
+        .patch(
+          _apiUri('/api/admin/users/${Uri.encodeComponent(userId)}/status'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'status': status, 'reason': reason}),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractDetailMessage(response.body) ?? '계정 상태 변경에 실패했어요.',
+      );
+    }
   }
 
   static Future<ReportSubmissionResult> createCommunityReport({
@@ -1038,6 +1384,7 @@ class DbService {
     required int stepNumber,
     required String storyText,
     String? choiceMade,
+    List<String> offeredChoices = const [],
     Map<String, dynamic>? sceneContract,
     Map<String, dynamic>? selectedChoiceEmotion,
     Map<String, dynamic>? storyEmotion,
@@ -1053,6 +1400,7 @@ class DbService {
               'step_number': stepNumber,
               'story_text': storyText,
               'choice_made': choiceMade,
+              'offered_choices': offeredChoices,
               'scene_contract': sceneContract,
               'selected_choice_emotion': selectedChoiceEmotion,
               'story_emotion': storyEmotion,
@@ -1068,6 +1416,21 @@ class DbService {
     }
   }
 
+  static SceneMediaResult _mediaFailure(
+    String message, {
+    String? jobId,
+    String context = 'request',
+  }) {
+    debugPrint('[scene-media][$context] $message');
+    return SceneMediaResult(jobId: jobId, status: 'failed', error: message);
+  }
+
+  static String _mediaHttpError(http.Response response, String operation) {
+    final detail = _extractDetailMessage(response.body);
+    final suffix = detail == null ? '' : ': $detail';
+    return '$operation 실패 (HTTP ${response.statusCode})$suffix';
+  }
+
   static Future<SceneMediaResult?> generateSceneMedia({
     required String storyId,
     required int stepNumber,
@@ -1079,50 +1442,97 @@ class DbService {
     bool includeVideo = false,
     String? resumeJobId,
   }) async {
-    try {
-      if (resumeJobId != null && resumeJobId.isNotEmpty) {
-        return await _pollSceneMediaJob({'job_id': resumeJobId, 'status': 'pending'});
-      }
-      final response = await http
-          .post(
-            _apiUri('/api/stories/$storyId/scenes/$stepNumber/media/jobs'),
-            headers: _jsonHeaders,
-            body: jsonEncode({
-              'story_text': storyText,
-              'genre': genre,
-              'age': age,
-              if (characterKey?.trim().isNotEmpty == true)
-                'character_key': characterKey!.trim(),
-              'scene_contract': ?sceneContract,
-              'include_video': includeVideo,
-            }),
-          )
-          .timeout(const Duration(seconds: 20));
+    if (resumeJobId != null && resumeJobId.isNotEmpty) {
+      return await _pollSceneMediaJob({
+            'job_id': resumeJobId,
+            'status': 'pending',
+          }) ??
+          _mediaFailure(
+            '저장된 미디어 작업 상태를 확인하지 못했습니다.',
+            jobId: resumeJobId,
+            context: '$storyId/$stepNumber',
+          );
+    }
 
-      if (response.statusCode == 200 ||
-          response.statusCode == 201 ||
-          response.statusCode == 202) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final media = await _pollSceneMediaJob(data);
-        return media == null ? null : _withAbsoluteMediaUrls(media);
-      }
-
-      if (response.statusCode == 404) {
-        return await _generateSceneMediaSync(
-          storyId: storyId,
-          stepNumber: stepNumber,
-          storyText: storyText,
-          genre: genre,
-          age: age,
-          characterKey: characterKey,
-          sceneContract: sceneContract,
-          includeVideo: includeVideo,
+    final endpoint = _apiUri(
+      '/api/stories/$storyId/scenes/$stepNumber/media/jobs',
+    );
+    http.Response response;
+    for (var attempt = 0; ; attempt++) {
+      try {
+        response = await http
+            .post(
+              endpoint,
+              headers: _jsonHeaders,
+              body: jsonEncode({
+                'story_text': storyText,
+                'genre': genre,
+                'age': age,
+                if (characterKey?.trim().isNotEmpty == true)
+                  'character_key': characterKey!.trim(),
+                'scene_contract': ?sceneContract,
+                'include_video': includeVideo,
+              }),
+            )
+            .timeout(const Duration(seconds: 20));
+      } catch (error) {
+        return _mediaFailure(
+          '미디어 API 연결 실패: $error',
+          context: '$storyId/$stepNumber',
         );
       }
-    } catch (_) {
-      return null;
+
+      if (response.statusCode != 429 || attempt >= 5) break;
+      final delaySeconds = attempt < 4 ? (2 << attempt) : 30;
+      debugPrint(
+        '[scene-media][$storyId/$stepNumber] queue busy (HTTP 429); '
+        'retry ${attempt + 1}/5 in ${delaySeconds}s',
+      );
+      await Future<void>.delayed(Duration(seconds: delaySeconds));
     }
-    return null;
+
+    if (response.statusCode == 200 ||
+        response.statusCode == 201 ||
+        response.statusCode == 202) {
+      try {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final media = await _pollSceneMediaJob(data);
+        return media == null
+            ? _mediaFailure(
+                '작업이 접수됐지만 상태 주소나 결과를 받지 못했습니다.',
+                jobId: data['job_id']?.toString(),
+                context: '$storyId/$stepNumber',
+              )
+            : _withAbsoluteMediaUrls(media);
+      } catch (error) {
+        return _mediaFailure(
+          '미디어 작업 응답을 읽지 못했습니다: $error',
+          context: '$storyId/$stepNumber',
+        );
+      }
+    }
+
+    if (response.statusCode == 404) {
+      return await _generateSceneMediaSync(
+            storyId: storyId,
+            stepNumber: stepNumber,
+            storyText: storyText,
+            genre: genre,
+            age: age,
+            characterKey: characterKey,
+            sceneContract: sceneContract,
+            includeVideo: includeVideo,
+          ) ??
+          _mediaFailure(
+            '동화 장면 미디어 API를 찾지 못했습니다.',
+            context: '$storyId/$stepNumber',
+          );
+    }
+
+    return _mediaFailure(
+      _mediaHttpError(response, '미디어 작업 접수'),
+      context: '$storyId/$stepNumber',
+    );
   }
 
   static Future<SceneMediaResult?> _pollSceneMediaJob(
@@ -1133,17 +1543,39 @@ class DbService {
     if (initialStatus == 'completed' ||
         initialStatus == 'partial' ||
         initialStatus == 'failed') {
+      if (initialStatus == 'completed' && !latest.hasMedia) {
+        return _mediaFailure(
+          '작업은 완료됐지만 이미지 결과가 비어 있습니다.',
+          jobId: latest.jobId,
+          context: 'poll',
+        );
+      }
       return latest;
     }
 
     final pollPathOrUrl = _sceneMediaJobStatusPath(latest);
-    if (pollPathOrUrl == null) return null;
+    if (pollPathOrUrl == null) {
+      return _mediaFailure(
+        '미디어 작업 ID 또는 상태 주소가 응답에 없습니다.',
+        jobId: latest.jobId,
+        context: 'poll',
+      );
+    }
 
     final deadline = DateTime.now().add(const Duration(minutes: 20));
     var pollCount = 0;
+    String? lastPollError;
     while (DateTime.now().isBefore(deadline)) {
       final status = latest.status?.toLowerCase();
-      if (status == 'completed') return latest.hasMedia ? latest : null;
+      if (status == 'completed') {
+        return latest.hasMedia
+            ? latest
+            : _mediaFailure(
+                '작업은 완료됐지만 이미지 결과가 비어 있습니다.',
+                jobId: latest.jobId,
+                context: 'poll',
+              );
+      }
       if (status == 'partial' || status == 'failed') return latest;
 
       final delaySeconds = pollCount < 3
@@ -1157,9 +1589,29 @@ class DbService {
         final response = await http
             .get(_apiUri(pollPathOrUrl), headers: _jsonHeaders)
             .timeout(const Duration(seconds: 20));
-        if (response.statusCode == 404) return null;
-        if (response.statusCode >= 500) continue;
-        if (response.statusCode >= 400) return null;
+        if (response.statusCode == 404) {
+          return _mediaFailure(
+            '미디어 작업을 서버에서 찾지 못했습니다 (HTTP 404).',
+            jobId: latest.jobId,
+            context: 'poll',
+          );
+        }
+        if (response.statusCode >= 500) {
+          lastPollError = _mediaHttpError(response, '미디어 작업 상태 조회');
+          if (pollCount == 1 || pollCount % 10 == 0) {
+            debugPrint(
+              '[scene-media][${latest.jobId ?? 'unknown'}] $lastPollError',
+            );
+          }
+          continue;
+        }
+        if (response.statusCode >= 400) {
+          return _mediaFailure(
+            _mediaHttpError(response, '미디어 작업 상태 조회'),
+            jobId: latest.jobId,
+            context: 'poll',
+          );
+        }
 
         latest = _withAbsoluteMediaUrls(
           SceneMediaResult.fromJson(
@@ -1172,10 +1624,23 @@ class DbService {
             refreshedStatus == 'failed') {
           return latest;
         }
-      } catch (_) {}
+      } catch (error) {
+        lastPollError = error.toString();
+        if (pollCount == 1 || pollCount % 10 == 0) {
+          debugPrint(
+            '[scene-media][${latest.jobId ?? 'unknown'}] status poll failed: $error',
+          );
+        }
+      }
     }
 
-    return null;
+    return _mediaFailure(
+      lastPollError == null
+          ? '미디어 작업 상태 조회가 20분 안에 끝나지 않았습니다.'
+          : '미디어 작업 상태 조회가 20분 안에 끝나지 않았습니다. 마지막 오류: $lastPollError',
+      jobId: latest.jobId,
+      context: 'poll',
+    );
   }
 
   static String? _sceneMediaJobStatusPath(SceneMediaResult job) {
@@ -1228,10 +1693,16 @@ class DbService {
           ),
         );
       }
-    } catch (_) {
-      return null;
+      return _mediaFailure(
+        _mediaHttpError(response, '동기 미디어 생성'),
+        context: '$storyId/$stepNumber',
+      );
+    } catch (error) {
+      return _mediaFailure(
+        '동기 미디어 생성 연결 실패: $error',
+        context: '$storyId/$stepNumber',
+      );
     }
-    return null;
   }
 
   static Future<String?> addVocabulary({
@@ -1334,6 +1805,158 @@ class DbService {
     );
   }
 
+  static Future<Map<String, dynamic>> fetchStoryEmotionAnalysis(
+    String storyId,
+  ) async {
+    final response = await http
+        .get(
+          _apiUri('/api/stories/$storyId/emotion-analysis'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+          '감정 분류 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Map<String, dynamic>> fetchStoryPsychAnalysis(
+    String storyId,
+  ) async {
+    final response = await http
+        .get(
+          _apiUri('/api/stories/$storyId/psych-analysis'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+          '저장된 AI 해설 조회 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<void> saveStoryPsychAnalysis({
+    required String storyId,
+    required Map<String, dynamic> psychResult,
+    required String analysisKey,
+  }) async {
+    final response = await http
+        .put(
+          _apiUri('/api/stories/$storyId/psych-analysis'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'psych_result': psychResult,
+            'analysis_key': analysisKey,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) return;
+    throw Exception(
+      _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+          'AI 해설 저장 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Map<String, dynamic>> fetchEmotionSummary(String userId) async {
+    final response = await http
+        .get(
+          _apiUri('/api/users/$userId/emotion-summary'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+          '누적 감정 분류 조회 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Map<String, dynamic>> fetchTemporaryEmotionAnalysis({
+    required String userId,
+    required String temporaryStoryId,
+  }) async {
+    final response = await http
+        .get(
+          _apiUri(
+            '/api/users/$userId/temporary-emotion-analyses/$temporaryStoryId',
+          ),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+          '임시 동화 분석 기록 조회 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<Map<String, dynamic>> saveTemporaryEmotionAnalysis({
+    required String userId,
+    required String temporaryStoryId,
+    required String title,
+    required List<Map<String, dynamic>> scenes,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/users/$userId/temporary-emotion-analyses'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'temporary_story_id': temporaryStoryId,
+            'title': title,
+            'scenes': scenes,
+          }),
+        )
+        .timeout(const Duration(seconds: 210));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+      );
+    }
+    throw Exception(
+      _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+          '임시 동화 감정 분석 결과 저장 실패: ${response.statusCode}',
+    );
+  }
+
+  static Future<void> saveTemporaryEmotionExplanation({
+    required String userId,
+    required String temporaryStoryId,
+    required Map<String, dynamic> psychResult,
+  }) async {
+    final response = await http
+        .put(
+          _apiUri(
+            '/api/users/$userId/temporary-emotion-analyses/$temporaryStoryId',
+          ),
+          headers: _jsonHeaders,
+          body: jsonEncode({'psych_result': psychResult}),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) return;
+    throw Exception(
+      _extractDetailMessage(utf8.decode(response.bodyBytes)) ??
+          '임시 동화 AI 해설 저장 실패: ${response.statusCode}',
+    );
+  }
+
   static Future<List<StorySession>> fetchUserStories(String userId) async {
     final response = await http
         .get(
@@ -1343,16 +1966,24 @@ class DbService {
         .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final stories = data['stories'] as List? ?? const [];
-      return stories
-          .map(
-            (e) => _withAbsoluteStoryMedia(
-              StorySession.fromDatabaseJson(e as Map<String, dynamic>),
-            ),
-          )
-          .where((story) => story.chapters.isNotEmpty)
-          .toList();
+      try {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final stories = data['stories'] as List? ?? const [];
+        return stories
+            .map(
+              (e) => _withAbsoluteStoryMedia(
+                StorySession.fromDatabaseJson(e as Map<String, dynamic>),
+              ),
+            )
+            .where((story) => story.chapters.isNotEmpty)
+            .toList();
+      } catch (error) {
+        debugPrint(
+          '[db-sync] story response parse failed; '
+          'status=${response.statusCode}, bytes=${response.bodyBytes.length}: $error',
+        );
+        rethrow;
+      }
     }
     throw Exception(
       _extractDetailMessage(response.body) ??
@@ -1480,12 +2111,16 @@ class DbService {
   static Future<bool> deleteCommunityPost({
     required String postId,
     String? accountId,
+    bool deleteStory = false,
   }) async {
     final response = await http
         .delete(
           Uri.parse('$baseUrl/api/community/posts/$postId'),
           headers: _jsonHeaders,
-          body: jsonEncode({'account_id': accountId}),
+          body: jsonEncode({
+            'account_id': accountId,
+            'delete_story': deleteStory,
+          }),
         )
         .timeout(const Duration(seconds: 15));
 
@@ -1547,6 +2182,199 @@ class DbService {
       );
     }
     throw Exception('댓글 저장 실패: ${response.statusCode}');
+  }
+
+  static Future<Map<String, dynamic>> fetchMyProfile() async =>
+      _getSocialMap('/api/users/me', '내 프로필 조회에 실패했어요.');
+
+  static Future<Map<String, dynamic>> fetchPublicProfile(String userId) async =>
+      _getSocialMap(
+        '/api/users/${Uri.encodeComponent(userId)}/profile',
+        '프로필을 불러오지 못했어요.',
+      );
+
+  static Future<Map<String, dynamic>> updateSocialProfile({
+    String? nickname,
+    String? bio,
+  }) async {
+    final response = await http
+        .patch(
+          _apiUri('/api/users/me'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            if (nickname != null) 'nickname': nickname.trim(),
+            if (bio != null) 'bio': bio.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200)
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    throw Exception(_extractDetailMessage(response.body) ?? '프로필 저장에 실패했어요.');
+  }
+
+  static Future<String> uploadProfileImage({
+    required Uint8List bytes,
+    required String filename,
+    required String mimeType,
+  }) async {
+    final request =
+        http.MultipartRequest('POST', _apiUri('/api/users/me/image'))
+          ..headers.addAll(mediaHeaders)
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'profile_image',
+              bytes,
+              filename: filename,
+              contentType: MediaType.parse(mimeType),
+            ),
+          );
+    final streamed = await request.send().timeout(const Duration(seconds: 40));
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final url = resolveMediaUrl(data['profile_image_url']?.toString());
+      if (url == null || url.isEmpty) {
+        throw Exception('서버에서 저장된 프로필 사진 주소를 받지 못했어요.');
+      }
+      return url;
+    }
+    throw Exception(
+      _extractDetailMessage(response.body) ?? '프로필 사진 업로드에 실패했어요.',
+    );
+  }
+
+  static Future<Map<String, dynamic>> toggleCommunityScrap(
+    String postId,
+  ) async {
+    final response = await http
+        .post(
+          _apiUri('/api/community/posts/$postId/scrap'),
+          headers: _jsonHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 200)
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    throw Exception(_extractDetailMessage(response.body) ?? '스크랩을 저장하지 못했어요.');
+  }
+
+  static Future<List<CommunityPost>> fetchMyScraps() async {
+    final data = await _getSocialMap(
+      '/api/users/me/scraps',
+      '스크랩 목록을 불러오지 못했어요.',
+    );
+    return (data['posts'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(CommunityPost.fromJson)
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>> fetchMyInbox({int limit = 100}) =>
+      _getSocialMap('/api/users/me/inbox?limit=$limit', '알림함을 불러오지 못했어요.');
+
+  static Future<void> markInboxRead() async {
+    final response = await http
+        .post(_apiUri('/api/users/me/inbox/read'), headers: _jsonHeaders)
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception(
+        _extractDetailMessage(response.body) ?? '알림 읽음 표시를 저장하지 못했어요.',
+      );
+    }
+  }
+
+  static Future<int> fetchUnreadMessageCount() async {
+    final data = await _getSocialMap(
+      '/api/messages/unread-count',
+      '쪽지 알림을 불러오지 못했어요.',
+    );
+    return (data['unread_count'] as num?)?.toInt() ?? 0;
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchMessages({
+    required String box,
+  }) async {
+    final data = await _getSocialMap(
+      '/api/messages?box=$box&page=1&size=100',
+      '쪽지를 불러오지 못했어요.',
+    );
+    return (data['items'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>> fetchMessage(String id) =>
+      _getSocialMap('/api/messages/$id', '쪽지를 불러오지 못했어요.');
+
+  static Future<Map<String, dynamic>> sendMessage({
+    required String receiverId,
+    required String content,
+    String? replyTo,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/messages'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'receiver_id': receiverId,
+            'content': content.trim(),
+            if (replyTo != null) 'reply_to': replyTo,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(_extractDetailMessage(response.body) ?? '쪽지를 보내지 못했어요.');
+  }
+
+  static Future<void> deleteMessage(String id) async {
+    final response = await http
+        .delete(_apiUri('/api/messages/$id'), headers: _jsonHeaders)
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception(_extractDetailMessage(response.body) ?? '쪽지를 삭제하지 못했어요.');
+    }
+  }
+
+  static Future<String> fetchNaverAuthorizationUrl() async {
+    final data = await _getSocialMap(
+      '/api/auth/naver/config',
+      '네이버 로그인을 준비하지 못했어요.',
+    );
+    final url = data['authorization_url']?.toString() ?? '';
+    if (url.isEmpty) throw Exception('네이버 로그인 주소가 비어 있어요.');
+    return url;
+  }
+
+  static Future<Map<String, dynamic>> loginWithNaver({
+    required String code,
+    required String state,
+  }) async {
+    final response = await http
+        .post(
+          _apiUri('/api/auth/naver'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'code': code, 'state': state}),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      await setAccessToken(data['access_token']?.toString());
+      return data;
+    }
+    throw Exception(_extractDetailMessage(response.body) ?? '네이버 로그인에 실패했어요.');
+  }
+
+  static Future<Map<String, dynamic>> _getSocialMap(
+    String path,
+    String fallback,
+  ) async {
+    final response = await http
+        .get(_apiUri(path), headers: _jsonHeaders)
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200)
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    throw Exception(_extractDetailMessage(response.body) ?? fallback);
   }
 
   static String? _extractDetailMessage(String body) {

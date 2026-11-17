@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -6,18 +7,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
-import 'main.dart';
+import 'app_theme.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'services/api_service.dart';
 import 'services/db_service.dart';
 
-enum _VoiceConversationPhase { idle, listening, thinking, speaking }
+enum _VoiceConversationPhase { idle, listening, stopping, thinking, speaking }
 
 class CharacterChatPage extends StatefulWidget {
   final StorySession story;
+  final Uint8List? speakerWav;
 
-  const CharacterChatPage({super.key, required this.story});
+  const CharacterChatPage({super.key, required this.story, this.speakerWav});
 
   @override
   State<CharacterChatPage> createState() => _CharacterChatPageState();
@@ -47,7 +49,10 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   bool _isVoiceConversationActive = false;
   bool _voiceSpeechDetected = false;
   bool _isFinishingVoiceTurn = false;
+  bool _isStartingVoiceConversation = false;
+  bool _isStartingVoiceTurn = false;
   bool _resumeListeningAfterReply = false;
+  bool _resumeListeningWhenTurnFinishes = false;
   int _voiceRecordSeconds = 0;
   Timer? _voiceRecordTimer;
   Timer? _voiceSilenceTimer;
@@ -55,6 +60,17 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   StreamSubscription<void>? _voiceReplyCompletionSubscription;
   _VoiceConversationPhase _voicePhase = _VoiceConversationPhase.idle;
   String? _notice;
+  String? _voiceTurnRequestId;
+
+  void _voiceLog(
+    String event,
+    String requestId, [
+    Map<String, Object?> fields = const {},
+  ]) {
+    debugPrint(
+      '[stt] ${jsonEncode({'event': event, 'request_id': requestId, ...fields})}',
+    );
+  }
 
   @override
   void initState() {
@@ -102,6 +118,27 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
       characters = _fallbackCharacters(widget.story);
       _notice = 'AI 서버에 연결하지 못해 동화 본문에서 찾은 캐릭터를 보여드려요.';
     }
+
+    characters = characters
+        .map((character) {
+          if (character.gender != 'unknown') return character;
+          final inferred = _inferCharacterGender(
+            character.name,
+            character.role,
+            widget.story.fullStoryText,
+            widget.story,
+          );
+          if (inferred == 'unknown') return character;
+          return StoryCharacter(
+            name: character.name,
+            role: character.role,
+            personality: character.personality,
+            greeting: character.greeting,
+            avatarEmoji: character.avatarEmoji,
+            gender: inferred,
+          );
+        })
+        .toList(growable: false);
 
     if (!mounted) return;
     setState(() {
@@ -235,7 +272,14 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   }
 
   Future<void> _beginVoiceConversation() async {
-    if (_isSending || _isTranscribingVoice) return;
+    if (_isSending ||
+        _isTranscribingVoice ||
+        _isFinishingVoiceTurn ||
+        _isStartingVoiceConversation ||
+        _isStartingVoiceTurn) {
+      return;
+    }
+    _isStartingVoiceConversation = true;
     try {
       if (!await _voiceRecorder.hasPermission()) {
         throw Exception('마이크 권한이 필요해요. 브라우저 또는 기기 설정에서 허용해 주세요.');
@@ -244,8 +288,8 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
       if (!mounted) return;
       setState(() {
         _isVoiceConversationActive = true;
-        _voicePhase = _VoiceConversationPhase.listening;
-        _notice = '음성 대화를 시작했어요. 말하면 자동으로 보내 드려요.';
+        _voicePhase = _VoiceConversationPhase.idle;
+        _notice = '마이크를 준비하고 있어요.';
       });
       unawaited(_warmUpVoiceServices());
       await _startListeningForVoiceTurn();
@@ -256,6 +300,8 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
         _voicePhase = _VoiceConversationPhase.idle;
         _notice = '음성 대화를 시작하지 못했어요: $error';
       });
+    } finally {
+      _isStartingVoiceConversation = false;
     }
   }
 
@@ -274,9 +320,17 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     if (!_isVoiceConversationActive ||
         _isRecordingVoice ||
         _isFinishingVoiceTurn ||
+        _isStartingVoiceTurn ||
+        _isTranscribingVoice ||
+        _isSending ||
+        _voicePhase != _VoiceConversationPhase.idle ||
         !mounted) {
       return;
     }
+    _isStartingVoiceTurn = true;
+    final requestId = ApiService.newRequestId();
+    _voiceTurnRequestId = requestId;
+    _voiceLog('capture_start_requested', requestId);
     try {
       _voicePcm.clear();
       _voiceSpeechDetected = false;
@@ -291,11 +345,18 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
           numChannels: 1,
         ),
       );
+      if (!mounted || !_isVoiceConversationActive) {
+        await _voiceRecorder.stop();
+        return;
+      }
       _voiceRecordingSubscription = stream.listen(
         _handleVoiceChunk,
-        onError: (_) => unawaited(
-          _endVoiceConversation(notice: '마이크 입력이 끊겨 음성 대화를 종료했어요.'),
-        ),
+        onError: (Object error, StackTrace stackTrace) {
+          _voiceLog('capture_stream_error', requestId, {
+            'error_type': error.runtimeType.toString(),
+          });
+          unawaited(_endVoiceConversation(notice: '마이크 입력이 끊겨 음성 대화를 종료했어요.'));
+        },
       );
       _voiceRecordTimer?.cancel();
       _voiceRecordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -304,6 +365,11 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
           if (_voiceSpeechDetected) {
             unawaited(_finishVoiceTurn());
           } else {
+            _voiceLog('capture_timeout_no_speech', requestId, {
+              'audio_bytes': _voicePcm.length,
+              'recording_duration_ms': (_voicePcm.length * 1000 / (24000 * 2))
+                  .round(),
+            });
             unawaited(
               _endVoiceConversation(
                 notice: '말소리를 듣지 못해 음성 대화를 마쳤어요. 다시 눌러 시작할 수 있어요.',
@@ -325,15 +391,36 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
         _voicePhase = _VoiceConversationPhase.listening;
         _notice = '듣고 있어요. 편하게 말씀해 주세요.';
       });
+      _voiceLog('capture_started', requestId, {
+        'sample_rate_hz': 24000,
+        'channels': 1,
+        'encoding': 'pcm16',
+      });
     } catch (error) {
+      _voiceLog('capture_start_error', requestId, {
+        'error_type': error.runtimeType.toString(),
+      });
       await _endVoiceConversation(notice: '마이크를 다시 시작하지 못했어요: $error');
+    } finally {
+      _isStartingVoiceTurn = false;
     }
   }
 
   void _handleVoiceChunk(Uint8List chunk) {
-    if (!_isRecordingVoice || _isFinishingVoiceTurn) return;
+    if (!_isRecordingVoice ||
+        _isFinishingVoiceTurn ||
+        _voicePhase != _VoiceConversationPhase.listening) {
+      return;
+    }
     _voicePcm.add(chunk);
     if (_hasSpeechEnergy(chunk)) {
+      if (!_voiceSpeechDetected) {
+        final requestId = _voiceTurnRequestId ?? ApiService.newRequestId();
+        _voiceTurnRequestId = requestId;
+        _voiceLog('speech_energy_detected', requestId, {
+          'first_chunk_bytes': chunk.length,
+        });
+      }
       _voiceSpeechDetected = true;
       _voiceSilenceTimer?.cancel();
       _voiceSilenceTimer = null;
@@ -363,18 +450,44 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   Future<void> _finishVoiceTurn() async {
     if (!_isRecordingVoice || _isFinishingVoiceTurn) return;
     _isFinishingVoiceTurn = true;
+    final requestId = _voiceTurnRequestId ?? ApiService.newRequestId();
+    _voiceTurnRequestId = requestId;
+    final turnTimer = Stopwatch()..start();
+    var failureStage = 'stop_recorder';
+    if (mounted && _isVoiceConversationActive) {
+      setState(() {
+        _isRecordingVoice = false;
+        _voicePhase = _VoiceConversationPhase.stopping;
+        _notice = '마이크를 끄고 답변을 준비하고 있어요.';
+      });
+    }
     var resumeListening = false;
     _voiceRecordTimer?.cancel();
     _voiceRecordTimer = null;
     _voiceSilenceTimer?.cancel();
     _voiceSilenceTimer = null;
+    var microphoneStopped = false;
     try {
       await _voiceRecorder.stop();
+      microphoneStopped = true;
       await _voiceRecordingSubscription?.cancel();
       _voiceRecordingSubscription = null;
       final pcm = _voicePcm.takeBytes();
+      final recordingDurationMs = (pcm.length * 1000 / (24000 * 2)).round();
+      _voiceLog('capture_stopped', requestId, {
+        'audio_bytes': pcm.length,
+        'recording_duration_ms': recordingDurationMs,
+        'speech_detected': _voiceSpeechDetected,
+      });
+      if (!mounted || !_isVoiceConversationActive) return;
       const minimumBytes = 24000;
       if (!_voiceSpeechDetected || pcm.length < minimumBytes) {
+        _voiceLog('capture_rejected', requestId, {
+          'reason': !_voiceSpeechDetected ? 'speech_not_detected' : 'too_short',
+          'audio_bytes': pcm.length,
+          'minimum_bytes': minimumBytes,
+          'recording_duration_ms': recordingDurationMs,
+        });
         if (mounted && _isVoiceConversationActive) {
           setState(() {
             _isRecordingVoice = false;
@@ -392,21 +505,55 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
         _voicePhase = _VoiceConversationPhase.thinking;
         _notice = '말한 내용을 이해하고 있어요...';
       });
-      final transcript = await ApiService.transcribeKoreanSpeech(wav);
+      failureStage = 'stt_request';
+      final transcript = await ApiService.transcribeKoreanSpeech(
+        wav,
+        requestId: requestId,
+        recordingDurationMs: recordingDurationMs,
+      );
+      _voiceLog('transcript_received', requestId, {
+        'transcript_present': transcript.trim().isNotEmpty,
+        'transcript_chars': transcript.trim().length,
+        'duration_ms': turnTimer.elapsedMilliseconds,
+      });
       if (!mounted || !_isVoiceConversationActive) return;
       setState(() => _notice = '“$transcript”라고 말했어요. 캐릭터가 답하는 중이에요...');
+      failureStage = 'character_reply';
       final reply = await _sendMessage(transcript);
       if (reply == null || !mounted || !_isVoiceConversationActive) return;
+      setState(() => _notice = '답변을 음성으로 만들고 있어요...');
+      failureStage = 'voice_synthesis';
+      final voiceGender = _selectedCharacter?.gender == 'male'
+          ? 'male'
+          : 'female';
+      final audio = await DbService.synthesizeNarration(
+        reply,
+        speakerWav: widget.speakerWav,
+        voiceGender: voiceGender,
+      );
+      if (!mounted || !_isVoiceConversationActive) return;
       setState(() {
         _voicePhase = _VoiceConversationPhase.speaking;
         _resumeListeningAfterReply = true;
-        _notice = '캐릭터가 내 목소리로 답하고 있어요...';
+        _notice = '캐릭터가 답하고 있어요. 답변이 끝나면 다시 들을게요.';
       });
-      final audio = await DbService.synthesizeNarration(reply, speakerWav: wav);
-      if (!mounted || !_isVoiceConversationActive) return;
+      failureStage = 'voice_playback';
       await _voiceReplyPlayer.play(BytesSource(audio));
     } catch (error) {
+      _voiceLog('voice_turn_error', requestId, {
+        'stage': failureStage,
+        'duration_ms': turnTimer.elapsedMilliseconds,
+        'error_type': error.runtimeType.toString(),
+        'auto_relisten_expected': microphoneStopped,
+      });
       if (!mounted) return;
+      _resumeListeningAfterReply = false;
+      if (!microphoneStopped) {
+        await _endVoiceConversation(
+          notice: '마이크를 중지하지 못해 음성 대화를 종료했어요: $error',
+        );
+        return;
+      }
       setState(() => _notice = '음성 대화 오류: $error');
       if (_isVoiceConversationActive) {
         resumeListening = true;
@@ -414,7 +561,14 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     } finally {
       _isFinishingVoiceTurn = false;
       if (mounted) setState(() => _isTranscribingVoice = false);
-      if (resumeListening && _isVoiceConversationActive) {
+      if ((resumeListening || _resumeListeningWhenTurnFinishes) &&
+          _isVoiceConversationActive) {
+        _voiceLog('auto_relisten', requestId, {
+          'after_stage': failureStage,
+          'turn_duration_ms': turnTimer.elapsedMilliseconds,
+        });
+        _resumeListeningWhenTurnFinishes = false;
+        setState(() => _voicePhase = _VoiceConversationPhase.idle);
         unawaited(_startListeningForVoiceTurn());
       }
     }
@@ -423,12 +577,25 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   void _resumeVoiceListeningAfterReply() {
     if (!_isVoiceConversationActive || !_resumeListeningAfterReply) return;
     _resumeListeningAfterReply = false;
+    if (_isFinishingVoiceTurn) {
+      _resumeListeningWhenTurnFinishes = true;
+      return;
+    }
+    if (mounted) setState(() => _voicePhase = _VoiceConversationPhase.idle);
     unawaited(_startListeningForVoiceTurn());
   }
 
   Future<void> _endVoiceConversation({String? notice}) async {
+    if (_isRecordingVoice && _voiceTurnRequestId != null) {
+      _voiceLog('capture_cancelled', _voiceTurnRequestId!, {
+        'audio_bytes': _voicePcm.length,
+        'recording_duration_ms': (_voicePcm.length * 1000 / (24000 * 2))
+            .round(),
+      });
+    }
     _isVoiceConversationActive = false;
     _resumeListeningAfterReply = false;
+    _resumeListeningWhenTurnFinishes = false;
     _voiceRecordTimer?.cancel();
     _voiceRecordTimer = null;
     _voiceSilenceTimer?.cancel();
@@ -443,7 +610,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     if (!mounted) return;
     setState(() {
       _isRecordingVoice = false;
-      _isTranscribingVoice = false;
+      _isTranscribingVoice = _isFinishingVoiceTurn;
       _voicePhase = _VoiceConversationPhase.idle;
       _notice = notice ?? '음성 대화를 마쳤어요.';
     });
@@ -505,7 +672,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
   Widget build(BuildContext context) {
     final character = _selectedCharacter;
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: AppColors.pageBackground,
       appBar: _isVoiceConversationActive
           ? null
           : AppBar(
@@ -581,7 +748,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
         margin: const EdgeInsets.all(24),
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
         decoration: BoxDecoration(
-          color: AppColors.card.withValues(alpha: 0.94),
+          color: AppColors.pageSurface.withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: AppColors.border),
         ),
@@ -607,7 +774,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
       decoration: BoxDecoration(
-        color: AppColors.bg2.withValues(alpha: 0.92),
+        color: AppColors.pageInput.withValues(alpha: 0.96),
         border: const Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Column(
@@ -664,7 +831,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                     end: Alignment.bottomRight,
                   )
                 : null,
-            color: selected ? null : AppColors.card,
+            color: selected ? null : AppColors.pageSurface,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: selected ? AppColors.p300 : Colors.white12,
@@ -963,6 +1130,8 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     switch (_voicePhase) {
       case _VoiceConversationPhase.listening:
         return '듣고 있어요';
+      case _VoiceConversationPhase.stopping:
+        return '마이크를 끄고 있어요';
       case _VoiceConversationPhase.thinking:
         return '말을 이해하고 답을 생각하고 있어요';
       case _VoiceConversationPhase.speaking:
@@ -976,6 +1145,8 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     switch (_voicePhase) {
       case _VoiceConversationPhase.listening:
         return Icons.graphic_eq_rounded;
+      case _VoiceConversationPhase.stopping:
+        return Icons.mic_off_rounded;
       case _VoiceConversationPhase.thinking:
         return Icons.auto_awesome_rounded;
       case _VoiceConversationPhase.speaking:
@@ -990,7 +1161,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
       decoration: BoxDecoration(
-        color: AppColors.bg2.withValues(alpha: 0.98),
+        color: AppColors.pageInput.withValues(alpha: 0.98),
         border: const Border(top: BorderSide(color: AppColors.border)),
         boxShadow: const [
           BoxShadow(
@@ -1096,18 +1267,25 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                     ),
                     counterText: '',
                     filled: true,
-                    fillColor: const Color(0xFF17122F),
+                    fillColor: AppColors.pageInput,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 13,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(17),
-                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: const BorderSide(color: AppColors.border),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(17),
-                      borderSide: const BorderSide(color: AppColors.p500),
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: const BorderSide(
+                        color: AppColors.p400,
+                        width: 1.5,
+                      ),
                     ),
                   ),
                 ),
@@ -1126,7 +1304,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                   backgroundColor: _isVoiceConversationActive
                       ? AppColors.pink
                       : const Color(0xFF2B2352),
-                  disabledBackgroundColor: AppColors.card2,
+                  disabledBackgroundColor: AppColors.pageRaised,
                   minimumSize: const Size(48, 48),
                 ),
                 icon: Icon(
@@ -1144,7 +1322,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
                     : () => _sendMessage(),
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.p600,
-                  disabledBackgroundColor: AppColors.card2,
+                  disabledBackgroundColor: AppColors.pageRaised,
                   minimumSize: const Size(48, 48),
                 ),
                 icon: const Icon(
@@ -1241,8 +1419,72 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
             : '이야기 속 경험을 기억하며 다정하게 이야기해요.',
         greeting: '안녕! 나는 $name이야. 우리 동화에서 궁금했던 장면이 있니?',
         avatarEmoji: _emojiFor(name, role),
+        gender: _inferCharacterGender(name, role, text, story),
       );
     }).toList();
+  }
+
+  String _inferCharacterGender(
+    String name,
+    String role,
+    String storyText,
+    StorySession story,
+  ) {
+    final cast = story.effectiveStoryCast.where(
+      (member) => member.name == name || member.name.contains(name),
+    );
+    final descriptions = <String>[
+      name,
+      role,
+      ...cast.map(
+        (member) => '${member.role} ${member.sourceDescription ?? ''}',
+      ),
+      for (final entry in story.characters.entries)
+        if (entry.value.contains(name)) '${entry.key} ${entry.value}',
+    ];
+    final namePattern = RegExp(RegExp.escape(name));
+    for (final match in namePattern.allMatches(storyText)) {
+      final start = match.start > 24 ? match.start - 24 : 0;
+      final end = match.end + 24 < storyText.length
+          ? match.end + 24
+          : storyText.length;
+      descriptions.add(storyText.substring(start, end));
+      if (descriptions.length >= 12) break;
+    }
+    final evidence = descriptions.join(' ');
+    const femaleCues = [
+      '여주인공',
+      '여자아이',
+      '여학생',
+      '소녀',
+      '공주',
+      '여왕',
+      '그녀',
+      '엄마',
+      '어머니',
+      '누나',
+      '언니',
+      '할머니',
+      '아가씨',
+      '여성',
+    ];
+    const maleCues = [
+      '남주인공',
+      '남자아이',
+      '남학생',
+      '소년',
+      '왕자',
+      '아빠',
+      '아버지',
+      '형',
+      '오빠',
+      '할아버지',
+      '남성',
+    ];
+    final female = femaleCues.any(evidence.contains);
+    final male = maleCues.any(evidence.contains);
+    if (female == male) return 'unknown';
+    return female ? 'female' : 'male';
   }
 
   List<String> _knownCharacterNames(String text) {
@@ -1266,6 +1508,7 @@ class _CharacterChatPageState extends State<CharacterChatPage> {
 
   String _roleFor(String name, String text, {required bool isFirst}) {
     if (name.contains('공주')) return '도움을 기다리던 공주';
+    if (name.contains('왕자')) return '이야기의 왕자';
     if (name.contains('용')) return '이야기의 용';
     if (name.contains('요정')) return '마법을 아는 안내자';
     if (name.contains('여우') || name.contains('친구')) return '함께한 동료';
@@ -1343,43 +1586,63 @@ class _VoiceConversationOverlayState extends State<_VoiceConversationOverlay>
   }
 
   bool get _isListening => widget.phase == _VoiceConversationPhase.listening;
+  bool get _isStopping => widget.phase == _VoiceConversationPhase.stopping;
   bool get _isThinking => widget.phase == _VoiceConversationPhase.thinking;
   bool get _isSpeaking => widget.phase == _VoiceConversationPhase.speaking;
 
   Color get _accent {
-    if (_isListening) return const Color(0xFFFB7185);
-    if (_isSpeaking) return const Color(0xFF64D8CB);
-    return AppColors.p300;
+    if (_isListening) return const Color(0xFF39DDAA);
+    if (_isSpeaking) return const Color(0xFF89ADFF);
+    if (_isThinking || _isStopping) return const Color(0xFFFFBD59);
+    return Colors.white70;
+  }
+
+  Color get _backgroundGlow {
+    if (_isListening) return const Color(0xFF104C42);
+    if (_isSpeaking) return const Color(0xFF203D70);
+    if (_isThinking || _isStopping) return const Color(0xFF614012);
+    return const Color(0xFF252139);
   }
 
   IconData get _phaseIcon {
     if (_isListening) return Icons.mic_rounded;
     if (_isSpeaking) return Icons.record_voice_over_rounded;
-    return Icons.auto_awesome_rounded;
+    if (_isStopping) return Icons.mic_off_rounded;
+    if (_isThinking) return Icons.hourglass_top_rounded;
+    return Icons.mic_off_rounded;
   }
 
   String get _phaseTitle {
     if (_isListening) return '듣고 있어요';
     if (_isSpeaking) return '${widget.character.name}가 말하고 있어요';
-    return '${widget.character.name}가 생각하고 있어요';
+    if (_isStopping) return '마이크를 끄고 있어요';
+    if (_isThinking) return '답변을 준비하고 있어요';
+    return '마이크를 준비하고 있어요';
   }
 
   String get _phaseHint {
     if (_isListening) return '말을 멈추면 자동으로 메시지를 보낼게요.';
-    if (_isSpeaking) return '답변이 끝나면 다시 자동으로 들을게요.';
-    return '동화 속 기억을 떠올려 답을 만들고 있어요.';
+    if (_isSpeaking) return '마이크가 꺼져 있어요. 답변이 끝나면 다시 들을게요.';
+    if (_isStopping) return '마이크가 꺼진 후 답변을 준비할게요.';
+    if (_isThinking) return '마이크가 꺼져 있어요. 잠시만 기다려 주세요.';
+    return '준비가 끝나면 자동으로 들을게요.';
   }
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
+        decoration: BoxDecoration(
           gradient: RadialGradient(
-            center: Alignment(0, -0.25),
+            center: const Alignment(0, -0.25),
             radius: 1.2,
-            colors: [Color(0xFF281B50), Color(0xFF100A25), Color(0xFF070411)],
+            colors: [
+              _backgroundGlow,
+              const Color(0xFF100A25),
+              const Color(0xFF070411),
+            ],
           ),
         ),
         child: SafeArea(
@@ -1450,6 +1713,31 @@ class _VoiceConversationOverlayState extends State<_VoiceConversationOverlay>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildPulseCore(),
+                        const SizedBox(height: 12),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _accent.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: _accent.withValues(alpha: 0.65),
+                            ),
+                          ),
+                          child: Text(
+                            _isListening
+                                ? '마이크 켜짐'
+                                : (_isStopping ? '마이크 정지 중' : '마이크 꺼짐'),
+                            style: TextStyle(
+                              color: _accent,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 28),
                         AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 240),

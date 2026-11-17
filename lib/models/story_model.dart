@@ -218,6 +218,7 @@ class StoryCharacter {
   final String personality;
   final String greeting;
   final String avatarEmoji;
+  final String gender;
 
   const StoryCharacter({
     required this.name,
@@ -225,6 +226,7 @@ class StoryCharacter {
     required this.personality,
     required this.greeting,
     required this.avatarEmoji,
+    this.gender = 'unknown',
   });
 
   factory StoryCharacter.fromJson(Map<String, dynamic> json) {
@@ -234,6 +236,7 @@ class StoryCharacter {
       personality: json['personality']?.toString().trim() ?? '따뜻하고 다정해요',
       greeting: json['greeting']?.toString().trim() ?? '',
       avatarEmoji: json['avatar_emoji']?.toString().trim() ?? '✨',
+      gender: _normalizeCharacterGender(json['gender']),
     );
   }
 
@@ -243,7 +246,29 @@ class StoryCharacter {
     'personality': personality,
     'greeting': greeting,
     'avatar_emoji': avatarEmoji,
+    'gender': gender,
   };
+}
+
+String _normalizeCharacterGender(dynamic value) {
+  switch (value?.toString().trim().toLowerCase()) {
+    case 'male':
+    case 'm':
+    case '남':
+    case '남성':
+    case '남자':
+    case '소년':
+      return 'male';
+    case 'female':
+    case 'f':
+    case '여':
+    case '여성':
+    case '여자':
+    case '소녀':
+      return 'female';
+    default:
+      return 'unknown';
+  }
 }
 
 class CharacterChatMessage {
@@ -385,6 +410,7 @@ class StoryChapter {
   final int chapter;
   final String text;
   final String? choiceMade;
+  final List<String> offeredChoices;
   String? imageUrl;
   String? videoUrl;
   String? mediaJobId;
@@ -400,6 +426,7 @@ class StoryChapter {
     required this.chapter,
     required this.text,
     this.choiceMade,
+    this.offeredChoices = const [],
     this.imageUrl,
     this.videoUrl,
     this.mediaJobId,
@@ -411,6 +438,95 @@ class StoryChapter {
     this.storyEmotion,
     this.selectedChoiceEmotion,
   });
+}
+
+bool _isStoryRoleKey(String value) {
+  const roleKeys = {
+    'hero',
+    'protagonist',
+    'heroine',
+    'main_character',
+    'main character',
+    '주인공',
+    '주역',
+    'target',
+    'princess',
+    'prince',
+    '구출 대상',
+    'companion',
+    'guide',
+    'mentor',
+    'helper',
+    'warrior',
+    'explorer',
+    'guardian',
+    'mage',
+    'fairy',
+    'antagonist',
+    'villain',
+    'rival',
+    '동료',
+    '안내자',
+    '조력자',
+    '적대자',
+    '라이벌',
+    '공주',
+    '왕자',
+    '요정',
+    '전사',
+    '탐험가',
+    '수호자',
+    '마법사',
+  };
+  return roleKeys.contains(value.trim().toLowerCase());
+}
+
+bool _isHeroRole(String value) {
+  const heroRoles = {
+    'hero',
+    'protagonist',
+    'heroine',
+    'main_character',
+    'main character',
+    '주인공',
+    '주역',
+  };
+  return heroRoles.contains(value.trim().toLowerCase());
+}
+
+String _letterRoleFallback(String role, int ordinal) {
+  switch (role.trim().toLowerCase()) {
+    case 'hero':
+    case 'protagonist':
+    case 'heroine':
+    case 'main_character':
+    case 'main character':
+    case '주인공':
+    case '주역':
+      return '주인공';
+    case 'target':
+    case 'princess':
+    case 'prince':
+    case '구출 대상':
+    case '공주':
+    case '왕자':
+      return '소중한 친구';
+    case 'companion':
+    case '동료':
+      return '동료';
+    case 'guide':
+    case 'mentor':
+    case '안내자':
+      return '안내자';
+    case 'antagonist':
+    case 'villain':
+    case 'rival':
+    case '적대자':
+    case '라이벌':
+      return '맞서는 인물';
+    default:
+      return '동화 친구 $ordinal';
+  }
 }
 
 class StoryCastMember {
@@ -438,18 +554,53 @@ class StoryCastMember {
     );
   }
 
-  factory StoryCastMember.fromCharacter(String role, String description) {
+  factory StoryCastMember.fromCharacter(
+    String role,
+    String description, {
+    String? nameHint,
+  }) {
     final quotedName = RegExp(
       "['\"]([^'\"]+)['\"]",
     ).firstMatch(description)?.group(1);
+    final hintedName = nameHint?.trim() ?? '';
     return StoryCastMember(
       role: role,
-      name: quotedName?.trim().isNotEmpty == true
+      name: hintedName.isNotEmpty
+          ? hintedName
+          : quotedName?.trim().isNotEmpty == true
           ? quotedName!.trim()
-          : description.trim(),
+          : _isStoryRoleKey(role)
+          ? _letterRoleFallback(role, 1)
+          : role.trim(),
       characterKey: '',
       sourceDescription: description.trim(),
     );
+  }
+
+  String letterDisplayName({int ordinal = 1}) {
+    final candidate = name.trim();
+    final normalized = candidate.toLowerCase();
+    final placeholder =
+        candidate.isEmpty ||
+        normalized == 'the selected story protagonist' ||
+        normalized == 'selected story protagonist' ||
+        normalized == '프로필 배정 대기';
+    final sentenceLike =
+        candidate.length > 20 || RegExp(r'[.!?。！？\n]').hasMatch(candidate);
+    if (!placeholder && !sentenceLike && candidate != '주인공') {
+      return candidate;
+    }
+
+    final quotedName = RegExp(
+      "['\"“‘]([^'\"”’]{1,16})['\"”’]",
+    ).firstMatch(candidate)?.group(1)?.trim();
+    if (quotedName != null && quotedName.isNotEmpty) return quotedName;
+
+    final selectedProfileName = profileName?.trim() ?? '';
+    if (_isHeroRole(role) && selectedProfileName.isNotEmpty) {
+      return selectedProfileName;
+    }
+    return _letterRoleFallback(role, ordinal);
   }
 
   String get identityLabel {
@@ -468,9 +619,15 @@ class StoryCastMember {
 class StorySession {
   String storyId;
   String? dbStoryId;
+  String? assembledVideoUrl;
+  String? assembledVideoStatus;
+  String? assembledVideoError;
+  bool persistedCompleted;
+  bool isCommunityShared;
 
   /// AI 서버가 재시작된 뒤에도 이어 쓰기에 사용하는 직렬화된 게임 상태입니다.
   String? runtimeState;
+  Map<String, dynamic>? storedPlan;
   String genre;
   String age;
   String initialPrompt;
@@ -493,7 +650,13 @@ class StorySession {
   StorySession({
     required this.storyId,
     this.dbStoryId,
+    this.assembledVideoUrl,
+    this.assembledVideoStatus,
+    this.assembledVideoError,
+    this.persistedCompleted = false,
+    this.isCommunityShared = false,
     this.runtimeState,
+    this.storedPlan,
     required this.genre,
     required this.age,
     required this.initialPrompt,
@@ -522,8 +685,7 @@ class StorySession {
     final override = characterOverrides['hero']?.trim() ?? '';
     if (override.isNotEmpty) return override;
     for (final member in storyCast) {
-      if (member.role.toLowerCase() == 'hero' &&
-          member.characterKey.trim().isNotEmpty) {
+      if (_isHeroRole(member.role) && member.characterKey.trim().isNotEmpty) {
         return member.characterKey.trim();
       }
     }
@@ -531,10 +693,15 @@ class StorySession {
   }
 
   bool get hasReachedEnding =>
-      chapters.isNotEmpty &&
-      chapters.last.text.trim().isNotEmpty &&
-      allChoicesMade.isNotEmpty &&
-      choices.isEmpty;
+      persistedCompleted ||
+      (chapters.isNotEmpty &&
+          chapters.last.text.trim().isNotEmpty &&
+          allChoicesMade.isNotEmpty &&
+          !(dbStoryId != null &&
+              runtimeState == null &&
+              currentChapter < 8 &&
+              !storyId.startsWith('mock_')) &&
+          choices.isEmpty);
 
   List<StoryChoiceEmotion> get choiceEmotionHistory {
     final history = <StoryChoiceEmotion>[];
@@ -564,33 +731,56 @@ class StorySession {
   List<StoryCastMember> get effectiveStoryCast {
     final heroOverride = characterOverrides['hero']?.trim() ?? '';
     if (storyCast.isNotEmpty) {
+      final hasHeroRole = storyCast.any((member) => _isHeroRole(member.role));
       return storyCast
-          .map(
-            (member) =>
-                member.role.toLowerCase() == 'hero' && heroOverride.isNotEmpty
-                ? StoryCastMember(
-                    role: member.role,
-                    name: member.name,
-                    characterKey: heroOverride,
-                    profileName: CharacterProfileCatalog.defaultNameFor(
-                      heroOverride,
-                    ),
-                    sourceDescription: member.sourceDescription,
-                  )
-                : member,
-          )
+          .asMap()
+          .entries
+          .map((entry) {
+            final member = entry.value;
+            final isHero =
+                _isHeroRole(member.role) || (!hasHeroRole && entry.key == 0);
+            final role = isHero && !_isHeroRole(member.role)
+                ? 'hero'
+                : member.role;
+            final applyOverride = isHero && heroOverride.isNotEmpty;
+            return StoryCastMember(
+              role: role,
+              name: member.name,
+              characterKey: applyOverride ? heroOverride : member.characterKey,
+              profileName: applyOverride
+                  ? CharacterProfileCatalog.defaultNameFor(heroOverride)
+                  : member.profileName,
+              sourceDescription: member.sourceDescription,
+            );
+          })
           .toList(growable: false);
     }
-    return characters.entries
+    final entries = characters.entries
         .where(
           (entry) =>
               entry.key.toLowerCase() != 'key_item' &&
               entry.value.trim().isNotEmpty,
         )
-        .map((entry) {
-          final member = StoryCastMember.fromCharacter(entry.key, entry.value);
-          final override =
-              characterOverrides[entry.key.toLowerCase()]?.trim() ?? '';
+        .toList(growable: false);
+    final cast = entries
+        .asMap()
+        .entries
+        .map((indexedEntry) {
+          final entry = indexedEntry.value;
+          final isRoleKey = _isStoryRoleKey(entry.key);
+          final role = isRoleKey
+              ? entry.key
+              : indexedEntry.key == 0
+              ? 'hero'
+              : 'character';
+          final member = StoryCastMember.fromCharacter(
+            role,
+            entry.value,
+            nameHint: isRoleKey ? null : entry.key,
+          );
+          final override = _isHeroRole(role)
+              ? heroOverride
+              : characterOverrides[entry.key.toLowerCase()]?.trim() ?? '';
           if (override.isEmpty) return member;
           return StoryCastMember(
             role: member.role,
@@ -601,6 +791,16 @@ class StorySession {
           );
         })
         .toList(growable: false);
+    if (cast.isNotEmpty || heroOverride.isEmpty) return cast;
+    final profileName = CharacterProfileCatalog.defaultNameFor(heroOverride);
+    return [
+      StoryCastMember(
+        role: 'hero',
+        name: profileName ?? '주인공',
+        characterKey: heroOverride,
+        profileName: profileName,
+      ),
+    ];
   }
 
   EmotionAnalysis? emotionForChoice(String choice) {
@@ -625,6 +825,20 @@ class StorySession {
             choiceMade:
                 scene['choice_made']?.toString() ??
                 scene['user_choice']?.toString(),
+            offeredChoices:
+                ((scene['offered_choices'] as List?) ??
+                        (scene['options'] as List?) ??
+                        const [])
+                    .map((option) {
+                      if (option is Map) {
+                        return option['text']?.toString() ?? '';
+                      }
+                      return option.toString();
+                    })
+                    .map((text) => text.trim())
+                    .where((text) => text.isNotEmpty)
+                    .take(5)
+                    .toList(growable: false),
             imageUrl: scene['image_url']?.toString(),
             videoUrl: scene['video_url']?.toString(),
             mediaJobId: scene['media_job_id']?.toString(),
@@ -712,7 +926,22 @@ class StorySession {
           ? 'db_${DateTime.now().microsecondsSinceEpoch}'
           : 'db_$dbStoryId',
       dbStoryId: dbStoryId,
+      assembledVideoUrl: json['assembled_video_url']?.toString(),
+      assembledVideoStatus:
+          json['assembled_video_status']?.toString() ??
+          (json['assembled_video_url']?.toString().trim().isNotEmpty == true
+              ? 'completed'
+              : null),
+      assembledVideoError: json['assembled_video_error']?.toString(),
+      persistedCompleted:
+          json['completed'] == true ||
+          json['generation_status']?.toString() == 'completed' ||
+          json['status']?.toString() == 'completed',
+      isCommunityShared: json['is_shared'] == true,
       runtimeState: json['runtime_state']?.toString(),
+      storedPlan: json['story_plan'] is Map
+          ? Map<String, dynamic>.from(json['story_plan'] as Map)
+          : null,
       genre: json['genre']?.toString() ?? '동화',
       age: json['age']?.toString() ?? json['target_age']?.toString() ?? '',
       initialPrompt: json['title']?.toString().trim().isNotEmpty == true
@@ -815,6 +1044,7 @@ class CommunityComment {
   final String id;
   final String authorName;
   final String? authorAccountId;
+  final String? authorProfileImageUrl;
   final String content;
   final DateTime createdAt;
 
@@ -824,6 +1054,7 @@ class CommunityComment {
     required this.content,
     required this.createdAt,
     this.authorAccountId,
+    this.authorProfileImageUrl,
   });
 
   factory CommunityComment.fromJson(Map<String, dynamic> json) {
@@ -831,6 +1062,7 @@ class CommunityComment {
       id: json['id']?.toString() ?? '',
       authorName: json['author_name']?.toString() ?? '동화 친구',
       authorAccountId: json['author_account_id']?.toString(),
+      authorProfileImageUrl: json['author_profile_image_url']?.toString(),
       content: json['content']?.toString() ?? '',
       createdAt:
           DateTime.tryParse(json['created_at']?.toString() ?? '') ??
@@ -841,8 +1073,10 @@ class CommunityComment {
 
 class CommunityPost {
   final String id;
+  final String? storyId;
   final String authorName;
   final String? authorAccountId;
+  final String? authorProfileImageUrl;
   final String genre;
   final String title;
   final String preview;
@@ -852,10 +1086,12 @@ class CommunityPost {
   final int viewCount;
   final int likeCount;
   final List<String> likedBy;
+  final bool isScrapped;
   final List<CommunityComment> comments;
 
   CommunityPost({
     required this.id,
+    this.storyId,
     required this.authorName,
     required this.genre,
     required this.title,
@@ -868,6 +1104,8 @@ class CommunityPost {
     this.likedBy = const [],
     required this.comments,
     this.authorAccountId,
+    this.authorProfileImageUrl,
+    this.isScrapped = false,
   });
 
   int get commentCount => comments.length;
@@ -878,13 +1116,34 @@ class CommunityPost {
     return likedBy.contains(normalized);
   }
 
+  CommunityPost copyWith({bool? isScrapped}) => CommunityPost(
+    id: id,
+    storyId: storyId,
+    authorName: authorName,
+    authorAccountId: authorAccountId,
+    authorProfileImageUrl: authorProfileImageUrl,
+    genre: genre,
+    title: title,
+    preview: preview,
+    fullText: fullText,
+    storyEmoji: storyEmoji,
+    createdAt: createdAt,
+    viewCount: viewCount,
+    likeCount: likeCount,
+    likedBy: likedBy,
+    comments: comments,
+    isScrapped: isScrapped ?? this.isScrapped,
+  );
+
   factory CommunityPost.fromJson(Map<String, dynamic> json) {
     final rawComments = json['comments'] as List? ?? const [];
     final rawLikedBy = json['liked_by'] as List? ?? const [];
     return CommunityPost(
       id: json['id']?.toString() ?? '',
+      storyId: json['story_id']?.toString(),
       authorName: json['author_name']?.toString() ?? '동화 친구',
       authorAccountId: json['author_account_id']?.toString(),
+      authorProfileImageUrl: json['author_profile_image_url']?.toString(),
       genre: json['genre']?.toString() ?? '동화',
       title: json['title']?.toString() ?? '제목 없는 동화',
       preview: json['preview']?.toString() ?? '',
@@ -896,6 +1155,7 @@ class CommunityPost {
       viewCount: (json['view_count'] as num?)?.toInt() ?? 0,
       likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
       likedBy: rawLikedBy.map((item) => item.toString()).toList(),
+      isScrapped: json['is_scrapped'] as bool? ?? false,
       comments: rawComments
           .map((e) => CommunityComment.fromJson(e as Map<String, dynamic>))
           .toList(),

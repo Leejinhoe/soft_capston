@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
-import '../main.dart';
+import '../app_theme.dart';
 import '../models/story_video.dart';
 
 class StoryVideoPlayer extends StatefulWidget {
@@ -171,7 +171,7 @@ class _StoryVideoPlayerState extends State<StoryVideoPlayer>
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.card2,
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.teal.withValues(alpha: 0.4)),
         boxShadow: [

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'app_theme.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 
@@ -62,76 +63,97 @@ class _VocabPageState extends State<VocabPage> {
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: const Color(0xFF140028),
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 60,
-            height: 60,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(18),
             ),
-            child: Icon(Icons.menu_book, color: color, size: 30),
+            child: Icon(Icons.menu_book, color: color, size: 28),
           ),
-          const SizedBox(width: 18),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        vocab.hard,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    if (isDeleting)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      IconButton(
+                        onPressed: onDelete,
+                        tooltip: '단어 삭제',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.white38,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.p600.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    sourceStoryTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.p300, fontSize: 11),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Text(
-                  vocab.hard,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
+                  vocab.easy,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  vocab.easy,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
                   vocab.definition,
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 15,
-                    height: 1.6,
+                    height: 1.5,
                   ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '$sourceStoryTitle 에서 저장됨',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          isDeleting
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : IconButton(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline),
-                  color: Colors.white38,
-                  tooltip: '단어 삭제',
-                ),
         ],
       ),
     );
@@ -144,7 +166,7 @@ class _VocabPageState extends State<VocabPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF140028),
+        backgroundColor: AppColors.pageSurface,
         title: const Text('단어를 삭제할까요?', style: TextStyle(color: Colors.white)),
         content: Text(
           '"${vocab.hard}" 단어장 항목을 삭제합니다.',
@@ -229,7 +251,7 @@ class _VocabPageState extends State<VocabPage> {
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -246,43 +268,60 @@ class _VocabPageState extends State<VocabPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      '동화 속 새로운 표현을 배워보세요',
-                      style: TextStyle(color: Colors.white70, fontSize: 16),
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () => _openQuiz(allVocabs),
-                    icon: const Icon(Icons.quiz_outlined, size: 18),
-                    label: const Text('퀴즈'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7C3AED),
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () => _openCards(allVocabs),
-                    icon: const Icon(Icons.style_outlined, size: 18),
-                    label: const Text('카드'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF244465),
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
+              const Text(
+                '동화 속 새로운 표현을 배워보세요',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
               ),
               const SizedBox(height: 22),
+              Container(
+                width: double.infinity,
+                height: 58,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.p600.withValues(alpha: 0.23),
+                      blurRadius: 16,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: FilledButton.icon(
+                  onPressed: () => _openQuiz(allVocabs),
+                  icon: const Icon(Icons.extension_rounded, size: 22),
+                  label: const Text(
+                    '퀴즈 풀기',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _openCards(allVocabs),
+                  icon: const Icon(Icons.style_outlined, size: 18),
+                  label: const Text('플래시 카드로 복습'),
+                ),
+              ),
+              const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF140028),
+                  color: AppColors.pageSurface,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: Colors.white10),
                 ),
@@ -400,7 +439,7 @@ class _VocabFlashcardPageState extends State<VocabFlashcardPage>
   Widget build(BuildContext context) {
     final vocab = widget.vocabs[_index];
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
       appBar: AppBar(title: const Text('단어 카드')),
       body: SafeArea(
         child: Center(
@@ -595,12 +634,12 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
   VocabWord get _currentQuestion => _questions[_currentIndex];
 
   List<String> _buildOptionsFor(VocabWord question) {
-    final options = <String>{question.easy};
+    final options = <String>{question.hard};
     final others =
         widget.vocabs
-            .where((word) => word.easy != question.easy)
-            .map((word) => word.easy)
-            .where((easy) => easy.trim().isNotEmpty)
+            .where((word) => word.hard != question.hard)
+            .map((word) => word.hard)
+            .where((word) => word.trim().isNotEmpty)
             .toList()
           ..shuffle();
     options.addAll(others.take(3));
@@ -612,7 +651,7 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
     setState(() {
       _selectedAnswer = answer;
       _answered = true;
-      if (answer == _currentQuestion.easy) {
+      if (answer == _currentQuestion.hard) {
         _score += 1;
       }
     });
@@ -647,7 +686,7 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF140028),
+        backgroundColor: AppColors.pageSurface,
         title: const Text('퀴즈 완료!', style: TextStyle(color: Colors.white)),
         content: Text(
           '$_score / ${_questions.length}개를 맞혔어요.',
@@ -680,9 +719,9 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
     final progress = (_currentIndex + 1) / _questions.length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF070018),
+        backgroundColor: AppColors.pageBackground,
         title: const Text('단어 퀴즈'),
       ),
       body: SafeArea(
@@ -717,25 +756,16 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      '이 단어의 쉬운 뜻은?',
+                      '이 뜻에 맞는 단어는?',
                       style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      question.hard,
+                      question.definition.replaceAll(question.hard, '○○'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 34,
                         fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      question.definition,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                        height: 1.5,
                       ),
                     ),
                   ],
@@ -743,15 +773,15 @@ class _VocabQuizPageState extends State<VocabQuizPage> {
               ),
               const SizedBox(height: 24),
               ...options.map((option) {
-                final isCorrect = option == question.easy;
+                final isCorrect = option == question.hard;
                 final isSelected = option == _selectedAnswer;
                 final color = !_answered
-                    ? const Color(0xFF140028)
+                    ? AppColors.pageSurface
                     : isCorrect
                     ? const Color(0xFF064E3B)
                     : isSelected
                     ? const Color(0xFF7F1D1D)
-                    : const Color(0xFF140028);
+                    : AppColors.pageSurface;
                 return Container(
                   width: double.infinity,
                   margin: const EdgeInsets.only(bottom: 12),

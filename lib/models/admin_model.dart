@@ -101,6 +101,7 @@ class AdminUser {
   final DateTime? lastLogin;
   final int storyCount;
   final int vocabCount;
+  final String accountStatus;
 
   const AdminUser({
     required this.id,
@@ -110,6 +111,7 @@ class AdminUser {
     required this.personalityType,
     required this.storyCount,
     required this.vocabCount,
+    this.accountStatus = 'active',
     this.email,
     this.phone,
     this.address,
@@ -131,6 +133,8 @@ class AdminUser {
       lastLogin: _parseDate(json['last_login']),
       storyCount: (json['story_count'] as num?)?.toInt() ?? 0,
       vocabCount: (json['vocab_count'] as num?)?.toInt() ?? 0,
+      accountStatus: (json['account_status'] ?? json['status'] ?? 'active')
+          .toString(),
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../main.dart';
+import '../app_theme.dart';
 import '../models/character_profile.dart';
 import '../services/db_service.dart';
 
@@ -104,7 +104,7 @@ class _CharacterPickerState extends State<CharacterPicker> {
             backgroundColor: WidgetStateProperty.resolveWith(
               (states) => states.contains(WidgetState.selected)
                   ? AppColors.p600
-                  : AppColors.card,
+                  : AppColors.pageSurface,
             ),
             side: const WidgetStatePropertyAll(
               BorderSide(color: AppColors.border),
@@ -186,7 +186,7 @@ class _CharacterProfileCard extends StatelessWidget {
                       height: avatarSize,
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        color: AppColors.card,
+                        color: AppColors.pageSurface,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: borderColor,
@@ -269,7 +269,7 @@ class _ProfileImage extends StatelessWidget {
   }
 
   Widget _placeholder() => const ColoredBox(
-    color: AppColors.bg2,
+    color: AppColors.pageInput,
     child: Center(
       child: Icon(Icons.person_rounded, color: AppColors.p300, size: 42),
     ),

@@ -1,35 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'app_theme.dart';
 import 'community_page.dart';
 import 'create_page.dart';
 import 'models/app_state.dart';
-import 'models/story_model.dart';
 import 'notice_page.dart';
 import 'profile_page.dart';
 import 'psych_page.dart';
-import 'story_page.dart';
 import 'vocab_page.dart';
-
-class FeaturedStory {
-  final String emoji;
-  final String title;
-  final String tag;
-
-  const FeaturedStory({
-    required this.emoji,
-    required this.title,
-    required this.tag,
-  });
-}
-
-const List<FeaturedStory> _featuredStories = [
-  FeaturedStory(emoji: '🐉', title: '용감한 꼬마 드래곤', tag: '모험'),
-  FeaturedStory(emoji: '🚀', title: '우주로 간 토끼', tag: 'SF'),
-  FeaturedStory(emoji: '🦊', title: '여우 마법사의 비밀', tag: '판타지'),
-  FeaturedStory(emoji: '👑', title: '황금 사과를 찾아서', tag: '전래동화'),
-  FeaturedStory(emoji: '🧜‍♀️', title: '바다 탐험대', tag: '모험'),
-];
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -39,7 +18,6 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0;
   late final List<Widget?> _pages;
 
   @override
@@ -54,31 +32,34 @@ class _MainScreenState extends State<MainScreen> {
     1 => const CreatePage(),
     2 => const CommunityPage(),
     3 => const VocabPage(),
-    4 => const PsychPage(),
+    4 => PsychPage(onBack: () => _selectTab(0)),
     5 => const ProfilePage(),
     _ => const SizedBox.shrink(),
   };
 
   void _selectTab(int index) {
     if (index < 0 || index >= _pages.length) return;
-    setState(() {
-      _pages[index] ??= _createPage(index);
-      _selectedIndex = index;
-    });
+    context.read<AppState>().selectMainTab(index);
   }
 
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = context.select<AppState, int>(
+      (state) => state.selectedMainTab,
+    );
+    _pages[selectedIndex] ??= _createPage(selectedIndex);
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
       body: IndexedStack(
-        index: _selectedIndex,
+        index: selectedIndex,
         children: [for (final page in _pages) page ?? const SizedBox.shrink()],
       ),
-      bottomNavigationBar: HyeonlimBottomNav(
-        selectedIndex: _selectedIndex,
-        onTap: _selectTab,
-      ),
+      bottomNavigationBar: selectedIndex == 0
+          ? null
+          : HyeonlimBottomNav(
+              selectedIndex: selectedIndex,
+              onTap: _selectTab,
+            ),
     );
   }
 }
@@ -107,7 +88,7 @@ class HyeonlimBottomNav extends StatelessWidget {
     return Container(
       height: 86,
       decoration: const BoxDecoration(
-        color: Color(0xFF140028),
+        color: AppColors.pageSurface,
         border: Border(top: BorderSide(color: Colors.white10)),
       ),
       child: SafeArea(
@@ -120,7 +101,10 @@ class HyeonlimBottomNav extends StatelessWidget {
             return GestureDetector(
               onTap: () => onTap(index),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: selected
                       ? Colors.white.withValues(alpha: 0.08)
@@ -140,7 +124,7 @@ class HyeonlimBottomNav extends StatelessWidget {
                       item.label,
                       style: TextStyle(
                         color: selected ? Colors.white : Colors.white70,
-                        fontSize: 10,
+                        fontSize: 11,
                         fontWeight: selected
                             ? FontWeight.bold
                             : FontWeight.normal,
@@ -174,14 +158,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final ScrollController _recommendScrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _recommendScrollController.dispose();
-    super.dispose();
-  }
-
   Widget _buildMenuCard({
     required IconData icon,
     required String title,
@@ -244,165 +220,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildFeaturedStoryCard(FeaturedStory story) {
-    return Container(
-      width: 140,
-      margin: const EdgeInsets.only(right: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF140028),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 100,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: Color(0xFF0D0520),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-            ),
-            alignment: Alignment.center,
-            child: Text(story.emoji, style: const TextStyle(fontSize: 45)),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _chip('#${story.tag}', Colors.purpleAccent),
-                const SizedBox(height: 8),
-                Text(
-                  story.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCreatedStoryCard(StorySession story) {
-    return InkWell(
-      onTap: () {
-        final state = context.read<AppState>();
-        if (!story.hasReachedEnding && story.choices.isNotEmpty) {
-          state.resumeStory(story);
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const StoryPage()),
-          );
-          return;
-        }
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => StoryPage(preloadedStory: story)),
-        );
-      },
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        width: 190,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: const Color(0xFF140028),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _genreEmoji(story.genre),
-              style: const TextStyle(fontSize: 30),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              story.initialPrompt,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                _chip('#${story.genre}', Colors.purpleAccent),
-                _chip('${story.chapters.length}챕터', Colors.lightBlueAccent),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _chip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  String _genreEmoji(String genre) {
-    return const {
-          '판타지': '🏰',
-          '모험': '🗺️',
-          '우정': '🤝',
-          '자연': '🌿',
-          '동물': '🐾',
-          '미스터리': '🔍',
-        }[genre] ??
-        '📖';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final home = context
-        .select<AppState, ({String displayName, String completedStoriesKey})>((
-          state,
-        ) {
-          final storiesKey = state.completedStories
-              .map(
-                (story) =>
-                    '${story.storyId}|${story.initialPrompt}|${story.genre}|${story.chapters.length}|${story.hasReachedEnding}|${story.choices.length}',
-              )
-              .join('\u0000');
-          return (
-            displayName: state.currentDisplayName,
-            completedStoriesKey: storiesKey,
-          );
-        });
-    final state = context.read<AppState>();
-    final displayName = home.displayName;
+    final displayName = context.select<AppState, String>(
+      (state) => state.currentDisplayName,
+    );
     final user = displayName.trim().isEmpty ? '사용자' : displayName;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -439,7 +265,7 @@ class _HomePageState extends State<HomePage> {
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF140028),
+                            color: AppColors.pageSurface,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(color: Colors.white10),
                           ),
@@ -487,53 +313,6 @@ class _HomePageState extends State<HomePage> {
                 subtitle: 'AI가 관심사와 감정을 분석해줘요',
                 colors: const [Color(0xFFF59E0B), Color(0xFFEF4444)],
                 onTap: () => widget.onSelectTab(4),
-              ),
-              if (state.completedStories.isNotEmpty) ...[
-                const SizedBox(height: 18),
-                const Text(
-                  '내가 만든 동화',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 180,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: state.completedStories.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (context, index) =>
-                        _buildCreatedStoryCard(state.completedStories[index]),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 30),
-              const Text(
-                '추천 동화',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Scrollbar(
-                controller: _recommendScrollController,
-                thumbVisibility: true,
-                thickness: 4,
-                radius: const Radius.circular(10),
-                child: SingleChildScrollView(
-                  controller: _recommendScrollController,
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: _featuredStories
-                        .map(_buildFeaturedStoryCard)
-                        .toList(),
-                  ),
-                ),
               ),
               const SizedBox(height: 100),
             ],

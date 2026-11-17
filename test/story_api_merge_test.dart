@@ -8,20 +8,63 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late HttpServer server;
   late List<Map<String, dynamic>> requests;
+  late List<String?> requestIds;
 
   setUp(() async {
     requests = [];
+    requestIds = [];
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     dotenv.testLoad(
       fileInput: 'AI_API_BASE_URL=http://127.0.0.1:${server.port}',
     );
     server.listen((request) async {
-      requests.add(
-        Map<String, dynamic>.from(
-          jsonDecode(await utf8.decoder.bind(request).join()) as Map,
-        ),
-      );
+      requestIds.add(request.headers.value('x-request-id'));
       request.response.headers.contentType = ContentType.json;
+      if (request.method == 'GET') {
+        request.response.write(
+          jsonEncode({
+            'status': 'completed',
+            'result': {
+              'chapter': 1,
+              'choices': ['지도에서 길을 찾아본다', '친구에게 도움을 부탁한다', '주변의 발자국을 살펴본다'],
+            },
+          }),
+        );
+        await request.response.close();
+        return;
+      }
+      final body = Map<String, dynamic>.from(
+        jsonDecode(await utf8.decoder.bind(request).join()) as Map,
+      );
+      requests.add(body);
+      if (request.uri.path == '/story/word-meaning') {
+        request.response.write(jsonEncode({'definition': '두려워도 힘을 내어 나아가다.'}));
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/story/emotion-analysis') {
+        request.response.write(
+          jsonEncode({
+            'model': 'test classifier',
+            'items': [
+              {
+                'step': 1,
+                'status': 'classified',
+                'label': '행복',
+                'scores': {'행복': 0.7, '중립': 0.3},
+              },
+            ],
+          }),
+        );
+        await request.response.close();
+        return;
+      }
+      if (requests.last['prompt'] == 'async test') {
+        request.response.statusCode = 202;
+        request.response.write(jsonEncode({'job_id': 'test-job'}));
+        await request.response.close();
+        return;
+      }
       request.response.write(
         jsonEncode({
           'chapter': 2,
@@ -49,6 +92,23 @@ void main() {
   ];
   const overrides = {'hero': 'male_01'};
 
+  test(
+    'word meaning uses the story LLM endpoint and sends its context',
+    () async {
+      final meaning = await ApiService.explainWord(
+        word: '사과를',
+        sentence: '토끼는 숲으로 나아갔어요.',
+        age: '5-7세',
+      );
+      expect(meaning, '두려워도 힘을 내어 나아가다.');
+      expect(requests.single, {
+        'word': '사과',
+        'sentence': '토끼는 숲으로 나아갔어요.',
+        'age': '5-7세',
+      });
+    },
+  );
+
   test('start keeps the selected character and cast contract', () async {
     final result = await ApiService.startStory(
       genre: '판타지',
@@ -60,11 +120,19 @@ void main() {
     );
 
     expect(requests.single['character_context'], character);
+    expect(requestIds.single, matches(RegExp(r'^[a-f0-9]{32}$')));
     expect(requests.single['character_key'], 'male_01');
     expect(requests.single['story_cast'], cast);
     expect(requests.single['character_overrides'], overrides);
     expect(requests.single['prompt'], contains('[CHARACTER LOCK]'));
     expect(result['scene_contract'], {'location': '숲길'});
+  });
+
+  test('async start reuses the same trace ID while polling', () async {
+    await ApiService.startStory(genre: '판타지', age: '', prompt: 'async test');
+    expect(requestIds, hasLength(2));
+    expect(requestIds.first, matches(RegExp(r'^[a-f0-9]{32}$')));
+    expect(requestIds.last, requestIds.first);
   });
 
   test(
@@ -84,6 +152,7 @@ void main() {
       );
 
       expect(requests.single['runtime_state'], 'serialized-game-state');
+      expect(requestIds.single, matches(RegExp(r'^[a-f0-9]{32}$')));
       expect(requests.single.containsKey('story_so_far'), isFalse);
       expect(requests.single['choice'], '친구에게 도움을 부탁한다');
       expect(requests.single['character_context'], character);
@@ -113,6 +182,46 @@ void main() {
 
       expect(requests.single['story_so_far'], '이전 동화 전체');
       expect(requests.single.containsKey('runtime_state'), isFalse);
+    },
+  );
+
+  test('legacy continuation sends saved scenes and original choices', () async {
+    const recovery = {
+      'title': '원래 동화',
+      'scenes': [
+        {'text': '원래 장면이에요.'},
+      ],
+      'choices': ['친구에게 물어요', '편지를 살펴봐요', '바람을 따라가요'],
+    };
+    await ApiService.continueStory(
+      storyId: 'legacy-story',
+      storySoFar: '원래 장면이에요.',
+      choice: '친구에게 물어요',
+      genre: '동화',
+      age: '',
+      recoveryContext: recovery,
+    );
+    expect(requests.single['recovery_context'], recovery);
+    expect(requests.single['choice'], '친구에게 물어요');
+  });
+
+  test(
+    'classifier is called for the selected choice with only its prior scene',
+    () async {
+      final result = await ApiService.classifySelectedChoice(
+        selectedStep: 2,
+        previousScene: '별이가 갈림길 앞에서 지도를 펼쳤다.',
+        choice: '친구에게 먼저 길을 물어본다.',
+      );
+
+      expect(requests.single['scenes'], [
+        {'step_number': 1, 'content': '별이가 갈림길 앞에서 지도를 펼쳤다.'},
+        {'step_number': 2, 'content': '', 'user_choice': '친구에게 먼저 길을 물어본다.'},
+      ]);
+      expect(requestIds.single, matches(RegExp(r'^[a-f0-9]{32}$')));
+      expect(result?['emotion_label_source'], 'korean_dialogue_emotion_v1');
+      expect(result?['primary_emotion'], '행복');
+      expect(result?['scores'], {'행복': 0.7, '중립': 0.3});
     },
   );
 }

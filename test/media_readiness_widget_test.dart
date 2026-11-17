@@ -47,4 +47,79 @@ void main() {
     expect(find.text('미나'), findsOneWidget);
     expect(find.text('2/2장'), findsOneWidget);
   });
+
+  testWidgets(
+    'shows an actionable warning when integrated image URL is missing',
+    (tester) async {
+      final readiness = MediaReadiness.fromJson({
+        'status': 'ok',
+        'progress_percent': 100,
+        'profiles': {'ready': 1, 'target': 1},
+        'assets': {'ready': 8, 'target': 8},
+        'worker': {'running': true},
+        'provider': {
+          'mode': 'integrated_server',
+          'configured': false,
+          'configuration_error': 'DB 서버 환경에 AI_API_BASE_URL을 설정해야 합니다.',
+        },
+        'queue': {'pending': 0, 'running': 0, 'completed': 0, 'failed': 0},
+        'characters': [],
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MediaReadinessWidget(
+              readiness: readiness,
+              isLoading: false,
+              error: null,
+              onRefresh: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('삽화 서버 주소 미설정'), findsOneWidget);
+      expect(find.text('DB 서버 환경에 AI_API_BASE_URL을 설정해야 합니다.'), findsOneWidget);
+    },
+  );
+
+  testWidgets('shows when the configured integrated server is unreachable', (
+    tester,
+  ) async {
+    final readiness = MediaReadiness.fromJson({
+      'status': 'ok',
+      'progress_percent': 100,
+      'profiles': {'ready': 1, 'target': 1},
+      'assets': {'ready': 8, 'target': 8},
+      'worker': {'running': true},
+      'provider': {
+        'mode': 'integrated_server',
+        'configured': true,
+        'reachable': false,
+        'connection_error': '통합 서버에 연결할 수 없습니다. Colab 서버와 터널 주소를 확인하세요.',
+      },
+      'queue': {'pending': 0, 'running': 0, 'completed': 0, 'failed': 0},
+      'characters': [],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MediaReadinessWidget(
+            readiness: readiness,
+            isLoading: false,
+            error: null,
+            onRefresh: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('통합 서버 연결 확인 필요'), findsOneWidget);
+    expect(
+      find.text('통합 서버에 연결할 수 없습니다. Colab 서버와 터널 주소를 확인하세요.'),
+      findsOneWidget,
+    );
+  });
 }

@@ -6,10 +6,14 @@ import 'package:fairytale_hyeonlim_merged/main.dart';
 import 'package:fairytale_hyeonlim_merged/models/app_state.dart';
 
 void main() {
-  testWidgets('login screen renders title', (WidgetTester tester) async {
+  testWidgets('login screen renders the updated welcome title', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MaterialApp(home: LoginPage()));
 
-    expect(find.text('동화 AI'), findsOneWidget);
+    expect(find.text('AI Fairy Tale'), findsOneWidget);
+    expect(find.text('AI와 함께\n나만의 동화를 만들어보세요 ✨'), findsOneWidget);
+    expect(find.text('간편 로그인'), findsOneWidget);
   });
 
   testWidgets('dark app bar titles remain readable', (tester) async {

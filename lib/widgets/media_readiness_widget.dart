@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../main.dart';
+import '../app_theme.dart';
 import '../models/media_readiness.dart';
 
 class MediaReadinessWidget extends StatelessWidget {
@@ -22,7 +22,7 @@ class MediaReadinessWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white10),
       ),
@@ -86,6 +86,19 @@ class _ReadinessBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = (readiness.progressPercent / 100).clamp(0.0, 1.0);
+    final providerConfigured = readiness.providerConfigured;
+    final providerReachable = readiness.providerReachable;
+    final generationReady =
+        readiness.workerRunning &&
+        providerConfigured != false &&
+        providerReachable != false;
+    final generationLabel = providerConfigured == false
+        ? '삽화 서버 주소 미설정'
+        : providerReachable == false
+        ? '통합 서버 연결 확인 필요'
+        : readiness.workerRunning
+        ? '생성 서버 정상'
+        : '생성 서버 중지';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -140,14 +153,23 @@ class _ReadinessBody extends StatelessWidget {
               label: '이미지 ${readiness.readyAssets}/${readiness.targetAssets}',
             ),
             _MetricChip(
-              icon: readiness.workerRunning
+              icon: generationReady
                   ? Icons.cloud_done_rounded
                   : Icons.cloud_off_rounded,
-              label: readiness.workerRunning ? '생성 서버 정상' : '생성 서버 중지',
-              color: readiness.workerRunning ? AppColors.teal : AppColors.pink2,
+              label: generationLabel,
+              color: generationReady ? AppColors.teal : AppColors.pink2,
             ),
           ],
         ),
+        if (providerConfigured == false || providerReachable == false) ...[
+          const SizedBox(height: 12),
+          Text(
+            readiness.providerConfigurationError ??
+                readiness.providerConnectionError ??
+                'DB 서버 환경의 AI_API_BASE_URL을 확인해 주세요.',
+            style: const TextStyle(color: AppColors.pink2, fontSize: 12),
+          ),
+        ],
         const SizedBox(height: 16),
         const Divider(color: Colors.white10, height: 1),
         const SizedBox(height: 12),

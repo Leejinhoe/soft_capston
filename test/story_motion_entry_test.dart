@@ -36,6 +36,11 @@ void main() {
       await tester.pumpAndSettle();
       final button = find.widgetWithText(OutlinedButton, '캐릭터 움직임 보기');
       await tester.scrollUntilVisible(button, 300);
+      await tester.drag(
+        find.byType(CustomScrollView).first,
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
       expect(button, findsOneWidget);
       expect(find.byType(StoryCharacterAnimation), findsNothing);
       expect(find.byType(StoryVideoPlayer), findsNothing);

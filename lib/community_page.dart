@@ -3,30 +3,96 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'main.dart';
+import 'app_theme.dart';
+import 'community_report_sheet.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'services/db_service.dart';
+import 'social_pages.dart';
+
+enum _PostDeleteChoice { cancel, postOnly, postAndStory }
+
+Future<_PostDeleteChoice?> _confirmPostDeletion(
+  BuildContext context,
+  CommunityPost post,
+) {
+  final hasSavedStory = post.storyId?.trim().isNotEmpty == true;
+  return showDialog<_PostDeleteChoice>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: AppColors.pageSurface,
+      title: Text(
+        hasSavedStory ? '저장된 동화도 지울까요?' : '게시글을 삭제할까요?',
+        style: const TextStyle(color: Colors.white),
+      ),
+      content: Text(
+        hasSavedStory
+            ? '"${post.title}" 게시글을 지워요. 내 동화에 저장된 원본도 함께 지울 수 있어요.'
+            : '"${post.title}" 게시글이 커뮤니티에서 삭제돼요.',
+        style: const TextStyle(color: AppColors.gray),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, _PostDeleteChoice.cancel),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _PostDeleteChoice.postOnly),
+          child: const Text(
+            '게시글만 지우기',
+            style: TextStyle(color: AppColors.pink2),
+          ),
+        ),
+        if (hasSavedStory)
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, _PostDeleteChoice.postAndStory),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.pink2),
+            child: const Text('동화도 함께 지우기'),
+          ),
+      ],
+    ),
+  );
+}
 
 class CommunityPage extends StatefulWidget {
-  const CommunityPage({super.key});
+  final int initialTab;
+
+  const CommunityPage({super.key, this.initialTab = 0});
 
   @override
   State<CommunityPage> createState() => _CommunityPageState();
 }
 
 class _CommunityPageState extends State<CommunityPage> {
+  static const _genres = [
+    '전체',
+    '판타지',
+    '모험',
+    'SF',
+    '일상',
+    '전래동화',
+    '우정',
+    '자연',
+    '동물',
+    '미스터리',
+  ];
+
   final TextEditingController _searchController = TextEditingController();
   int _selectedTab = 0;
+  String _selectedGenre = '전체';
   bool _isLoading = true;
   String? _error;
   String _query = '';
+  int _visibleLimit = 10;
   List<CommunityPost> _posts = [];
   final Set<String> _likingPostIds = {};
+  final Set<String> _scrappingPostIds = {};
 
   @override
   void initState() {
     super.initState();
+    _selectedTab = widget.initialTab.clamp(0, 2).toInt();
     _loadPosts();
   }
 
@@ -64,7 +130,10 @@ class _CommunityPageState extends State<CommunityPage> {
 
   void _selectTab(int index) {
     if (_selectedTab == index) return;
-    setState(() => _selectedTab = index);
+    setState(() {
+      _selectedTab = index;
+      _visibleLimit = 10;
+    });
     _loadPosts();
   }
 
@@ -83,7 +152,9 @@ class _CommunityPageState extends State<CommunityPage> {
           post.fullText.contains(query) ||
           post.genre.contains(query) ||
           post.authorName.contains(query);
-      return matchesMine && matchesQuery;
+      final matchesGenre =
+          _selectedGenre == '전체' || post.genre == _selectedGenre;
+      return matchesMine && matchesQuery && matchesGenre;
     }).toList();
   }
 
@@ -120,7 +191,7 @@ class _CommunityPageState extends State<CommunityPage> {
 
     final selected = await showModalBottomSheet<StorySession>(
       context: context,
-      backgroundColor: AppColors.card,
+      backgroundColor: AppColors.pageSurface,
       isScrollControlled: true,
       builder: (context) {
         return SafeArea(
@@ -162,7 +233,7 @@ class _CommunityPageState extends State<CommunityPage> {
                         child: Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: AppColors.bg2,
+                            color: AppColors.pageInput,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: AppColors.border),
                           ),
@@ -237,6 +308,7 @@ class _CommunityPageState extends State<CommunityPage> {
         _posts = [post, ..._posts];
         _selectedTab = 0;
       });
+      unawaited(state.loadUserData());
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('게시판에 동화를 공유했어요!')));
@@ -302,43 +374,59 @@ class _CommunityPageState extends State<CommunityPage> {
     }
   }
 
+  Future<void> _toggleScrap(CommunityPost post) async {
+    if (_scrappingPostIds.contains(post.id)) return;
+    setState(() => _scrappingPostIds.add(post.id));
+    try {
+      final result = await DbService.toggleCommunityScrap(post.id);
+      if (!mounted) return;
+      final index = _posts.indexWhere((item) => item.id == post.id);
+      if (index >= 0) {
+        setState(
+          () => _posts[index] = _posts[index].copyWith(
+            isScrapped: result['is_scrapped'] == true,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _scrappingPostIds.remove(post.id));
+    }
+  }
+
   Future<void> _deletePost(CommunityPost post) async {
     final state = context.read<AppState>();
     if (post.authorAccountId != state.currentAccountId) return;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: const Text('게시글을 삭제할까요?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          '"${post.title}" 게시글이 커뮤니티에서 삭제돼요.',
-          style: const TextStyle(color: AppColors.gray),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제', style: TextStyle(color: AppColors.pink2)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
+    final choice = await _confirmPostDeletion(context, post);
+    if (choice == null || choice == _PostDeleteChoice.cancel) return;
 
     try {
       await DbService.deleteCommunityPost(
         postId: post.id,
         accountId: state.currentAccountId,
+        deleteStory: choice == _PostDeleteChoice.postAndStory,
       );
       if (!mounted) return;
       setState(() => _posts.removeWhere((item) => item.id == post.id));
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('게시글을 삭제했어요.')));
+      await state.loadUserData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            choice == _PostDeleteChoice.postAndStory
+                ? '게시글과 저장된 동화를 삭제했어요.'
+                : '게시글을 삭제했어요.',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -384,13 +472,16 @@ class _CommunityPageState extends State<CommunityPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(
-          color: const Color(0xFF140028),
+          color: AppColors.pageSurface,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: Colors.white10),
         ),
         child: TextField(
           controller: _searchController,
-          onChanged: (value) => setState(() => _query = value),
+          onChanged: (value) => setState(() {
+            _query = value;
+            _visibleLimit = 10;
+          }),
           style: const TextStyle(color: Colors.white),
           decoration: const InputDecoration(
             icon: Icon(Icons.search, color: Colors.white54, size: 20),
@@ -403,177 +494,219 @@ class _CommunityPageState extends State<CommunityPage> {
     );
   }
 
+  Widget _genreFilters() {
+    return SizedBox(
+      height: 46,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: _genres.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final genre = _genres[index];
+          final selected = genre == _selectedGenre;
+          return ChoiceChip(
+            label: Text(genre),
+            selected: selected,
+            onSelected: (_) => setState(() {
+              _selectedGenre = genre;
+              _visibleLimit = 10;
+            }),
+            selectedColor: AppColors.p600,
+            backgroundColor: AppColors.pageSurface,
+            side: const BorderSide(color: AppColors.border),
+            labelStyle: TextStyle(
+              color: selected ? Colors.white : Colors.white70,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildFeedCard(CommunityPost post, String? accountId) {
     final isLiked = post.isLikedBy(accountId);
     final isLiking = _likingPostIds.contains(post.id);
+    final isScrapping = _scrappingPostIds.contains(post.id);
     final isMine =
         accountId != null &&
         accountId.isNotEmpty &&
         post.authorAccountId == accountId;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(26),
-      onTap: () => _openDetail(post),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 22),
-        decoration: BoxDecoration(
-          color: const Color(0xFF140028),
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(26),
-              ),
-              child: Container(
-                height: 190,
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      right: 22,
-                      bottom: 16,
-                      child: Text(
-                        post.storyEmoji,
-                        style: const TextStyle(fontSize: 72),
-                      ),
-                    ),
-                    Positioned(
-                      left: 18,
-                      top: 18,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '#${post.genre}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (isMine)
-                      Positioned(
-                        right: 14,
-                        top: 12,
-                        child: IconButton(
-                          onPressed: () => _deletePost(post),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.black.withValues(
-                              alpha: 0.18,
-                            ),
-                            foregroundColor: Colors.white,
-                          ),
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: '게시글 삭제',
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final imageUrl = DbService.resolveMediaUrl(post.authorProfileImageUrl);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: AppColors.pageSurface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => _openDetail(post),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Text(
-                    post.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+                  InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () =>
+                        showPublicProfile(context, post.authorAccountId),
+                    child: CircleAvatar(
+                      radius: 19,
+                      backgroundColor: AppColors.p600.withValues(alpha: 0.38),
+                      backgroundImage: imageUrl == null
+                          ? null
+                          : NetworkImage(
+                              imageUrl,
+                              headers: DbService.mediaHeaders,
+                            ),
+                      child: imageUrl == null
+                          ? Text(
+                              post.authorName.trim().isEmpty
+                                  ? '?'
+                                  : post.authorName.trim()[0],
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            )
+                          : null,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'by ${post.authorName} · ${_relativeTime(post.createdAt)}',
-                    style: const TextStyle(color: Colors.white54),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    post.preview,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: isLiking ? null : () => _likePost(post),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 4,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                isLiked
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: isLiked
-                                    ? Colors.pinkAccent
-                                    : Colors.white54,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${post.likeCount}',
-                                style: const TextStyle(color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      const Icon(
-                        Icons.chat_bubble,
-                        color: Colors.lightBlueAccent,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${post.commentCount}',
-                        style: const TextStyle(color: Colors.white70),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '조회 ${post.viewCount}',
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () =>
+                          showPublicProfile(context, post.authorAccountId),
+                      child: Text(
+                        post.authorName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 12,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ],
+                    ),
+                  ),
+                  Text(
+                    _relativeTime(post.createdAt),
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                  if (isMine)
+                    IconButton(
+                      tooltip: '게시글 삭제',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _deletePost(post),
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: Colors.white38,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 15),
+              Text(
+                post.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                post.preview,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white60, height: 1.5),
+              ),
+              const SizedBox(height: 15),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.p600.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '#${post.genre}',
+                      style: const TextStyle(
+                        color: AppColors.p300,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: isLiking ? null : () => _likePost(post),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isLiked
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: isLiked ? AppColors.pink2 : Colors.white60,
+                            size: 17,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${post.likeCount}',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chat_bubble_rounded,
+                    color: Colors.lightBlueAccent,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${post.commentCount}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: post.isScrapped ? '스크랩 취소' : '스크랩',
+                    onPressed: isScrapping ? null : () => _toggleScrap(post),
+                    icon: Icon(
+                      post.isScrapped
+                          ? Icons.bookmark_rounded
+                          : Icons.bookmark_border_rounded,
+                      color: post.isScrapped ? AppColors.p400 : Colors.white54,
+                      size: 20,
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -585,10 +718,15 @@ class _CommunityPageState extends State<CommunityPage> {
       (state) => state.currentAccountId,
     );
     final visiblePosts = _visiblePosts(accountId);
-    final hasFilter = _query.trim().isNotEmpty || _selectedTab == 2;
+    final shownCount = visiblePosts.length < _visibleLimit
+        ? visiblePosts.length
+        : _visibleLimit;
+    final hasMore = shownCount < visiblePosts.length;
+    final hasFilter =
+        _query.trim().isNotEmpty || _selectedTab == 2 || _selectedGenre != '전체';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070018),
+      backgroundColor: AppColors.pageBackground,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,7 +758,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   IconButton(
                     onPressed: _openShareSheet,
                     style: IconButton.styleFrom(
-                      backgroundColor: const Color(0xFF140028),
+                      backgroundColor: AppColors.pageSurface,
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Colors.white10),
                     ),
@@ -634,7 +772,7 @@ class _CommunityPageState extends State<CommunityPage> {
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF140028),
+                  color: AppColors.pageSurface,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: Colors.white10),
                 ),
@@ -648,6 +786,9 @@ class _CommunityPageState extends State<CommunityPage> {
               ),
             ),
             _searchBox(),
+            const SizedBox(height: 12),
+            _genreFilters(),
+            const SizedBox(height: 8),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _loadPosts,
@@ -698,9 +839,48 @@ class _CommunityPageState extends State<CommunityPage> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(24, 20, 24, 100),
-                        itemCount: visiblePosts.length,
-                        itemBuilder: (context, index) =>
-                            _buildFeedCard(visiblePosts[index], accountId),
+                        itemCount: shownCount + 1 + (hasMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == 0) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                '이야기 ${visiblePosts.length}개',
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            );
+                          }
+                          if (index <= shownCount) {
+                            return _buildFeedCard(
+                              visiblePosts[index - 1],
+                              accountId,
+                            );
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 2, bottom: 18),
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  setState(() => _visibleLimit += 10),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.p300,
+                                side: const BorderSide(color: AppColors.p400),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                '더보기',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          );
+                        },
                       ),
               ),
             ),
@@ -727,6 +907,7 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
   bool _isLoading = true;
   bool _isSubmitting = false;
   bool _isLiking = false;
+  bool _isScrapping = false;
   String? _error;
 
   @override
@@ -836,43 +1017,57 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
     }
   }
 
+  Future<void> _toggleScrap() async {
+    if (_post == null || _isScrapping) return;
+    setState(() => _isScrapping = true);
+    try {
+      final result = await DbService.toggleCommunityScrap(_post!.id);
+      if (mounted) {
+        setState(
+          () => _post = _post!.copyWith(
+            isScrapped: result['is_scrapped'] == true,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isScrapping = false);
+    }
+  }
+
   Future<void> _deletePost() async {
     final post = _post ?? widget.initialPost;
     final state = context.read<AppState>();
     if (post.authorAccountId != state.currentAccountId) return;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: const Text('게시글을 삭제할까요?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          '"${post.title}" 게시글이 커뮤니티에서 삭제돼요.',
-          style: const TextStyle(color: AppColors.gray),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제', style: TextStyle(color: AppColors.pink2)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
+    final choice = await _confirmPostDeletion(context, post);
+    if (choice == null || choice == _PostDeleteChoice.cancel) return;
 
     try {
       await DbService.deleteCommunityPost(
         postId: post.id,
         accountId: state.currentAccountId,
+        deleteStory: choice == _PostDeleteChoice.postAndStory,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('게시글을 삭제했어요.')));
+      await state.loadUserData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            choice == _PostDeleteChoice.postAndStory
+                ? '게시글과 저장된 동화를 삭제했어요.'
+                : '게시글을 삭제했어요.',
+          ),
+        ),
+      );
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
@@ -932,15 +1127,26 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
         accountId.isNotEmpty &&
         post.authorAccountId == accountId;
     return Scaffold(
-      backgroundColor: const Color(0xFF06041A),
+      backgroundColor: AppColors.pageBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF06041A),
+        backgroundColor: AppColors.pageBackground,
         title: const Text('동화 게시글'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context, post),
         ),
         actions: [
+          if (!isMine)
+            IconButton(
+              tooltip: '게시글 신고',
+              icon: const Icon(Icons.flag_outlined),
+              onPressed: () => showCommunityReportSheet(
+                context,
+                targetType: 'post',
+                targetId: post.id,
+                accountId: accountId,
+              ),
+            ),
           if (isMine)
             IconButton(
               onPressed: _deletePost,
@@ -962,7 +1168,7 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                       Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF160F38),
+                          color: AppColors.pageSurface,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(color: const Color(0x338B5CF6)),
                         ),
@@ -973,7 +1179,26 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                               children: [
                                 CircleAvatar(
                                   backgroundColor: const Color(0xFF7C3AED),
-                                  child: Text(post.storyEmoji),
+                                  backgroundImage:
+                                      post.authorProfileImageUrl
+                                              ?.trim()
+                                              .isNotEmpty !=
+                                          true
+                                      ? null
+                                      : NetworkImage(
+                                          DbService.resolveMediaUrl(
+                                                post.authorProfileImageUrl!,
+                                              ) ??
+                                              '',
+                                          headers: DbService.mediaHeaders,
+                                        ),
+                                  child:
+                                      post.authorProfileImageUrl
+                                              ?.trim()
+                                              .isNotEmpty !=
+                                          true
+                                      ? Text(post.storyEmoji)
+                                      : null,
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
@@ -981,11 +1206,17 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        post.authorName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
+                                      InkWell(
+                                        onTap: () => showPublicProfile(
+                                          context,
+                                          post.authorAccountId,
+                                        ),
+                                        child: Text(
+                                          post.authorName,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
                                       Text(
@@ -1098,6 +1329,19 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                                     ),
                                   ),
                                 ),
+                                IconButton(
+                                  tooltip: post.isScrapped ? '스크랩 취소' : '스크랩',
+                                  onPressed: _isScrapping ? null : _toggleScrap,
+                                  icon: Icon(
+                                    post.isScrapped
+                                        ? Icons.bookmark
+                                        : Icons.bookmark_border,
+                                    size: 19,
+                                    color: post.isScrapped
+                                        ? Colors.purpleAccent
+                                        : Colors.grey,
+                                  ),
+                                ),
                               ],
                             ),
                             if (_error != null) ...[
@@ -1127,7 +1371,7 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF160F38),
+                            color: AppColors.pageSurface,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: const Color(0x338B5CF6)),
                           ),
@@ -1147,7 +1391,7 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF160F38),
+                              color: AppColors.pageSurface,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: const Color(0x338B5CF6),
@@ -1158,11 +1402,17 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                               children: [
                                 Row(
                                   children: [
-                                    Text(
-                                      comment.authorName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
+                                    InkWell(
+                                      onTap: () => showPublicProfile(
+                                        context,
+                                        comment.authorAccountId,
+                                      ),
+                                      child: Text(
+                                        comment.authorName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
                                     const Spacer(),
@@ -1188,6 +1438,23 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                                         ),
                                       ),
                                     ],
+                                    if (comment.authorAccountId != accountId)
+                                      IconButton(
+                                        tooltip: '댓글 신고',
+                                        icon: const Icon(
+                                          Icons.flag_outlined,
+                                          size: 17,
+                                          color: Colors.white54,
+                                        ),
+                                        onPressed: () =>
+                                            showCommunityReportSheet(
+                                              context,
+                                              targetType: 'comment',
+                                              targetId: comment.id,
+                                              postId: post.id,
+                                              accountId: accountId,
+                                            ),
+                                      ),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
@@ -1224,12 +1491,27 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                             style: const TextStyle(color: Colors.white),
                             decoration: InputDecoration(
                               hintText: '댓글을 남겨보세요',
-                              hintStyle: const TextStyle(color: Colors.grey),
+                              hintStyle: const TextStyle(color: Colors.white38),
                               filled: true,
-                              fillColor: const Color(0xFF160F38),
+                              fillColor: AppColors.pageInput,
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: const BorderSide(
+                                  color: AppColors.border,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: const BorderSide(
+                                  color: AppColors.border,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(18),
+                                borderSide: const BorderSide(
+                                  color: AppColors.p400,
+                                  width: 1.5,
+                                ),
                               ),
                             ),
                           ),
@@ -1238,13 +1520,13 @@ class _CommunityPostDetailPageState extends State<CommunityPostDetailPage> {
                         ElevatedButton(
                           onPressed: _isSubmitting ? null : _submitComment,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF7C3AED),
+                            backgroundColor: AppColors.p600,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 16,
                             ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(18),
                             ),
                           ),
                           child: _isSubmitting

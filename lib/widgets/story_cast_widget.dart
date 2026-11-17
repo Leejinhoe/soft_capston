@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_theme.dart';
 import '../models/story_model.dart';
 
 class StoryCastWidget extends StatelessWidget {
@@ -56,7 +57,7 @@ class StoryCastWidget extends StatelessWidget {
   Future<void> _showCastSheet(BuildContext context) {
     return showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF0E0B28),
+      backgroundColor: AppColors.pageInput,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (context) => SafeArea(

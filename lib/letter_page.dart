@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'main.dart';
+import 'app_theme.dart';
 import 'models/app_state.dart';
 import 'models/story_model.dart';
 import 'services/api_service.dart';
@@ -53,7 +53,7 @@ class _LetterPageState extends State<LetterPage> {
       final member = cast[index];
       final description = member.sourceDescription?.trim() ?? '';
       return StoryCharacter(
-        name: member.name,
+        name: member.letterDisplayName(ordinal: index + 1),
         role: member.role,
         personality: description.isEmpty ? '이야기 속에서 만난 소중한 친구예요' : description,
         greeting: '안녕! 네 편지를 기다리고 있었어.',
@@ -95,7 +95,7 @@ class _LetterPageState extends State<LetterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: AppColors.pageBackground,
       appBar: AppBar(title: const Text('주인공에게 편지 쓰기')),
       body: Center(
         child: ConstrainedBox(
@@ -131,7 +131,7 @@ class _LetterPageState extends State<LetterPage> {
                     avatar: Text(character.avatarEmoji),
                     label: Text(character.name),
                     selectedColor: AppColors.p600,
-                    backgroundColor: AppColors.card,
+                    backgroundColor: AppColors.pageSurface,
                     labelStyle: const TextStyle(color: Colors.white),
                     side: const BorderSide(color: AppColors.border),
                   );
@@ -213,7 +213,7 @@ class _LetterPageState extends State<LetterPage> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: AppColors.card,
+                    color: AppColors.pageSurface,
                     borderRadius: BorderRadius.circular(22),
                     border: Border.all(
                       color: AppColors.p500.withValues(alpha: 0.38),

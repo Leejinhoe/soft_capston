@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'main.dart';
+import 'app_theme.dart';
 import 'models/admin_model.dart';
 import 'models/app_state.dart';
 import 'models/media_readiness.dart';
@@ -97,7 +97,7 @@ class _AdminPageState extends State<AdminPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.card,
+        backgroundColor: AppColors.pageSurface,
         title: Text(title),
         content: Text(message),
         actions: [
@@ -141,15 +141,41 @@ class _AdminPageState extends State<AdminPage> {
     final dashboard = _dashboard;
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: AppColors.pageBackground,
+      appBar: AppBar(
+        backgroundColor: AppColors.pageBackground,
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        title: Text(
+          _selectedTab == 0 ? '관리자 페이지' : '${_tabs[_selectedTab]} 관리',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        leading: _selectedTab == 0
+            ? null
+            : IconButton(
+                tooltip: '관리자 홈',
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => setState(() {
+                  _selectedTab = 0;
+                  _query = '';
+                }),
+              ),
+        actions: [
+          IconButton(
+            tooltip: '새로고침',
+            onPressed: _loadDashboard,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadDashboard,
           color: AppColors.p500,
           child: CustomScrollView(
             slivers: [
-              SliverToBoxAdapter(child: _buildHeader()),
-              SliverToBoxAdapter(child: _buildSearchAndTabs()),
+              if (_selectedTab != 0)
+                SliverToBoxAdapter(child: _buildSearchAndTabs()),
               if (_isLoading)
                 const SliverFillRemaining(
                   hasScrollBody: false,
@@ -165,7 +191,11 @@ class _AdminPageState extends State<AdminPage> {
               else
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
-                  sliver: SliverToBoxAdapter(child: _buildTabBody(dashboard)),
+                  sliver: SliverToBoxAdapter(
+                    child: _selectedTab == 0
+                        ? _buildIntegrationHome(dashboard)
+                        : _buildTabBody(dashboard),
+                  ),
                 ),
             ],
           ),
@@ -174,6 +204,191 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
+  Widget _buildIntegrationHome(AdminDashboard dashboard) {
+    final pending = _reports
+        .where((report) => report.status == 'pending')
+        .length;
+    Widget stat(String label, String value, IconData icon, Color color) =>
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF140028),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: color.withValues(alpha: 0.35)),
+            ),
+            child: Column(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(height: 8),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+    Widget menu(
+      IconData icon,
+      String title,
+      String subtitle,
+      List<Color> colors,
+      int tab,
+    ) => GestureDetector(
+      onTap: () => setState(() {
+        _selectedTab = tab;
+        _query = '';
+      }),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 18),
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: colors),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first.withValues(alpha: .3),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 62,
+              height: 62,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(icon, color: Colors.white, size: 30),
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, color: Colors.white70),
+          ],
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.all(6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '👋 관리자님 환영합니다.',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'AI Fairy Tale 관리 시스템',
+            style: TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              stat(
+                '전체 회원',
+                '${dashboard.stats.userCount}',
+                Icons.people,
+                const Color(0xFF8B5CF6),
+              ),
+              const SizedBox(width: 10),
+              stat(
+                '처리 대기 신고',
+                '$pending',
+                Icons.report,
+                const Color(0xFFF97316),
+              ),
+              const SizedBox(width: 10),
+              stat(
+                '생성된 동화',
+                '${dashboard.stats.storyCount}',
+                Icons.auto_stories,
+                const Color(0xFF3B82F6),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          menu(Icons.people, '회원 관리', '회원 조회 · 경고 · 삭제', const [
+            Color(0xFF8B5CF6),
+            Color(0xFFEC4899),
+          ], 1),
+          menu(
+            Icons.report,
+            '신고 관리',
+            pending > 0 ? '처리 대기 $pending건' : '신고된 회원 및 게시글 관리',
+            const [Color(0xFFEF4444), Color(0xFFF97316)],
+            4,
+          ),
+          menu(Icons.menu_book, '동화 관리', '모든 회원의 동화 조회 · 삭제', const [
+            Color(0xFF3B82F6),
+            Color(0xFF06B6D4),
+          ], 2),
+          menu(Icons.campaign, '공지사항', '공지 등록 · 수정 · 삭제', const [
+            Color(0xFF10B981),
+            Color(0xFF34D399),
+          ], 6),
+          OutlinedButton(
+            onPressed: () => setState(() => _selectedTab = 3),
+            child: const Text('게시판 · 경고 · 단어장 관리'),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 55,
+            child: ElevatedButton.icon(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout),
+              label: const Text('로그아웃'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Kept while the remaining legacy administration panels are migrated.
+  // ignore: unused_element
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
@@ -297,7 +512,7 @@ class _AdminPageState extends State<AdminPage> {
                 color: Colors.white54,
               ),
               filled: true,
-              fillColor: AppColors.card,
+              fillColor: AppColors.pageSurface,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(18),
                 borderSide: BorderSide.none,
@@ -316,7 +531,7 @@ class _AdminPageState extends State<AdminPage> {
                     selected: selected,
                     label: Text(_tabs[index]),
                     selectedColor: AppColors.p600,
-                    backgroundColor: AppColors.card,
+                    backgroundColor: AppColors.pageSurface,
                     labelStyle: TextStyle(
                       color: selected ? Colors.white : Colors.white70,
                       fontWeight: FontWeight.w800,
@@ -409,6 +624,50 @@ class _AdminPageState extends State<AdminPage> {
             );
           },
         ),
+        const SizedBox(height: 18),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth > 680;
+            return GridView.count(
+              crossAxisCount: wide ? 2 : 1,
+              childAspectRatio: wide ? 3.1 : 3.8,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              children: [
+                _buildQuickAction(
+                  title: '회원 관리',
+                  subtitle: '회원 조회 · 경고 · 상태 관리',
+                  icon: Icons.people_rounded,
+                  colors: const [Color(0xFF7C3AED), Color(0xFFEC4899)],
+                  tab: 1,
+                ),
+                _buildQuickAction(
+                  title: '신고 관리',
+                  subtitle: '접수된 신고와 처리 현황 확인',
+                  icon: Icons.shield_rounded,
+                  colors: const [Color(0xFFEF4444), Color(0xFFF97316)],
+                  tab: 4,
+                ),
+                _buildQuickAction(
+                  title: '동화 관리',
+                  subtitle: '회원 동화와 공유 게시글 관리',
+                  icon: Icons.auto_stories_rounded,
+                  colors: const [Color(0xFF3B82F6), Color(0xFF06B6D4)],
+                  tab: 2,
+                ),
+                _buildQuickAction(
+                  title: '공지사항',
+                  subtitle: '공지 등록 · 수정 · 발송 관리',
+                  icon: Icons.campaign_rounded,
+                  colors: const [Color(0xFF10B981), Color(0xFF34D399)],
+                  tab: 6,
+                ),
+              ],
+            );
+          },
+        ),
         const SizedBox(height: 14),
         MediaReadinessWidget(
           readiness: _mediaReadiness,
@@ -464,11 +723,91 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
+  Widget _buildQuickAction({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> colors,
+    required int tab,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => setState(() => _selectedTab = tab),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: colors,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: colors.first.withValues(alpha: 0.2),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: Colors.white, size: 25),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Colors.white70,
+                size: 17,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatCard(String label, int value, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white10),
       ),
@@ -563,6 +902,9 @@ class _AdminPageState extends State<AdminPage> {
 
   Widget _buildUserCard(AdminUser user) {
     final isAdmin = user.accountId == widget.adminAccountId;
+    final blocked =
+        user.accountStatus == 'banned' || user.accountStatus == 'suspended';
+    final deleted = user.accountStatus == 'deleted';
     return _buildItemCard(
       leading: Icons.person_rounded,
       title: '${user.nickname} (${user.accountId})',
@@ -572,6 +914,11 @@ class _AdminPageState extends State<AdminPage> {
         user.email ?? '이메일 없음',
         '가입 ${_formatDate(user.createdAt)}',
         '최근 ${_formatDate(user.lastLogin)}',
+        '상태 ${deleted
+            ? '탈퇴'
+            : blocked
+            ? '정지'
+            : '정상'}',
       ],
       actions: [
         IconButton(
@@ -585,21 +932,85 @@ class _AdminPageState extends State<AdminPage> {
           icon: const Icon(Icons.warning_amber_rounded),
         ),
         IconButton(
+          tooltip: blocked ? '정지 해제' : '회원 정지',
+          onPressed: isAdmin || deleted
+              ? null
+              : () => _changeUserStatus(user, blocked),
+          icon: Icon(blocked ? Icons.lock_open : Icons.block),
+        ),
+        IconButton(
           tooltip: isAdmin ? '관리자 계정은 삭제할 수 없음' : '회원 삭제',
           onPressed: isAdmin
               ? null
               : () => _runAdminAction(
-                    title: '회원 삭제',
-                    message: '${user.nickname} 회원과 연결된 동화/단어장/게시글을 삭제할까요?',
-                    action: () => DbService.deleteAdminUser(
-                      adminAccountId: widget.adminAccountId,
-                      userId: user.id,
-                    ),
+                  title: '회원 삭제',
+                  message: '${user.nickname} 회원과 연결된 동화/단어장/게시글을 삭제할까요?',
+                  action: () => DbService.deleteAdminUser(
+                    adminAccountId: widget.adminAccountId,
+                    userId: user.id,
                   ),
+                ),
           icon: const Icon(Icons.delete_outline_rounded),
         ),
       ],
     );
+  }
+
+  Future<void> _changeUserStatus(AdminUser user, bool blocked) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.pageSurface,
+        title: Text(blocked ? '회원 정지 해제' : '회원 정지'),
+        content: blocked
+            ? Text('${user.nickname} 회원의 정지를 해제할까요?')
+            : TextField(
+                controller: controller,
+                maxLength: 500,
+                maxLines: 3,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: '정지 사유 (필수)'),
+              ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!blocked && controller.text.trim().isEmpty) return;
+              Navigator.pop(dialogContext, controller.text.trim());
+            },
+            child: Text(blocked ? '정지 해제' : '정지'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null || !mounted) return;
+    try {
+      await DbService.updateAdminUserStatus(
+        userId: user.id,
+        status: blocked ? 'active' : 'banned',
+        reason: reason,
+      );
+      if (!mounted) return;
+      await _loadDashboard();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(blocked ? '회원 정지를 해제했어요.' : '회원을 정지했어요.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '계정 상태 변경 실패: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    }
   }
 
   Widget _buildStories(List<AdminStory> stories) {
@@ -633,6 +1044,11 @@ class _AdminPageState extends State<AdminPage> {
       ],
       actions: [
         IconButton(
+          tooltip: '동화 상세',
+          icon: const Icon(Icons.info_outline_rounded),
+          onPressed: () => _showStoryDetail(story),
+        ),
+        IconButton(
           tooltip: '동화 삭제',
           onPressed: () => _runAdminAction(
             title: '동화 삭제',
@@ -646,6 +1062,65 @@ class _AdminPageState extends State<AdminPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _showStoryDetail(AdminStory story) async {
+    try {
+      final detail = await DbService.fetchAdminStoryDetail(story.id);
+      if (!mounted) return;
+      final scenes = (detail['scenes'] as List? ?? const [])
+          .whereType<Map>()
+          .toList();
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.pageSurface,
+          title: Text(story.title),
+          content: SizedBox(
+            width: 600,
+            child: SingleChildScrollView(
+              child: scenes.isEmpty
+                  ? const Text('저장된 장면이 없습니다.')
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var i = 0; i < scenes.length; i++) ...[
+                          Text(
+                            '${i + 1}장',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            (scenes[i]['story_text'] ??
+                                    scenes[i]['content'] ??
+                                    scenes[i]['text'] ??
+                                    '')
+                                .toString(),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                      ],
+                    ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '동화 조회 실패: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    }
   }
 
   Widget _buildPosts(List<AdminCommunityPost> posts) {
@@ -743,11 +1218,13 @@ class _AdminPageState extends State<AdminPage> {
   Widget _buildNoticeCard(Notice notice) {
     final sending = {'queued', 'sending'}.contains(notice.emailDeliveryStatus);
     return _buildItemCard(
-      leading:
-          notice.isPinned ? Icons.push_pin_rounded : Icons.campaign_rounded,
+      leading: notice.isPinned
+          ? Icons.push_pin_rounded
+          : Icons.campaign_rounded,
       title: notice.title,
       subtitle: notice.content,
       badges: [
+        if (notice.target == 'users') '특정 회원 ${notice.targetUserIds.length}명',
         notice.isPinned ? '상단 고정' : '일반 공지',
         '게시 ${_formatDate(notice.publishedAt ?? notice.createdAt)}',
         if (notice.emailRequested)
@@ -763,17 +1240,20 @@ class _AdminPageState extends State<AdminPage> {
           icon: const Icon(Icons.edit_outlined),
         ),
         IconButton(
-          tooltip: '전체 회원에게 이메일 발송',
+          tooltip: notice.target == 'users'
+              ? '대상 회원에게 이메일 발송'
+              : '전체 회원에게 이메일 발송',
           onPressed: sending
               ? null
               : () => _runAdminAction(
-                    title: '공지 이메일 발송',
-                    message: '"${notice.title}" 공지를 이메일 등록 회원에게 개별 발송할까요?',
-                    action: () => DbService.sendAdminNoticeEmail(
-                      adminAccountId: widget.adminAccountId,
-                      noticeId: notice.id,
-                    ),
+                  title: '공지 이메일 발송',
+                  message:
+                      '"${notice.title}" 공지를 ${notice.target == 'users' ? '선택한 회원' : '전체 회원'} 중 이메일 등록 회원에게 개별 발송할까요?',
+                  action: () => DbService.sendAdminNoticeEmail(
+                    adminAccountId: widget.adminAccountId,
+                    noticeId: notice.id,
                   ),
+                ),
           icon: const Icon(Icons.mark_email_read_outlined),
         ),
         IconButton(
@@ -793,26 +1273,31 @@ class _AdminPageState extends State<AdminPage> {
   }
 
   String _noticeEmailStatus(String status) => switch (status) {
-        'queued' => '메일 대기 중',
-        'sending' => '메일 발송 중',
-        'completed' => '메일 발송 완료',
-        'completed_with_failures' => '일부 메일 실패',
-        'failed' => '메일 발송 실패',
-        _ => '메일 미발송',
-      };
+    'queued' => '메일 대기 중',
+    'sending' => '메일 발송 중',
+    'completed' => '메일 발송 완료',
+    'completed_with_failures' => '일부 메일 실패',
+    'failed' => '메일 발송 실패',
+    _ => '메일 미발송',
+  };
 
   Future<void> _showNoticeEditor({Notice? existing}) async {
     final titleController = TextEditingController(text: existing?.title ?? '');
-    final contentController =
-        TextEditingController(text: existing?.content ?? '');
+    final contentController = TextEditingController(
+      text: existing?.content ?? '',
+    );
     var isPinned = existing?.isPinned ?? false;
     var sendEmail = false;
+    var target = existing?.target ?? 'all';
+    final recipientsController = TextEditingController(
+      text: existing?.targetUserIds.join(', ') ?? '',
+    );
 
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.card,
+          backgroundColor: AppColors.pageSurface,
           title: Text(existing == null ? '새 공지 작성' : '공지 수정'),
           content: SizedBox(
             width: 460,
@@ -820,6 +1305,29 @@ class _AdminPageState extends State<AdminPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('전체 회원'),
+                        selected: target == 'all',
+                        onSelected: (_) => setDialogState(() => target = 'all'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('특정 회원'),
+                        selected: target == 'users',
+                        onSelected: (_) =>
+                            setDialogState(() => target = 'users'),
+                      ),
+                    ],
+                  ),
+                  if (target == 'users')
+                    TextField(
+                      controller: recipientsController,
+                      decoration: const InputDecoration(
+                        labelText: '회원 아이디 (쉼표로 구분)',
+                      ),
+                    ),
                   TextField(
                     controller: titleController,
                     maxLength: 120,
@@ -849,7 +1357,11 @@ class _AdminPageState extends State<AdminPage> {
                       value: sendEmail,
                       onChanged: (value) =>
                           setDialogState(() => sendEmail = value),
-                      title: const Text('전체 회원에게 이메일 발송'),
+                      title: Text(
+                        target == 'users'
+                            ? '선택한 회원에게 이메일 발송'
+                            : '전체 회원에게 이메일 발송',
+                      ),
                       subtitle: const Text(
                         '이메일이 등록된 회원에게 한 명씩 개별 발송합니다.',
                         style: TextStyle(color: Colors.white54, fontSize: 12),
@@ -874,6 +1386,17 @@ class _AdminPageState extends State<AdminPage> {
                   );
                   return;
                 }
+                final recipients = recipientsController.text
+                    .split(',')
+                    .map((s) => s.trim())
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+                if (target == 'users' && recipients.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('받는 회원 아이디를 입력해 주세요.')),
+                  );
+                  return;
+                }
                 try {
                   if (existing == null) {
                     await DbService.createAdminNotice(
@@ -882,6 +1405,8 @@ class _AdminPageState extends State<AdminPage> {
                       content: content,
                       isPinned: isPinned,
                       sendEmail: sendEmail,
+                      target: target,
+                      userIds: recipients,
                     );
                   } else {
                     await DbService.updateAdminNotice(
@@ -890,6 +1415,8 @@ class _AdminPageState extends State<AdminPage> {
                       title: title,
                       content: content,
                       isPinned: isPinned,
+                      target: target,
+                      userIds: recipients,
                     );
                   }
                   if (dialogContext.mounted) Navigator.pop(dialogContext);
@@ -908,8 +1435,10 @@ class _AdminPageState extends State<AdminPage> {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                        content: Text(
-                            error.toString().replaceFirst('Exception: ', ''))),
+                      content: Text(
+                        error.toString().replaceFirst('Exception: ', ''),
+                      ),
+                    ),
                   );
                 }
               },
@@ -921,6 +1450,7 @@ class _AdminPageState extends State<AdminPage> {
     );
     titleController.dispose();
     contentController.dispose();
+    recipientsController.dispose();
   }
 
   Widget _buildReports() {
@@ -1089,7 +1619,7 @@ class _AdminPageState extends State<AdminPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.card,
+          backgroundColor: AppColors.pageSurface,
           title: Text('${user.nickname}님 경고'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1162,26 +1692,26 @@ class _AdminPageState extends State<AdminPage> {
   }
 
   String _targetTypeLabel(String value) => switch (value) {
-        'post' => '게시물',
-        'comment' => '댓글',
-        'user' => '사용자',
-        _ => value,
-      };
+    'post' => '게시물',
+    'comment' => '댓글',
+    'user' => '사용자',
+    _ => value,
+  };
 
   String _reportStatusLabel(String value) => switch (value) {
-        'pending' => '대기',
-        'reviewed' => '검토됨',
-        'resolved' => '처리됨',
-        'dismissed' => '기각',
-        _ => value,
-      };
+    'pending' => '대기',
+    'reviewed' => '검토됨',
+    'resolved' => '처리됨',
+    'dismissed' => '기각',
+    _ => value,
+  };
 
   String _severityLabel(String value) => switch (value) {
-        'notice' => '안내',
-        'caution' => '주의',
-        'final' => '최종 경고',
-        _ => value,
-      };
+    'notice' => '안내',
+    'caution' => '주의',
+    'final' => '최종 경고',
+    _ => value,
+  };
 
   Widget _buildVocabularies(List<VocabWord> words) {
     final filtered = words.where((word) {
@@ -1216,13 +1746,13 @@ class _AdminPageState extends State<AdminPage> {
           onPressed: word.id == null
               ? null
               : () => _runAdminAction(
-                    title: '단어 삭제',
-                    message: '"${word.hard}" 단어를 삭제할까요?',
-                    action: () => DbService.deleteAdminVocabulary(
-                      adminAccountId: widget.adminAccountId,
-                      vocabId: word.id!,
-                    ),
+                  title: '단어 삭제',
+                  message: '"${word.hard}" 단어를 삭제할까요?',
+                  action: () => DbService.deleteAdminVocabulary(
+                    adminAccountId: widget.adminAccountId,
+                    vocabId: word.id!,
                   ),
+                ),
           icon: const Icon(Icons.delete_outline_rounded),
         ),
       ],
@@ -1238,7 +1768,7 @@ class _AdminPageState extends State<AdminPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: AppColors.pageSurface,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white10),
       ),
@@ -1507,23 +2037,25 @@ class _AdminPageState extends State<AdminPage> {
     final dashboard = _dashboard;
     final userStories =
         dashboard?.stories.where((story) => story.userId == user.id).toList() ??
-            <AdminStory>[];
+        <AdminStory>[];
     final accountId = user.accountId.trim();
-    final userPosts = dashboard?.communityPosts.where((post) {
+    final userPosts =
+        dashboard?.communityPosts.where((post) {
           if (accountId.isNotEmpty && post.authorAccountId == accountId) {
             return true;
           }
           return post.authorName == user.nickname;
         }).toList() ??
         <AdminCommunityPost>[];
-    final userWords = dashboard?.vocabularies
+    final userWords =
+        dashboard?.vocabularies
             .where((word) => word.userId == user.id)
             .toList() ??
         <VocabWord>[];
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.card,
+      backgroundColor: AppColors.pageSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),

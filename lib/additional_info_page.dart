@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'app_theme.dart';
 import 'main_screen.dart';
 import 'models/app_state.dart';
 import 'services/db_service.dart';
@@ -65,9 +66,9 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
         email.isNotEmpty &&
         (verifiedEmail != email.toLowerCase() ||
             _emailVerificationToken == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('새 이메일 주소를 먼저 인증해 주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('새 이메일 주소를 먼저 인증해 주세요.')));
       return;
     }
     setState(() => _isLoading = true);
@@ -84,14 +85,14 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
 
       if (!mounted) return;
       context.read<AppState>().updateSignedInProfile(
-            nickname: data['nickname']?.toString(),
-            email: data['email']?.toString(),
-            phone: data['phone']?.toString(),
-            address: data['address']?.toString(),
-          );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('계정 정보를 저장했어요.')),
+        nickname: data['nickname']?.toString(),
+        email: data['email']?.toString(),
+        phone: data['phone']?.toString(),
+        address: data['address']?.toString(),
       );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('계정 정보를 저장했어요.')));
       if (widget.returnToPrevious) {
         Navigator.pop(context);
       } else {
@@ -116,9 +117,9 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
   Future<void> _sendEmailCode() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('인증할 이메일 주소를 입력해 주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('인증할 이메일 주소를 입력해 주세요.')));
       return;
     }
     setState(() {
@@ -129,9 +130,9 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
     try {
       await DbService.sendEmailVerificationCode(email: email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('인증번호를 이메일로 보냈습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('인증번호를 이메일로 보냈습니다.')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -146,9 +147,9 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
     final email = _emailController.text.trim();
     final code = _emailCodeController.text.trim();
     if (email.isEmpty || code.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이메일과 6자리 인증번호를 확인해 주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('이메일과 6자리 인증번호를 확인해 주세요.')));
       return;
     }
     setState(() => _emailVerifying = true);
@@ -162,9 +163,9 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
         _emailVerificationToken = token;
         _verifiedEmail = email;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이메일 인증이 완료되었습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('이메일 인증이 완료되었습니다.')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -178,7 +179,7 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF06041A),
+      backgroundColor: AppColors.pageBackground,
       appBar: AppBar(
         title: const Text('계정 정보 수정'),
         backgroundColor: Colors.transparent,
@@ -208,10 +209,21 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                   hintText: '닉네임',
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
-                  fillColor: const Color(0xFF160F38),
+                  fillColor: AppColors.pageInput,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(
+                      color: AppColors.p400,
+                      width: 1.5,
+                    ),
                   ),
                 ),
               ),
@@ -233,10 +245,21 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                   hintText: '이메일',
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
-                  fillColor: const Color(0xFF160F38),
+                  fillColor: AppColors.pageInput,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(
+                      color: AppColors.p400,
+                      width: 1.5,
+                    ),
                   ),
                 ),
                 keyboardType: TextInputType.emailAddress,
@@ -253,10 +276,21 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                         hintText: '인증번호 6자리',
                         hintStyle: const TextStyle(color: Colors.white38),
                         filled: true,
-                        fillColor: const Color(0xFF160F38),
+                        fillColor: AppColors.pageInput,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: const BorderSide(
+                            color: AppColors.p400,
+                            width: 1.5,
+                          ),
                         ),
                       ),
                     ),
@@ -292,10 +326,21 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                   hintText: '전화번호 (선택)',
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
-                  fillColor: const Color(0xFF160F38),
+                  fillColor: AppColors.pageInput,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(
+                      color: AppColors.p400,
+                      width: 1.5,
+                    ),
                   ),
                 ),
                 keyboardType: TextInputType.phone,
@@ -308,10 +353,21 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
                   hintText: '주소 (선택)',
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
-                  fillColor: const Color(0xFF160F38),
+                  fillColor: AppColors.pageInput,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(
+                      color: AppColors.p400,
+                      width: 1.5,
+                    ),
                   ),
                 ),
               ),
@@ -319,10 +375,10 @@ class _AdditionalInfoPageState extends State<AdditionalInfoPage> {
               ElevatedButton(
                 onPressed: _isLoading ? null : _submitExtraInfo,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7C3AED),
+                  backgroundColor: AppColors.p600,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(18),
                   ),
                 ),
                 child: _isLoading
